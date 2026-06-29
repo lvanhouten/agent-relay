@@ -1,7 +1,7 @@
 # Esc and Ctrl+D keyboard shortcuts shown in the UI are not functional
 
 **Source:** Identified during scaffold review (2026-06-29) — original finding "Keyboard shortcuts".
-**Status:** Deferred — 2026-06-29.
+**Status:** Closed — 2026-06-29.
 **Kind:** Bug
 **Modules:** client/TerminalScreen
 **Severity:** Low
