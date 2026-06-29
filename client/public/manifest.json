@@ -1,0 +1,17 @@
+{
+  "name": "agent-relay",
+  "short_name": "relay",
+  "description": "Connect to terminal sessions from any browser.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e11",
+  "theme_color": "#0a0e11",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

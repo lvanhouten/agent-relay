@@ -1,7 +1,7 @@
 # App cannot be installed on mobile home screen — no PWA manifest or service worker
 
 **Source:** Identified during scaffold review (2026-06-29) — original finding "PWA manifest".
-**Status:** Deferred — 2026-06-29.
+**Status:** Closed — 2026-06-29.
 **Kind:** Enhancement
 **Modules:** client/pwa
 **Severity:** Low
