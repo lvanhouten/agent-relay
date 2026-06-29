@@ -1,7 +1,7 @@
 # Server accepts all connections regardless of the access token
 
 **Source:** Identified during scaffold review (2026-06-29) — original finding "Auth".
-**Status:** Deferred — 2026-06-29.
+**Status:** Closed — 2026-06-29.
 **Kind:** Enhancement
 **Modules:** server/auth, server/api, server/ws, client/LoginScreen
 **Severity:** High

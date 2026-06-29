@@ -4,6 +4,7 @@ const { createServer } = require('http');
 const { SessionManager } = require('./src/sessions');
 const { createAPI } = require('./src/api');
 const { createWSHub } = require('./src/ws');
+const { authMiddleware } = require('./src/auth');
 
 const PORT = process.env.PORT ?? 3001;
 
@@ -12,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 const sessions = new SessionManager();
-app.use('/api', createAPI(sessions));
+app.use('/api', authMiddleware, createAPI(sessions));
 
 const server = createServer(app);
 createWSHub(server, sessions);

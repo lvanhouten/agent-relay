@@ -6,6 +6,7 @@ import TerminalScreen from './screens/TerminalScreen.jsx';
 export default function App() {
   const [screen, setScreen] = React.useState('login');
   const [host, setHost] = React.useState('');
+  const [token, setToken] = React.useState('');
   const [theme, setTheme] = React.useState(
     () => localStorage.getItem('ar-theme') ?? 'dark'
   );
@@ -24,12 +25,13 @@ export default function App() {
         <LoginScreen
           theme={theme}
           onToggleTheme={toggleTheme}
-          onConnect={(h) => { setHost(h); setScreen('sessions'); }}
+          onConnect={(h, t) => { setHost(h); setToken(t); setScreen('sessions'); }}
         />
       )}
       {screen === 'sessions' && (
         <SessionsScreen
           host={host}
+          token={token}
           theme={theme}
           onToggleTheme={toggleTheme}
           onAttach={(s) => { setActiveSession(s); setScreen('terminal'); }}
@@ -39,6 +41,7 @@ export default function App() {
         <TerminalScreen
           session={activeSession}
           host={host}
+          token={token}
           theme={theme}
           onToggleTheme={toggleTheme}
           onBack={() => setScreen('sessions')}
