@@ -1,0 +1,35 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Surfaces · light & dark" subtitle="App / card / sunken / terminal — both themes" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; padding:18px; background:#888; display:flex; gap:16px; }
+  .pane { flex:1; border-radius:var(--radius-lg); padding:14px; display:flex; flex-direction:column; gap:10px;
+          background:var(--surface-app); border:1px solid var(--border-subtle); }
+  .lbl { font-family:var(--font-mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); }
+  .stack { display:flex; gap:8px; }
+  .box { flex:1; height:48px; border-radius:var(--radius-md); border:1px solid var(--border-default);
+         display:flex; align-items:center; justify-content:center;
+         font-family:var(--font-mono); font-size:9px; color:var(--text-muted); }
+  .term { background:var(--terminal-bg); color:var(--terminal-fg); font-family:var(--font-mono);
+          font-size:11px; padding:8px 10px; border-radius:var(--radius-md); }
+  .term .c { color:var(--relay-400); }
+</style></head>
+<body>
+  <div class="pane">
+    <span class="lbl">Light</span>
+    <div class="stack">
+      <div class="box" style="background:var(--surface-card)">card</div>
+      <div class="box" style="background:var(--surface-sunken)">sunken</div>
+    </div>
+    <div class="term"><span class="c">relay ▸</span> ~/app $ npm run dev</div>
+  </div>
+  <div class="pane" data-theme="dark" style="background:var(--surface-app)">
+    <span class="lbl">Dark</span>
+    <div class="stack">
+      <div class="box" style="background:var(--surface-card)">card</div>
+      <div class="box" style="background:var(--surface-raised)">raised</div>
+    </div>
+    <div class="term"><span class="c">relay ▸</span> ~/app $ npm run dev</div>
+  </div>
+</body></html>

@@ -1,0 +1,12 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="agent-relay">
+  <rect x="1" y="1" width="46" height="46" rx="10" fill="#0a0e11"></rect>
+  <rect x="1.5" y="1.5" width="45" height="45" rx="9.5" stroke="#1fce8a" stroke-opacity="0.35"></rect>
+  
+  <circle cx="24" cy="24" r="4.5" fill="#1fce8a"></circle>
+  
+  <path d="M13 31.5 A 12 12 0 0 1 13 16.5" stroke="#1fce8a" stroke-width="2.5" stroke-linecap="round"></path>
+  
+  <path d="M35 16.5 A 12 12 0 0 1 35 31.5" stroke="#54dfa6" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.8"></path>
+  
+  <path d="M19 21 L22 24 L19 27" stroke="#0a0e11" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>

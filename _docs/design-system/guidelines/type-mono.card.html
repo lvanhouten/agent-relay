@@ -1,0 +1,33 @@
+<!-- @dsCard group="Type" viewport="700x200" name="Mono & labels" subtitle="JetBrains Mono · terminal, labels, metadata" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; background:var(--surface-card); padding:22px; display:flex; flex-direction:column; gap:16px; }
+  .meta { font-family:var(--font-mono); font-size:10px; color:var(--text-faint); margin-bottom:6px; }
+  .labels { display:flex; gap:18px; flex-wrap:wrap; }
+  .term { background:var(--terminal-bg); border-radius:var(--radius-md); padding:14px 16px;
+          font-family:var(--font-mono); font-size:var(--text-sm); line-height:1.7; }
+  .term .p { color:var(--relay-400); }
+  .term .d { color:var(--terminal-dim); }
+  .term .o { color:var(--terminal-fg); }
+</style></head>
+<body>
+  <div>
+    <div class="meta">Eyebrow labels — uppercase, tracked</div>
+    <div class="labels">
+      <span class="relay-label">Relay host</span>
+      <span class="relay-label">Active sessions</span>
+      <span class="relay-label">Working dir</span>
+      <span class="relay-label">Shell · zsh</span>
+    </div>
+  </div>
+  <div>
+    <div class="meta">Terminal canvas — mono, sm</div>
+    <div class="term">
+      <div><span class="p">relay ▸</span> <span class="o">~/projects/api $ git status</span></div>
+      <div class="d">On branch main · nothing to commit, working tree clean</div>
+      <div><span class="p">relay ▸</span> <span class="o">~/projects/api $ ▍</span></div>
+    </div>
+  </div>
+</body></html>

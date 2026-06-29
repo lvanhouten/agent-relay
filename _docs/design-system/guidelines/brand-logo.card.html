@@ -1,0 +1,52 @@
+<!-- @dsCard group="Brand" viewport="700x180" name="Logo" subtitle="Mark + wordmark · on light and dark" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; padding:20px; display:flex; gap:16px; background:#888; }
+  .pane { flex:1; border-radius:var(--radius-lg); padding:22px; display:flex; flex-direction:column; gap:18px; align-items:flex-start;
+          background:var(--surface-card); border:1px solid var(--border-subtle); }
+  .pane.dark { background:var(--gray-950); color:var(--gray-25); border-color:var(--gray-800); }
+  .pane.light { color:var(--gray-900); }
+  .row { display:flex; align-items:center; gap:14px; }
+  .lbl { font-family:var(--font-mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; opacity:.5; }
+  .mark { width:42px; height:42px; flex-shrink:0; }
+  .word { height:30px; }
+</style></head>
+<body>
+  <div class="pane light">
+    <span class="lbl">On light</span>
+    <div class="row">
+      <svg class="mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="46" height="46" rx="10" fill="#0a0e11"/>
+        <circle cx="24" cy="24" r="4.5" fill="#1fce8a"/>
+        <path d="M13 31.5 A 12 12 0 0 1 13 16.5" stroke="#1fce8a" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M35 16.5 A 12 12 0 0 1 35 31.5" stroke="#54dfa6" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.8"/>
+        <path d="M19 21 L22 24 L19 27" stroke="#0a0e11" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <svg class="word" viewBox="0 0 220 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(0,2)"><circle cx="20" cy="20" r="4" fill="#12b87a"/><path d="M11 26 A 9.5 9.5 0 0 1 11 14" stroke="#12b87a" stroke-width="2.4" stroke-linecap="round"/><path d="M29 14 A 9.5 9.5 0 0 1 29 26" stroke="#54dfa6" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.85"/></g>
+        <text x="48" y="29" font-family="'JetBrains Mono', monospace" font-size="20" font-weight="700" letter-spacing="-0.5" fill="currentColor">agent</text>
+        <text x="124" y="29" font-family="'JetBrains Mono', monospace" font-size="20" font-weight="400" fill="currentColor" opacity="0.55">-relay</text>
+      </svg>
+    </div>
+  </div>
+  <div class="pane dark">
+    <span class="lbl">On dark</span>
+    <div class="row">
+      <svg class="mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="46" height="46" rx="10" fill="#11161a"/>
+        <rect x="1.5" y="1.5" width="45" height="45" rx="9.5" stroke="#1fce8a" stroke-opacity="0.35"/>
+        <circle cx="24" cy="24" r="4.5" fill="#1fce8a"/>
+        <path d="M13 31.5 A 12 12 0 0 1 13 16.5" stroke="#1fce8a" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M35 16.5 A 12 12 0 0 1 35 31.5" stroke="#54dfa6" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.8"/>
+        <path d="M19 21 L22 24 L19 27" stroke="#11161a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <svg class="word" viewBox="0 0 220 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(0,2)"><circle cx="20" cy="20" r="4" fill="#1fce8a"/><path d="M11 26 A 9.5 9.5 0 0 1 11 14" stroke="#1fce8a" stroke-width="2.4" stroke-linecap="round"/><path d="M29 14 A 9.5 9.5 0 0 1 29 26" stroke="#54dfa6" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.85"/></g>
+        <text x="48" y="29" font-family="'JetBrains Mono', monospace" font-size="20" font-weight="700" letter-spacing="-0.5" fill="currentColor">agent</text>
+        <text x="124" y="29" font-family="'JetBrains Mono', monospace" font-size="20" font-weight="400" fill="currentColor" opacity="0.55">-relay</text>
+      </svg>
+    </div>
+  </div>
+</body></html>
