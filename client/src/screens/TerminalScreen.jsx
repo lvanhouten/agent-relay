@@ -87,6 +87,8 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
 
   const onDataRef = React.useRef(null);
   const onExitRef = React.useRef(null);
+  const onBackRef = React.useRef(onBack);
+  React.useEffect(() => { onBackRef.current = onBack; }, [onBack]);
 
   const { connStatus, send, resize } = useSessionWS(session.id, token, {
     onData: React.useCallback((data) => onDataRef.current?.(data), []),
@@ -113,7 +115,10 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
     onDataRef.current = (data) => term.write(data);
     onExitRef.current = (code) => term.writeln(`\r\n\x1b[2m— session exited · code ${code}\x1b[0m`);
 
-    term.onData(send);
+    term.onData((data) => {
+      if (data === '\x04') { onBackRef.current?.(); return; } // Ctrl+D — detach
+      send(data);
+    });
 
     const ro = new ResizeObserver(() => {
       fit.fit();
