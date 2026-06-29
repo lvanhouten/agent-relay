@@ -1,0 +1,98 @@
+<!-- @dsCard group="agent-relay" viewport="1280x800" name="Product UI kit" subtitle="Login → Sessions → Terminal · interactive" -->
+<!-- @startingPoint section="agent-relay" subtitle="Full app: login, session list, interactive terminal" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>agent-relay</title>
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; }
+  #app { height: 100vh; overflow: hidden; }
+  .rl-term-cursor { display: inline-block; width: 6px; height: 11px; background: var(--relay-500);
+    border-radius: 1px; animation: rl-blink 1.1s steps(1) infinite; }
+  @keyframes rl-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .rl-term-cursor { animation: none; } }
+</style>
+</head>
+<body data-theme="dark">
+<div id="app"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel" src="icons.jsx"></script>
+<script type="text/babel" src="Chrome.jsx"></script>
+<script type="text/babel" src="LoginScreen.jsx"></script>
+<script type="text/babel" src="SessionsScreen.jsx"></script>
+<script type="text/babel" src="TerminalScreen.jsx"></script>
+<script type="text/babel">
+  const INITIAL_SESSIONS = [
+    { id: 's1', name: 'api-dev',   cwd: '~/projects/api',      shell: 'zsh',  pid: 48213, panes: 2, status: 'online',  lastActive: 'now',
+      preview: [
+        { t: 'cmd', text: 'run the test suite' },
+        { t: 'tool', text: '⏺ Bash · npm test' },
+        { t: 'ok',  text: '✓ 24 passed · 0 failed' },
+        { t: 'live', text: 'working…' },
+      ] },
+    { id: 's2', name: 'web',       cwd: '~/projects/web-app',  shell: 'zsh',  pid: 48390, panes: 1, status: 'online',  lastActive: '4m ago',
+      preview: [
+        { t: 'cmd', text: 'start the dev server' },
+        { t: 'tool', text: '⏺ Bash · npm run dev' },
+        { t: 'out', text: '▲ ready on http://localhost:3000' },
+        { t: 'live', text: 'watching for changes' },
+      ] },
+    { id: 's3', name: 'db-tunnel', cwd: '~/infra',             shell: 'bash', pid: 47002, panes: 1, status: 'idle',    lastActive: '1h ago',
+      preview: [
+        { t: 'cmd', text: 'open a tunnel to prod db' },
+        { t: 'tool', text: '⏺ Bash · ssh -L 5432 db' },
+        { t: 'out', text: 'tunnel established → :5432' },
+      ] },
+    { id: 's4', name: 'logs',      cwd: '/var/log',            shell: 'fish', pid: 46110, panes: 3, status: 'idle',    lastActive: '3h ago',
+      preview: [
+        { t: 'cmd', text: 'tail the app log' },
+        { t: 'tool', text: '⏺ Bash · tail -f app.log' },
+        { t: 'out', text: '[info] GET /health 200 9ms' },
+        { t: 'out', text: '[info] GET /health 200 11ms' },
+      ] },
+  ];
+
+  function App() {
+    const [theme, setTheme] = React.useState('dark');
+    const [route, setRoute] = React.useState('login'); // login | sessions | terminal
+    const [host, setHost] = React.useState('main.local:7070');
+    const [sessions, setSessions] = React.useState(INITIAL_SESSIONS);
+    const [active, setActive] = React.useState(null);
+
+    React.useEffect(() => { document.body.setAttribute('data-theme', theme); }, [theme]);
+    const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
+    const attach = (s) => { setActive(s); setRoute('terminal'); };
+    const kill = (id) => setSessions(list => list.filter(s => s.id !== id));
+    const create = (d) => {
+      const s = { id: 's' + Date.now(), name: d.name, cwd: d.cwd, shell: d.shell,
+                  pid: 40000 + Math.floor(Math.random() * 9999), panes: 1, status: 'online', lastActive: 'now',
+                  preview: [ { t: 'tool', text: '⏺ ' + d.shell + ' · session started' }, { t: 'live', text: 'waiting for input' } ] };
+      setSessions(list => [s, ...list]);
+      attach(s);
+    };
+
+    if (route === 'login')
+      return <window.LoginScreen theme={theme} onToggleTheme={toggleTheme}
+                onConnect={(h) => { setHost(h); setRoute('sessions'); }} />;
+
+    if (route === 'terminal' && active)
+      return <window.TerminalScreen session={active} host={host} theme={theme}
+                onToggleTheme={toggleTheme} onBack={() => setRoute('sessions')} />;
+
+    return <window.SessionsScreen host={host} sessions={sessions} theme={theme} onToggleTheme={toggleTheme}
+              onAttach={attach} onKill={kill} onCreate={create} />;
+  }
+
+  ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
+</script>
+</body>
+</html>

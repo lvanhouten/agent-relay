@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Relay accent" subtitle="Signal green — the 'connected' accent · --relay-50 → --relay-900" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; background:var(--surface-app); padding:20px; }
+  .ramp { display:grid; grid-template-columns:repeat(10,1fr); gap:8px; }
+  .sw { display:flex; flex-direction:column; gap:6px; }
+  .chip { height:70px; border-radius:var(--radius-md); border:1px solid rgba(128,128,128,.14); }
+  .name { font-family:var(--font-mono); font-size:10px; color:var(--text-muted); }
+  .hex { font-family:var(--font-mono); font-size:9px; color:var(--text-faint); }
+</style></head>
+<body>
+<div class="ramp">
+  <div class="sw"><div class="chip" style="background:var(--relay-50)"></div><span class="name">50</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-100)"></div><span class="name">100</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-200)"></div><span class="name">200</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-300)"></div><span class="name">300</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-400)"></div><span class="name">400</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-500);box-shadow:var(--glow-accent)"></div><span class="name">500 ◆</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-600)"></div><span class="name">600</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-700)"></div><span class="name">700</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-800)"></div><span class="name">800</span></div>
+  <div class="sw"><div class="chip" style="background:var(--relay-900)"></div><span class="name">900</span></div>
+</div>
+</body></html>

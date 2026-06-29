@@ -1,0 +1,29 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Neutral ramp" subtitle="Cool-slate neutrals · --gray-0 → --gray-950" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; background:var(--surface-app); padding:20px; }
+  .ramp { display:grid; grid-template-columns:repeat(14,1fr); gap:6px; }
+  .sw { display:flex; flex-direction:column; gap:6px; }
+  .chip { height:64px; border-radius:var(--radius-md); border:1px solid rgba(128,128,128,.18); }
+  .name { font-family:var(--font-mono); font-size:9px; color:var(--text-muted); letter-spacing:.02em; }
+</style></head>
+<body>
+<div class="ramp">
+  <div class="sw"><div class="chip" style="background:var(--gray-0)"></div><span class="name">0</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-25)"></div><span class="name">25</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-50)"></div><span class="name">50</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-100)"></div><span class="name">100</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-200)"></div><span class="name">200</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-300)"></div><span class="name">300</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-400)"></div><span class="name">400</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-500)"></div><span class="name">500</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-600)"></div><span class="name">600</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-700)"></div><span class="name">700</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-800)"></div><span class="name">800</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-850)"></div><span class="name">850</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-900)"></div><span class="name">900</span></div>
+  <div class="sw"><div class="chip" style="background:var(--gray-950)"></div><span class="name">950</span></div>
+</div>
+</body></html>

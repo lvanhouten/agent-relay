@@ -1,0 +1,19 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Status & semantic" subtitle="Connection states + feedback hues" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; background:var(--surface-app); padding:20px; display:flex; gap:14px; flex-wrap:wrap; }
+  .tile { flex:1; min-width:110px; display:flex; flex-direction:column; gap:8px; }
+  .chip { height:56px; border-radius:var(--radius-md); display:flex; align-items:flex-end; padding:8px;
+          font-family:var(--font-mono); font-size:10px; color:#fff; }
+  .name { font-family:var(--font-mono); font-size:10px; color:var(--text-muted); letter-spacing:.04em; text-transform:uppercase; }
+</style></head>
+<body>
+  <div class="tile"><div class="chip" style="background:var(--status-online)">online</div><span class="name">status-online</span></div>
+  <div class="tile"><div class="chip" style="background:var(--status-idle)">idle</div><span class="name">status-idle</span></div>
+  <div class="tile"><div class="chip" style="background:var(--status-offline)">offline</div><span class="name">status-offline</span></div>
+  <div class="tile"><div class="chip" style="background:var(--danger)">error</div><span class="name">danger</span></div>
+  <div class="tile"><div class="chip" style="background:var(--warning)">warn</div><span class="name">warning</span></div>
+  <div class="tile"><div class="chip" style="background:var(--info)">info</div><span class="name">info</span></div>
+</body></html>

@@ -1,0 +1,10 @@
+/* ===========================================================================
+   agent-relay · Webfonts
+   Loaded from Google Fonts CDN. SUBSTITUTION NOTE: the brand spec did not ship
+   binary font files, so these are linked from the CDN. Swap the @import for
+   self-hosted @font-face rules + local .woff2 files when binaries are provided.
+   - Space Grotesk : UI / display
+   - JetBrains Mono : terminal, code, labels, metadata
+   =========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');

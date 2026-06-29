@@ -1,0 +1,164 @@
+/* ===========================================================================
+   agent-relay · Color tokens
+   Base ramps (raw values) + semantic aliases. Semantic aliases flip between
+   light (default :root) and dark ([data-theme="dark"]).
+   =========================================================================== */
+
+:root {
+  /* --- Base ramp: cool slate neutrals --------------------------------- */
+  --gray-0:   #ffffff;
+  --gray-25:  #fafbfb;
+  --gray-50:  #f4f6f7;
+  --gray-100: #eceeef;
+  --gray-200: #dde1e3;
+  --gray-300: #c4c9cc;
+  --gray-400: #9aa1a6;
+  --gray-500: #6e767c;
+  --gray-600: #4d555b;
+  --gray-700: #353c41;
+  --gray-800: #21272b;
+  --gray-850: #181d20;
+  --gray-900: #11161a;
+  --gray-950: #0a0e11;
+
+  /* --- Base ramp: relay signal green (the "connected" accent) ---------- */
+  --relay-50:  #e6fbf2;
+  --relay-100: #c2f5df;
+  --relay-200: #8decc4;
+  --relay-300: #54dfa6;
+  --relay-400: #1fce8a;
+  --relay-500: #12b87a;
+  --relay-600: #0e9462;
+  --relay-700: #0c7650;
+  --relay-800: #0a5c40;
+  --relay-900: #084a34;
+
+  /* --- Base ramp: semantic hues --------------------------------------- */
+  --amber-400: #f3b13c;
+  --amber-500: #e0991f;
+  --amber-600: #b9790f;
+  --red-400:   #f4675f;
+  --red-500:   #e23b34;
+  --red-600:   #c02720;
+  --blue-400:  #5aa6f0;
+  --blue-500:  #2f86e0;
+  --blue-600:  #1f6bc0;
+
+  /* --- Semantic aliases · LIGHT --------------------------------------- */
+  /* Surfaces */
+  --surface-app:      var(--gray-50);
+  --surface-card:     var(--gray-0);
+  --surface-sunken:   var(--gray-100);
+  --surface-raised:   var(--gray-0);
+  --surface-inverse:  var(--gray-900);
+  --surface-overlay:  rgba(17, 22, 26, 0.45);
+
+  /* Terminal canvas — LIGHT theme: a soft "lighter terminal" pane */
+  --terminal-bg:      #e9edee;
+  --terminal-fg:      #2a3239;
+  --terminal-dim:     #8b959c;
+  --terminal-accent:  var(--relay-700);  /* prompt caret / relay ▸ */
+  --terminal-path:    #2c6586;           /* working-dir path */
+  --terminal-border:  rgba(20, 28, 34, 0.12);
+  --diff-add-bg:      rgba(18, 184, 122, 0.14);
+  --diff-add-fg:      #0c7650;
+  --diff-del-bg:      rgba(226, 59, 52, 0.11);
+  --diff-del-fg:      #c02720;
+
+  /* Text */
+  --text-strong:   var(--gray-900);
+  --text-body:     var(--gray-700);
+  --text-muted:    var(--gray-500);
+  --text-faint:    var(--gray-400);
+  --text-inverse:  var(--gray-0);
+  --text-accent:   var(--relay-700);
+  --text-on-accent:#04130d;
+
+  /* Borders & lines */
+  --border-subtle: var(--gray-200);
+  --border-default:var(--gray-300);
+  --border-strong: var(--gray-400);
+  --border-accent: var(--relay-500);
+
+  /* Accent / interactive */
+  --accent:        var(--relay-500);
+  --accent-hover:  var(--relay-600);
+  --accent-active: var(--relay-700);
+  --accent-soft:   var(--relay-50);
+  --accent-ring:   rgba(18, 184, 122, 0.35);
+
+  /* Status */
+  --status-online:  var(--relay-500);
+  --status-idle:    var(--amber-500);
+  --status-offline: var(--gray-400);
+  --status-error:   var(--red-500);
+
+  /* Semantic feedback */
+  --success: var(--relay-600);
+  --success-soft: var(--relay-50);
+  --warning: var(--amber-600);
+  --warning-soft: #fdf3e0;
+  --danger:  var(--red-500);
+  --danger-soft: #fdeceb;
+  --info:    var(--blue-500);
+  --info-soft: #e9f2fc;
+
+  /* Focus */
+  --focus-ring: var(--relay-500);
+}
+
+/* --- Semantic aliases · DARK ------------------------------------------ */
+[data-theme="dark"] {
+  --surface-app:      var(--gray-950);
+  --surface-card:     var(--gray-900);
+  --surface-sunken:   #070b0e;
+  --surface-raised:   var(--gray-850);
+  --surface-inverse:  var(--gray-50);
+  --surface-overlay:  rgba(2, 5, 7, 0.6);
+
+  --terminal-bg:      #070b0e;
+  --terminal-fg:      #d8dee2;
+  --terminal-dim:     #6b747a;
+  --terminal-accent:  var(--relay-400);
+  --terminal-path:    #8aa0b2;
+  --terminal-border:  rgba(255, 255, 255, 0.12);
+  --diff-add-bg:      rgba(31, 206, 138, 0.16);
+  --diff-add-fg:      #54dfa6;
+  --diff-del-bg:      rgba(244, 103, 95, 0.16);
+  --diff-del-fg:      #f4675f;
+
+  --text-strong:   var(--gray-25);
+  --text-body:     var(--gray-300);
+  --text-muted:    var(--gray-400);
+  --text-faint:    var(--gray-500);
+  --text-inverse:  var(--gray-900);
+  --text-accent:   var(--relay-300);
+  --text-on-accent:#04130d;
+
+  --border-subtle: var(--gray-800);
+  --border-default:var(--gray-700);
+  --border-strong: var(--gray-600);
+  --border-accent: var(--relay-400);
+
+  --accent:        var(--relay-400);
+  --accent-hover:  var(--relay-300);
+  --accent-active: var(--relay-200);
+  --accent-soft:   rgba(31, 206, 138, 0.12);
+  --accent-ring:   rgba(31, 206, 138, 0.4);
+
+  --status-online:  var(--relay-400);
+  --status-idle:    var(--amber-400);
+  --status-offline: var(--gray-600);
+  --status-error:   var(--red-400);
+
+  --success: var(--relay-400);
+  --success-soft: rgba(31, 206, 138, 0.12);
+  --warning: var(--amber-400);
+  --warning-soft: rgba(243, 177, 60, 0.12);
+  --danger:  var(--red-400);
+  --danger-soft: rgba(244, 103, 95, 0.12);
+  --info:    var(--blue-400);
+  --info-soft: rgba(90, 166, 240, 0.12);
+
+  --focus-ring: var(--relay-400);
+}

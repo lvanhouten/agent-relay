@@ -1,0 +1,22 @@
+<!-- @dsCard group="Spacing" viewport="700x170" name="Radii & elevation" subtitle="Sharp technical radii + restrained shadows" -->
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { margin:0; background:var(--surface-app); padding:24px; display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
+  .demo { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .box { width:64px; height:64px; background:var(--surface-card); border:1px solid var(--border-default); }
+  .t { font-family:var(--font-mono); font-size:10px; color:var(--text-muted); }
+  .sep { width:1px; height:64px; background:var(--border-subtle); }
+</style></head>
+<body>
+  <div class="demo"><div class="box" style="border-radius:var(--radius-sm)"></div><span class="t">sm · 4</span></div>
+  <div class="demo"><div class="box" style="border-radius:var(--radius-md)"></div><span class="t">md · 6</span></div>
+  <div class="demo"><div class="box" style="border-radius:var(--radius-lg)"></div><span class="t">lg · 8</span></div>
+  <div class="demo"><div class="box" style="border-radius:var(--radius-xl)"></div><span class="t">xl · 12</span></div>
+  <div class="sep"></div>
+  <div class="demo"><div class="box" style="border:0;box-shadow:var(--shadow-sm)"></div><span class="t">shadow-sm</span></div>
+  <div class="demo"><div class="box" style="border:0;box-shadow:var(--shadow-md)"></div><span class="t">shadow-md</span></div>
+  <div class="demo"><div class="box" style="border:0;box-shadow:var(--shadow-lg)"></div><span class="t">shadow-lg</span></div>
+  <div class="demo"><div class="box" style="border-color:var(--border-accent);box-shadow:var(--glow-accent)"></div><span class="t">glow</span></div>
+</body></html>
