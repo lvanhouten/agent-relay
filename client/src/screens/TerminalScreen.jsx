@@ -6,7 +6,7 @@ import { Kbd } from '@ds/Kbd.jsx';
 import { ChevronLeft, Terminal, Copy, Maximize2, Sun, Moon } from 'lucide-react';
 import { stripAnsi } from '../utils/stripAnsi.js';
 
-function useSessionWS(sessionId) {
+function useSessionWS(sessionId, token) {
   const [lines, setLines] = React.useState([]);
   const [connStatus, setConnStatus] = React.useState('connecting');
   const wsRef = React.useRef(null);
@@ -15,7 +15,8 @@ function useSessionWS(sessionId) {
   React.useEffect(() => {
     if (!sessionId) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/sessions/${sessionId}`);
+    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    const ws = new WebSocket(`${proto}//${location.host}/sessions/${sessionId}${qs}`);
     wsRef.current = ws;
 
     ws.onopen = () => setConnStatus('online');
@@ -78,8 +79,8 @@ function TranscriptLine({ line }) {
   }
 }
 
-export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack }) {
-  const { lines, connStatus, send } = useSessionWS(session.id);
+export default function TerminalScreen({ session, host, token, theme, onToggleTheme, onBack }) {
+  const { lines, connStatus, send } = useSessionWS(session.id, token);
   const [input, setInput] = React.useState('');
   const viewRef = React.useRef(null);
   const inputRef = React.useRef(null);

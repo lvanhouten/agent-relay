@@ -1,22 +1,32 @@
 const BASE = '/api';
 
-export async function listSessions() {
-  const res = await fetch(`${BASE}/sessions`);
+function headers(token) {
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+export async function listSessions(token) {
+  const res = await fetch(`${BASE}/sessions`, { headers: headers(token) });
   if (!res.ok) throw new Error('failed to list sessions');
   return res.json();
 }
 
-export async function createSession({ name, cwd, shell, command }) {
+export async function createSession({ name, cwd, shell, command }, token) {
   const res = await fetch(`${BASE}/sessions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers(token),
     body: JSON.stringify({ name, cwd, shell, command }),
   });
   if (!res.ok) throw new Error('failed to create session');
   return res.json();
 }
 
-export async function killSession(id) {
-  const res = await fetch(`${BASE}/sessions/${id}`, { method: 'DELETE' });
+export async function killSession(id, token) {
+  const res = await fetch(`${BASE}/sessions/${id}`, {
+    method: 'DELETE',
+    headers: headers(token),
+  });
   if (!res.ok && res.status !== 404) throw new Error('failed to kill session');
 }

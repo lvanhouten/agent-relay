@@ -157,14 +157,14 @@ function NewSessionDialog({ onClose, onCreate }) {
   );
 }
 
-export default function SessionsScreen({ host, theme, onToggleTheme, onAttach }) {
+export default function SessionsScreen({ host, token, theme, onToggleTheme, onAttach }) {
   const [sessions, setSessions] = React.useState([]);
   const [query, setQuery] = React.useState('');
   const [dialog, setDialog] = React.useState(false);
 
   const load = React.useCallback(async () => {
-    try { setSessions(await listSessions()); } catch { /* offline — keep stale list */ }
-  }, []);
+    try { setSessions(await listSessions(token)); } catch { /* offline — keep stale list */ }
+  }, [token]);
 
   React.useEffect(() => {
     load();
@@ -174,12 +174,12 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
 
   const handleCreate = async (opts) => {
     setDialog(false);
-    const session = await createSession(opts);
+    const session = await createSession(opts, token);
     onAttach(session);
   };
 
   const handleKill = async (id) => {
-    await killSession(id);
+    await killSession(id, token);
     setSessions((prev) => prev.filter((s) => s.id !== id));
   };
 

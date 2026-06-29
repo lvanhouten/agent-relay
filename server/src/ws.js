@@ -1,12 +1,19 @@
 const { WebSocketServer } = require('ws');
 const { parse } = require('url');
+const { checkToken } = require('./auth');
 
 function createWSHub(server, sessions) {
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', (ws, req) => {
-    const pathname = parse(req.url).pathname ?? '';
+    const parsed = parse(req.url, true);
+    const pathname = parsed.pathname ?? '';
     const id = pathname.split('/').filter(Boolean).pop();
+
+    if (!checkToken(parsed.query.token)) {
+      ws.close(1008, 'unauthorized');
+      return;
+    }
 
     if (!id || !sessions.get(id)) {
       ws.close(1008, 'session not found');

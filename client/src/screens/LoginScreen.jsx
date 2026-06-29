@@ -19,10 +19,13 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${h}/api/sessions`);
+      const res = await fetch(`${h}/api/sessions`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.status === 401) { setError('Invalid access token.'); return; }
       if (!res.ok) throw new Error();
       localStorage.setItem(HOST_KEY, h);
-      onConnect(h);
+      onConnect(h, token);
     } catch {
       setError('Could not reach relay. Check the host and try again.');
     } finally {
