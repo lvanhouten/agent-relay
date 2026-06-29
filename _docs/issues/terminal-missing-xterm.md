@@ -1,7 +1,7 @@
 # TerminalScreen strips ANSI and renders plain text instead of a real terminal
 
 **Source:** Identified during scaffold review (2026-06-29) — original finding "xterm.js".
-**Status:** Deferred — 2026-06-29.
+**Status:** Closed — 2026-06-29.
 **Kind:** Enhancement
 **Modules:** client/TerminalScreen
 **Severity:** High

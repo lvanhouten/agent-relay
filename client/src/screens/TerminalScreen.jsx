@@ -1,16 +1,49 @@
 import React from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import { Badge } from '@ds/Badge.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
-import { ChevronLeft, Terminal, Copy, Maximize2, Sun, Moon } from 'lucide-react';
-import { stripAnsi } from '../utils/stripAnsi.js';
+import { ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Sun, Moon } from 'lucide-react';
 
-function useSessionWS(sessionId, token) {
-  const [lines, setLines] = React.useState([]);
+const XTERM_THEMES = {
+  dark: {
+    background: '#070b0e',
+    foreground: '#d8dee2',
+    cursor: '#1fce8a',
+    cursorAccent: '#070b0e',
+    selectionBackground: 'rgba(31, 206, 138, 0.2)',
+    black: '#11161a', brightBlack: '#353c41',
+    red: '#f4675f',   brightRed: '#f4675f',
+    green: '#1fce8a', brightGreen: '#54dfa6',
+    yellow: '#f3b13c',brightYellow: '#f3b13c',
+    blue: '#5aa6f0',  brightBlue: '#5aa6f0',
+    magenta: '#c084fc',brightMagenta: '#e879f9',
+    cyan: '#8aa0b2',  brightCyan: '#b0c4d4',
+    white: '#d8dee2', brightWhite: '#fafbfb',
+  },
+  light: {
+    background: '#e9edee',
+    foreground: '#2a3239',
+    cursor: '#0c7650',
+    cursorAccent: '#e9edee',
+    selectionBackground: 'rgba(12, 118, 80, 0.2)',
+    black: '#2a3239', brightBlack: '#4d555b',
+    red: '#c02720',   brightRed: '#e23b34',
+    green: '#0c7650', brightGreen: '#0e9462',
+    yellow: '#b9790f',brightYellow: '#e0991f',
+    blue: '#1f6bc0',  brightBlue: '#2f86e0',
+    magenta: '#9333ea',brightMagenta: '#a855f7',
+    cyan: '#2c6586',  brightCyan: '#1e7a9e',
+    white: '#4d555b', brightWhite: '#21272b',
+  },
+};
+
+function useSessionWS(sessionId, token, { onData, onExit }) {
   const [connStatus, setConnStatus] = React.useState('connecting');
   const wsRef = React.useRef(null);
-  const bufRef = React.useRef('');
 
   React.useEffect(() => {
     if (!sessionId) return;
@@ -25,82 +58,82 @@ function useSessionWS(sessionId, token) {
 
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'data') {
-        bufRef.current += stripAnsi(msg.payload);
-        const parts = bufRef.current.split('\n');
-        bufRef.current = parts.pop(); // hold incomplete last line
-        const newLines = parts
-          .map((t) => t.trimEnd())
-          .filter((t) => t.length > 0)
-          .map((text) => ({ type: 'raw', text }));
-        if (newLines.length) setLines((prev) => [...prev, ...newLines]);
-      }
-      if (msg.type === 'exit') {
-        setConnStatus('offline');
-        setLines((prev) => [...prev, { type: 'sys', text: `session exited · code ${msg.code}` }]);
-      }
+      if (msg.type === 'data') onData(msg.payload);
+      if (msg.type === 'exit') { setConnStatus('offline'); onExit(msg.code); }
     };
 
-    return () => {
-      ws.close();
-      wsRef.current = null;
-    };
-  }, [sessionId]);
+    return () => { ws.close(); wsRef.current = null; };
+  // onData/onExit are stable refs — intentionally excluded from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, token]);
 
   const send = React.useCallback((payload) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN)
       wsRef.current.send(JSON.stringify({ type: 'input', payload }));
-    }
   }, []);
 
   const resize = React.useCallback((cols, rows) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN)
       wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
-    }
   }, []);
 
-  return { lines, connStatus, send, resize };
-}
-
-function TranscriptLine({ line }) {
-  switch (line.type) {
-    case 'sys':
-      return (
-        <div style={{ color: 'var(--terminal-accent)', opacity: 0.8, margin: '6px 0', fontSize: 'var(--text-xs)' }}>
-          — {line.text}
-        </div>
-      );
-    default:
-      return (
-        <div style={{ color: 'var(--terminal-fg)', lineHeight: 1.6, wordBreak: 'break-all' }}>
-          {line.text}
-        </div>
-      );
-  }
+  return { connStatus, send, resize };
 }
 
 export default function TerminalScreen({ session, host, token, theme, onToggleTheme, onBack }) {
-  const { lines, connStatus, send } = useSessionWS(session.id, token);
-  const [input, setInput] = React.useState('');
-  const viewRef = React.useRef(null);
-  const inputRef = React.useRef(null);
+  const containerRef = React.useRef(null);
+  const termRef = React.useRef(null);
+  const fitRef = React.useRef(null);
 
+  const onDataRef = React.useRef(null);
+  const onExitRef = React.useRef(null);
+
+  const { connStatus, send, resize } = useSessionWS(session.id, token, {
+    onData: React.useCallback((data) => onDataRef.current?.(data), []),
+    onExit: React.useCallback((code) => onExitRef.current?.(code), []),
+  });
+
+  // Mount xterm once
   React.useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.scrollTop = viewRef.current.scrollHeight;
-    }
-  }, [lines.length]);
+    const term = new Terminal({
+      theme: XTERM_THEMES[theme] ?? XTERM_THEMES.dark,
+      fontFamily: 'ui-monospace, "Cascadia Code", "Fira Code", monospace',
+      fontSize: 13,
+      lineHeight: 1.5,
+      cursorBlink: true,
+      allowProposedApi: true,
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(containerRef.current);
+    fit.fit();
+    termRef.current = term;
+    fitRef.current = fit;
 
-  const doSend = () => {
-    const text = input.trim();
-    if (!text) return;
-    send(text + '\n');
-    setInput('');
-  };
+    onDataRef.current = (data) => term.write(data);
+    onExitRef.current = (code) => term.writeln(`\r\n\x1b[2m— session exited · code ${code}\x1b[0m`);
 
-  const onKey = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
-  };
+    term.onData(send);
+
+    const ro = new ResizeObserver(() => {
+      fit.fit();
+      resize(term.cols, term.rows);
+    });
+    ro.observe(containerRef.current);
+
+    return () => {
+      ro.disconnect();
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync theme changes into the live terminal
+  React.useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = XTERM_THEMES[theme] ?? XTERM_THEMES.dark;
+  }, [theme]);
 
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const hostLabel = host.replace(/^https?:\/\//, '');
@@ -117,7 +150,7 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
         <IconButton label="Back to sessions" onClick={onBack}>
           <ChevronLeft size={18} />
         </IconButton>
-        <Terminal size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        <TerminalIcon size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
         <span style={{
           fontFamily: 'var(--font-display)', fontWeight: 600,
           color: 'var(--text-strong)', flexShrink: 0,
@@ -134,7 +167,7 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <StatusDot status={dotStatus} size="sm" />
           <span style={{ width: 1, height: 22, background: 'var(--border-subtle)', margin: '0 4px' }} />
-          <IconButton label="Copy buffer" onClick={() => navigator.clipboard?.writeText(lines.map((l) => l.text).join('\n'))}>
+          <IconButton label="Copy selection" onClick={() => navigator.clipboard?.writeText(termRef.current?.getSelection() ?? '')}>
             <Copy size={15} />
           </IconButton>
           <IconButton label="Fullscreen" onClick={() => document.documentElement.requestFullscreen?.()}>
@@ -146,61 +179,15 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
         </div>
       </header>
 
-      {/* transcript */}
+      {/* xterm container */}
       <div
-        ref={viewRef}
-        onClick={() => inputRef.current?.focus()}
+        ref={containerRef}
         style={{
-          flex: 1, overflowY: 'auto', background: 'var(--terminal-bg)',
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', lineHeight: 1.6,
-          padding: 'var(--space-5) var(--space-6)', cursor: 'text',
+          flex: 1, overflow: 'hidden',
+          background: XTERM_THEMES[theme]?.background ?? '#070b0e',
+          padding: 'var(--space-3)',
         }}
-      >
-        <div style={{ maxWidth: 880 }}>
-          {lines.length === 0 && connStatus === 'connecting' && (
-            <div style={{ color: 'var(--terminal-dim)', opacity: 0.7 }}>Attaching to session…</div>
-          )}
-          {lines.map((l, i) => <TranscriptLine key={i} line={l} />)}
-        </div>
-      </div>
-
-      {/* input bar */}
-      <div style={{
-        flexShrink: 0, background: 'var(--terminal-bg)',
-        borderTop: '1px solid var(--terminal-border)',
-        padding: 'var(--space-4) var(--space-6) var(--space-3)',
-      }}>
-        <div style={{ maxWidth: 880 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            border: '1px solid var(--terminal-border)', borderRadius: 'var(--radius-lg)',
-            padding: '11px 14px', background: 'var(--surface-card)',
-          }}>
-            <span style={{ color: 'var(--terminal-accent)', fontWeight: 700 }}>›</span>
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKey}
-              autoFocus
-              spellCheck={false}
-              placeholder="Ask the session to do something…"
-              style={{
-                flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                color: 'var(--text-strong)', fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--text-sm)', caretColor: 'var(--terminal-accent)',
-              }}
-            />
-          </div>
-          <div style={{
-            display: 'flex', gap: 16, marginTop: 8, paddingLeft: 4,
-            color: 'var(--terminal-dim)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-          }}>
-            <span>enter to send</span>
-            <span>esc to cancel a run</span>
-          </div>
-        </div>
-      </div>
+      />
 
       {/* status strip */}
       <footer style={{
