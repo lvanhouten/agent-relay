@@ -21,3 +21,16 @@ createWSHub(server, sessions);
 server.listen(PORT, () => {
   console.log(`agent-relay server → http://localhost:${PORT}`);
 });
+
+// Release the port on catchable stops (Ctrl+C, SIGTERM). A hard external
+// terminate (e.g. the harness killing the npm wrapper) can't be caught here —
+// the `predev` free-port guard reclaims the port on the next start instead.
+let closing = false;
+const shutdown = (signal) => {
+  if (closing) return;
+  closing = true;
+  console.log(`\n${signal} → closing server`);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000).unref(); // force-exit if close hangs on open sockets
+};
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => shutdown(sig));

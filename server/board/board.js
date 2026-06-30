@@ -63,6 +63,24 @@ function createLine(o = {}) {
     sessions.delete(id);
     log('line', id, 'closed, exit', exitCode);
   });
+
+  // Optional initial command: type it into the live shell, which stays interactive
+  // afterwards. Wait for the shell's first output (prompt up) before sending —
+  // ConPTY drops keystrokes fed before the shell's input reader is ready — with a
+  // timer fallback in case the shell is silent on start. Fires at most once.
+  const run = typeof o.run === 'string' ? o.run.trim() : '';
+  if (run) {
+    let sent = false;
+    const feed = () => {
+      if (sent || !sessions.has(id)) return;
+      sent = true;
+      try { p.write(run + '\r'); } catch { /* line closed */ }
+    };
+    p.onData(() => setTimeout(feed, 120));
+    setTimeout(feed, 1500);
+    log('line', id, 'will run:', run);
+  }
+
   log('line', id, 'placed:', shell, 'in', cwd);
   return id;
 }

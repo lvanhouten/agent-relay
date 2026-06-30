@@ -2,6 +2,7 @@
   "name": "@agent-relay/server",
   "version": "0.1.0",
   "scripts": {
+    "predev": "node ../scripts/free-port.js 3017",
     "dev": "node --watch index.js",
     "start": "node index.js"
   },

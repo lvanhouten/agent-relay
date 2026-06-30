@@ -6,8 +6,11 @@ const { spawn } = require('child_process');
 
 // Own pipe namespace so the agent-relay board is independent of any standalone
 // switchboard board (which uses \\.\pipe\switchboard). They never collide.
-const CTRL = '\\\\.\\pipe\\agent-relay';
-const dataPipe = id => `\\\\.\\pipe\\agent-relay.${id}`;
+// AGENT_RELAY_PIPE overrides the base name to run an isolated board (tests,
+// parallel instances); board.js and every client must share the same value.
+const PIPE_BASE = process.env.AGENT_RELAY_PIPE || 'agent-relay';
+const CTRL = `\\\\.\\pipe\\${PIPE_BASE}`;
+const dataPipe = id => `\\\\.\\pipe\\${PIPE_BASE}.${id}`;
 
 // Launch the board as a detached daemon that outlives whoever started it.
 function startBoard() {
