@@ -1,0 +1,9 @@
+{
+  "name": "agent-relay-board",
+  "version": "0.1.0",
+  "description": "The switchboard PTY kernel vendored into agent-relay — the board daemon + sb CLI. node-pty resolves from the agent-relay server workspace; this package declares no deps of its own.",
+  "bin": {
+    "sb": "sb.js"
+  },
+  "private": true
+}

@@ -1,54 +1,42 @@
+'use strict';
 const { WebSocketServer } = require('ws');
 const { parse } = require('url');
+const { StringDecoder } = require('string_decoder');
 const { checkToken } = require('./auth');
 
 function createWSHub(server, sessions) {
   const wss = new WebSocketServer({ server });
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
     const parsed = parse(req.url, true);
-    const pathname = parsed.pathname ?? '';
-    const id = pathname.split('/').filter(Boolean).pop();
+    const id = (parsed.pathname ?? '').split('/').filter(Boolean).pop();
 
-    if (!checkToken(parsed.query.token)) {
-      ws.close(1008, 'unauthorized');
+    if (!checkToken(parsed.query.token)) { ws.close(1008, 'unauthorized'); return; }
+    if (!id || !(await sessions.get(id))) { ws.close(1008, 'session not found'); return; }
+
+    // Attach to the board line. Scrollback replays down the data pipe on connect,
+    // so there's no separate history step. Decode raw bytes -> string for the client.
+    const decoder = new StringDecoder('utf8');
+    let handle = null, closed = false;
+    ws.on('close', () => { closed = true; if (handle) handle.detach(); });
+
+    try {
+      handle = await sessions.attach(id, {
+        onData: buf => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'data', payload: decoder.write(buf) })); },
+        onExit: code => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code })); },
+      });
+    } catch {
+      if (ws.readyState === 1) ws.close(1011, 'attach failed');
       return;
     }
+    if (closed) { handle.detach(); return; }   // WS dropped while we were attaching
 
-    if (!id || !sessions.get(id)) {
-      ws.close(1008, 'session not found');
-      return;
-    }
-
-    // replay scrollback so reconnecting clients see history
-    const history = sessions.scrollback(id).join('');
-    if (history) ws.send(JSON.stringify({ type: 'data', payload: history }));
-
-    const onData = (sid, data) => {
-      if (sid === id && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'data', payload: data }));
-      }
-    };
-    const onExit = (sid, code) => {
-      if (sid === id && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'exit', code }));
-      }
-    };
-
-    sessions.on('data', onData);
-    sessions.on('exit', onExit);
-
-    ws.on('message', (raw) => {
+    ws.on('message', raw => {
       try {
         const msg = JSON.parse(raw.toString());
-        if (msg.type === 'input') sessions.write(id, msg.payload);
-        if (msg.type === 'resize') sessions.resize(id, msg.cols, msg.rows);
+        if (msg.type === 'input') handle.write(msg.payload);
+        if (msg.type === 'resize') handle.resize(msg.cols, msg.rows);
       } catch { /* malformed message — ignore */ }
-    });
-
-    ws.on('close', () => {
-      sessions.off('data', onData);
-      sessions.off('exit', onExit);
     });
   });
 }

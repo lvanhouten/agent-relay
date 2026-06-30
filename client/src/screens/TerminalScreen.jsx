@@ -41,7 +41,7 @@ const XTERM_THEMES = {
   },
 };
 
-function useSessionWS(sessionId, token, { onData, onExit }) {
+function useSessionWS(sessionId, token, { onData, onExit, onReady }) {
   const [connStatus, setConnStatus] = React.useState('connecting');
   const wsRef = React.useRef(null);
 
@@ -52,7 +52,7 @@ function useSessionWS(sessionId, token, { onData, onExit }) {
     const ws = new WebSocket(`${proto}//${location.host}/sessions/${sessionId}${qs}`);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnStatus('online');
+    ws.onopen = () => { setConnStatus('online'); onReady?.(); };
     ws.onclose = () => setConnStatus('offline');
     ws.onerror = () => setConnStatus('error');
 
@@ -87,12 +87,16 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
 
   const onDataRef = React.useRef(null);
   const onExitRef = React.useRef(null);
+  const refitRef = React.useRef(null);
   const onBackRef = React.useRef(onBack);
   React.useEffect(() => { onBackRef.current = onBack; }, [onBack]);
 
   const { connStatus, send, resize } = useSessionWS(session.id, token, {
     onData: React.useCallback((data) => onDataRef.current?.(data), []),
     onExit: React.useCallback((code) => onExitRef.current?.(code), []),
+    // On (re)connect the socket is finally OPEN, so push the fitted size to the
+    // board — the mount-time fit fires before the WS opens and gets dropped.
+    onReady: React.useCallback(() => refitRef.current?.(), []),
   });
 
   // Mount xterm once
@@ -108,9 +112,23 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(containerRef.current);
-    fit.fit();
     termRef.current = term;
     fitRef.current = fit;
+
+    let disposed = false;
+    let rafId = 0;
+    const safeFit = () => {
+      if (disposed || !containerRef.current) return;
+      fit.fit();
+      resize(term.cols, term.rows);
+    };
+    refitRef.current = safeFit;
+    // Fit after layout settles, then again once the monospace font has loaded —
+    // font swap changes cell height, and a stale row count clips the last line.
+    // The WS onReady handler also calls this once the socket opens, so the size
+    // actually reaches the board (the resize() above no-ops while it's still connecting).
+    rafId = requestAnimationFrame(safeFit);
+    document.fonts?.ready.then(safeFit);
 
     onDataRef.current = (data) => term.write(data);
     onExitRef.current = (code) => term.writeln(`\r\n\x1b[2m— session exited · code ${code}\x1b[0m`);
@@ -120,13 +138,13 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
       send(data);
     });
 
-    const ro = new ResizeObserver(() => {
-      fit.fit();
-      resize(term.cols, term.rows);
-    });
+    const ro = new ResizeObserver(safeFit);
     ro.observe(containerRef.current);
 
     return () => {
+      disposed = true;
+      cancelAnimationFrame(rafId);
+      refitRef.current = null;
       ro.disconnect();
       term.dispose();
       termRef.current = null;
@@ -184,15 +202,19 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
         </div>
       </header>
 
-      {/* xterm container */}
+      {/* xterm container — padding lives on this wrapper, NOT the mount node.
+          FitAddon measures its parent via getComputedStyle().height, which under
+          box-sizing:border-box is padding-inclusive; padding here would make it
+          over-count rows and clip the last line. */}
       <div
-        ref={containerRef}
         style={{
           flex: 1, overflow: 'hidden',
           background: XTERM_THEMES[theme]?.background ?? '#070b0e',
           padding: 'var(--space-3)',
         }}
-      />
+      >
+        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      </div>
 
       {/* status strip */}
       <footer style={{

@@ -1,109 +1,72 @@
-const pty = require('node-pty');
-const { randomUUID } = require('crypto');
-const { EventEmitter } = require('events');
+'use strict';
+// Board-backed session store. Presents the same surface the API + WS hub already
+// consumed from the old in-process SessionManager, but every operation now goes
+// through the board kernel (board-client) over its pipes. The web tier holds no
+// PTY state, so it can restart without dropping a single session — and sessions
+// are shared with the `sb` CLI / terminal panes.
 const os = require('os');
+const { rpc, attach } = require('./board-client');
 
-const DEFAULT_SHELL = process.platform === 'win32'
-  ? 'powershell.exe'
-  : (process.env.SHELL ?? 'bash');
+function relTime(ms) {
+  const s = Math.max(0, ms) / 1000;
+  if (s < 60) return `${Math.round(s)}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  return `${Math.round(s / 3600)}h ago`;
+}
 
-class SessionManager extends EventEmitter {
-  constructor() {
-    super();
-    this._sessions = new Map();
+// board "line" -> agent-relay session DTO (the shape the client already expects).
+function toDto(line) {
+  return {
+    id: line.id,
+    name: line.name || `session-${line.id}`,
+    shell: line.shell,
+    cwd: line.cwd,
+    pid: line.pid,
+    status: 'online',                          // the board only lists live lines
+    lastActive: relTime(line.idleMs ?? 0),
+  };
+}
+
+class BoardSessions {
+  async list() {
+    const r = await rpc({ cmd: 'list' }).catch(() => null);
+    return r && r.ok ? r.lines.map(toDto) : [];
   }
 
-  spawn({ name, cwd, shell, command } = {}) {
-    const id = randomUUID();
-    const exe = command ?? shell ?? DEFAULT_SHELL;
-    const wd = cwd ?? os.homedir();
+  async get(id) {
+    return (await this.list()).find(s => s.id === id) || null;
+  }
 
-    const proc = pty.spawn(exe, [], {
-      name: 'xterm-256color',
-      cols: 220,
-      rows: 50,
+  async spawn({ name, cwd, shell, command } = {}) {
+    const wd = cwd || os.homedir();
+    const r = await rpc({
+      cmd: 'new',
+      open: false,                             // the browser is the "pane" — no terminal
+      name: (name ?? '').trim(),
+      shell: command || shell || undefined,    // undefined -> board's default shell
       cwd: wd,
-      env: process.env,
     });
-
-    const session = {
-      id,
-      name: (name ?? '').trim() || `session-${this._sessions.size + 1}`,
-      shell: exe,
-      cwd: wd,
-      pid: proc.pid,
-      status: 'online',
-      startedAt: Date.now(),
-      lastActiveAt: Date.now(),
-      scrollback: [],
-      proc,
-    };
-
-    proc.onData((data) => {
-      session.lastActiveAt = Date.now();
-      session.scrollback.push(data);
-      if (session.scrollback.length > 1000) session.scrollback.shift();
-      this.emit('data', id, data);
-    });
-
-    proc.onExit(({ exitCode }) => {
-      session.status = 'offline';
-      this.emit('exit', id, exitCode);
-    });
-
-    this._sessions.set(id, session);
-    return this._dto(session);
-  }
-
-  write(id, data) {
-    const s = this._sessions.get(id);
-    if (!s || s.status === 'offline') return false;
-    s.proc.write(data);
-    return true;
-  }
-
-  resize(id, cols, rows) {
-    const s = this._sessions.get(id);
-    if (s && s.status !== 'offline') s.proc.resize(cols, rows);
-  }
-
-  kill(id) {
-    const s = this._sessions.get(id);
-    if (!s) return false;
-    try { s.proc.kill(); } catch { /* already dead */ }
-    this._sessions.delete(id);
-    return true;
-  }
-
-  get(id) {
-    const s = this._sessions.get(id);
-    return s ? this._dto(s) : null;
-  }
-
-  list() {
-    return [...this._sessions.values()].map((s) => this._dto(s));
-  }
-
-  scrollback(id) {
-    return this._sessions.get(id)?.scrollback ?? [];
-  }
-
-  _dto(s) {
-    const idle = (Date.now() - s.lastActiveAt) / 1000;
-    const lastActive =
-      idle < 60  ? `${Math.round(idle)}s ago`
-      : idle < 3600 ? `${Math.round(idle / 60)}m ago`
-      : `${Math.round(idle / 3600)}h ago`;
+    if (!r || !r.ok) throw new Error('board refused spawn');
     return {
-      id: s.id,
-      name: s.name,
-      shell: s.shell,
-      cwd: s.cwd,
-      pid: s.pid,
-      status: s.status,
-      lastActive,
+      id: r.id,
+      name: r.name || `session-${r.id}`,
+      shell: r.shell,
+      cwd: wd,
+      pid: r.pid ?? null,
+      status: 'online',
+      lastActive: 'just now',
     };
+  }
+
+  async kill(id) {
+    const r = await rpc({ cmd: 'end', id }).catch(() => null);
+    return !!(r && r.ok);
+  }
+
+  // Per-WS attach: returns { write, resize, detach }. Scrollback replays on connect.
+  attach(id, handlers) {
+    return attach(id, handlers);
   }
 }
 
-module.exports = { SessionManager };
+module.exports = { BoardSessions };
