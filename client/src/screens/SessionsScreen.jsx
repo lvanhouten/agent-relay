@@ -8,7 +8,7 @@ import { Input } from '@ds/Input.jsx';
 import { listSessions, createSession, killSession } from '../api.js';
 import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon } from 'lucide-react';
 
-const AGENTS = ['claude', 'bash', 'zsh', 'powershell'];
+const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
 function TerminalPreview({ lines = [] }) {
   return (
@@ -80,13 +80,13 @@ function SessionCard({ session, onAttach, onKill }) {
 function NewSessionDialog({ onClose, onCreate }) {
   const [name, setName] = React.useState('');
   const [cwd, setCwd] = React.useState('~/');
-  const [agent, setAgent] = React.useState('claude');
+  const [command, setCommand] = React.useState('claude');
 
   const handleCreate = () => {
     onCreate({
       name: name.trim() || 'untitled',
       cwd,
-      command: agent === 'claude' ? 'claude' : agent,
+      command: command.trim() || undefined, // optional; runs in the shell, which stays open
     });
   };
 
@@ -128,22 +128,33 @@ function NewSessionDialog({ onClose, onCreate }) {
             fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
             textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
           }}>
-            Agent / shell
+            Initial command
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {AGENTS.map((a) => (
-              <button key={a} onClick={() => setAgent(a)} style={{
+            {QUICK_COMMANDS.map((c) => (
+              <button key={c} onClick={() => setCommand(c)} style={{
                 flex: 1, height: 36, cursor: 'pointer',
                 fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
                 borderRadius: 'var(--radius-md)',
-                border: `1px solid ${agent === a ? 'var(--border-accent)' : 'var(--border-default)'}`,
-                background: agent === a ? 'var(--accent-soft)' : 'var(--surface-card)',
-                color: agent === a ? 'var(--text-accent)' : 'var(--text-body)',
+                border: `1px solid ${command === c ? 'var(--border-accent)' : 'var(--border-default)'}`,
+                background: command === c ? 'var(--accent-soft)' : 'var(--surface-card)',
+                color: command === c ? 'var(--text-accent)' : 'var(--text-body)',
               }}>
-                {a}
+                {c}
               </button>
             ))}
           </div>
+          <Input
+            mono
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="npm run dev — leave blank for a plain shell"
+          />
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', color: 'var(--text-faint)',
+          }}>
+            Runs on start; the shell stays open when it exits.
+          </span>
         </div>
 
         <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>

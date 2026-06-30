@@ -5,7 +5,19 @@
 // PTY state, so it can restart without dropping a single session — and sessions
 // are shared with the `sb` CLI / terminal panes.
 const os = require('os');
+const path = require('path');
 const { rpc, attach } = require('./board-client');
+
+// Expand a leading ~ and fall back to home. The board hands cwd straight to
+// pty.spawn, which throws on a literal "~/".
+function resolveCwd(cwd) {
+  const raw = (cwd ?? '').trim();
+  if (!raw) return os.homedir();
+  if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
+    return path.join(os.homedir(), raw.slice(1).replace(/^[\\/]/, ''));
+  }
+  return raw;
+}
 
 function relTime(ms) {
   const s = Math.max(0, ms) / 1000;
@@ -38,12 +50,13 @@ class BoardSessions {
   }
 
   async spawn({ name, cwd, shell, command } = {}) {
-    const wd = cwd || os.homedir();
+    const wd = resolveCwd(cwd);
     const r = await rpc({
       cmd: 'new',
-      open: false,                             // the browser is the "pane" — no terminal
+      open: false,                              // the browser is the "pane" — no terminal
       name: (name ?? '').trim(),
-      shell: command || shell || undefined,    // undefined -> board's default shell
+      shell: shell || undefined,                // which interactive shell; undefined -> board default
+      run: (command ?? '').trim() || undefined, // initial command typed into the shell; it stays open
       cwd: wd,
     });
     if (!r || !r.ok) throw new Error('board refused spawn');
