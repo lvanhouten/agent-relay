@@ -47,23 +47,55 @@ function useSessionWS(sessionId, token, { onData, onExit, onReady }) {
 
   React.useEffect(() => {
     if (!sessionId) return;
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
-    const ws = new WebSocket(`${proto}//${location.host}/sessions/${sessionId}${qs}`);
-    wsRef.current = ws;
+    let stopped = false;   // component unmounted / deps changed — stop for good
+    let ended = false;     // session exited or is gone — reconnecting is pointless
+    let attempt = 0;
+    let retryTimer = null;
 
-    ws.onopen = () => { setConnStatus('online'); onReady?.(); };
-    ws.onclose = () => setConnStatus('offline');
-    ws.onerror = () => setConnStatus('error');
+    const connect = () => {
+      if (stopped) return;
+      setConnStatus(attempt === 0 ? 'connecting' : 'reconnecting');
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+      const ws = new WebSocket(`${proto}//${location.host}/sessions/${sessionId}${qs}`);
+      wsRef.current = ws;
 
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'data') onData(msg.payload);
-      if (msg.type === 'exit') { setConnStatus('offline'); onExit(msg.code); }
+      ws.onopen = () => {
+        const reconnected = attempt > 0;
+        attempt = 0;
+        setConnStatus('online');
+        onReady?.(reconnected);   // reconnected -> caller resets the terminal before the replay
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'data') onData(msg.payload);
+        if (msg.type === 'exit') { ended = true; setConnStatus('offline'); onExit(msg.code); }
+      };
+
+      ws.onerror = () => { /* onclose drives recovery */ };
+
+      ws.onclose = (ev) => {
+        if (wsRef.current === ws) wsRef.current = null;
+        if (stopped) return;
+        // 1008 = unauthorized / session not found: permanent, don't retry.
+        if (ended || ev.code === 1008) { setConnStatus('offline'); return; }
+        setConnStatus('reconnecting');
+        const delay = Math.min(500 * 2 ** attempt, 8000);   // 0.5s → 8s cap
+        attempt += 1;
+        retryTimer = setTimeout(connect, delay);
+      };
     };
 
-    return () => { ws.close(); wsRef.current = null; };
-  // onData/onExit are stable refs — intentionally excluded from deps
+    connect();
+
+    return () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      const ws = wsRef.current;
+      if (ws) { ws.onclose = null; ws.close(); wsRef.current = null; }
+    };
+  // onData/onExit/onReady are stable refs — intentionally excluded from deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, token]);
 
@@ -95,8 +127,13 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
     onData: React.useCallback((data) => onDataRef.current?.(data), []),
     onExit: React.useCallback((code) => onExitRef.current?.(code), []),
     // On (re)connect the socket is finally OPEN, so push the fitted size to the
-    // board — the mount-time fit fires before the WS opens and gets dropped.
-    onReady: React.useCallback(() => refitRef.current?.(), []),
+    // board — the mount-time fit fires before the WS opens and gets dropped. On a
+    // reconnect, reset the terminal first so the board's scrollback replay repaints
+    // current state instead of appending a duplicate below the stale buffer.
+    onReady: React.useCallback((reconnected) => {
+      if (reconnected) termRef.current?.reset();
+      refitRef.current?.();
+    }, []),
   });
 
   // Mount xterm once
@@ -160,7 +197,11 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
 
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const hostLabel = host.replace(/^https?:\/\//, '');
-  const dotStatus = connStatus === 'online' ? 'online' : connStatus === 'offline' ? 'offline' : 'idle';
+  const dotStatus = connStatus === 'online' ? 'online'
+    : connStatus === 'offline' ? 'offline'
+    : 'idle';
+  // surface connecting/reconnecting explicitly instead of a bare "idle" dot
+  const statusLabel = (connStatus === 'connecting' || connStatus === 'reconnecting') ? connStatus : undefined;
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
@@ -188,7 +229,7 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
           {session.cwd}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <StatusDot status={dotStatus} size="sm" />
+          <StatusDot status={dotStatus} size="sm" label={statusLabel} />
           <span style={{ width: 1, height: 22, background: 'var(--border-subtle)', margin: '0 4px' }} />
           <IconButton label="Copy selection" onClick={() => navigator.clipboard?.writeText(termRef.current?.getSelection() ?? '')}>
             <Copy size={15} />

@@ -34,7 +34,8 @@ const HELP = `switchboard — a PTY exchange for your terminal
 
 usage:
   sb up             bring the board online
-  sb new [shell]    start a new line + join a pane to it (e.g. sb new bash)
+  sb new [shell] [--run <cmd>]
+                    start a new line + join a pane (e.g. sb new --run claude)
   sb list           list active lines
   sb join <id>      join a new pane to an existing line
   sb end <id>       end a line
@@ -42,7 +43,9 @@ usage:
   sb help           show this help`;
 
 async function main() {
-  const [cmd, arg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const cmd = args[0];
+  const arg = args[1];
   switch (cmd) {
     case 'up': {
       const sock = await connectControl();
@@ -51,10 +54,19 @@ async function main() {
       break;
     }
     case 'new': {
+      // sb new [shell] [--run <cmd>] — optional shell, optional initial command
+      // typed into the shell (which stays open), mirroring the web client.
+      const rest = args.slice(1);
+      let shell, run;
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === '--run' || rest[i] === '-r') run = rest[++i];
+        else if (!shell && !rest[i].startsWith('-')) shell = rest[i];
+      }
       const msg = { cmd: 'new', open: true, cwd: process.cwd(), spawn: spawnRecipe() };
-      if (arg) msg.shell = arg;
+      if (shell) msg.shell = shell;
+      if (run) msg.run = run;
       const r = await rpc(msg);
-      console.log(`line ${r.id} started — joining a pane`);
+      console.log(`line ${r.id} started${run ? ` (running: ${run})` : ''} — joining a pane`);
       break;
     }
     case 'list':
