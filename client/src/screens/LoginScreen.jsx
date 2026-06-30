@@ -7,7 +7,7 @@ const HOST_KEY = 'ar-host';
 
 export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [host, setHost] = React.useState(
-    () => localStorage.getItem(HOST_KEY) ?? 'http://localhost:3001'
+    () => localStorage.getItem(HOST_KEY) ?? 'http://localhost:3017'
   );
   const [token, setToken] = React.useState('');
   const [error, setError] = React.useState('');
@@ -76,7 +76,7 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
             value={host}
             onChange={(e) => setHost(e.target.value)}
             onKeyDown={onKey}
-            placeholder="http://localhost:3001"
+            placeholder="http://localhost:3017"
             mono
           />
           <Input
