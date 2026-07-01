@@ -33,7 +33,7 @@ function toDto(line) {
     name: line.name || `session-${line.id}`,
     shell: line.shell,
     cwd: line.cwd,
-    pid: line.pid,
+    pid: line.pid ?? null,
     status: 'online',                          // the board only lists live lines
     lastActive: relTime(line.idleMs ?? 0),
   };
@@ -84,13 +84,13 @@ class BoardSessions {
       cwd: wd,
     });
     if (!r || !r.ok) throw new Error('board refused spawn');
+    // Build the DTO through the same toDto() the list path uses, off the board's
+    // own `new` reply, so the shape can't drift between the two call sites and the
+    // reported cwd is the value the board actually recorded — not our local
+    // resolveCwd() guess. `wd` is the fallback for an older board that doesn't echo
+    // cwd; idleMs is 0 (just spawned).
     return {
-      id: r.id,
-      name: r.name || `session-${r.id}`,
-      shell: r.shell,
-      cwd: wd,
-      pid: r.pid ?? null,
-      status: 'online',
+      ...toDto({ id: r.id, name: r.name, shell: r.shell, cwd: r.cwd ?? wd, pid: r.pid, idleMs: 0 }),
       lastActive: 'just now',
     };
   }
