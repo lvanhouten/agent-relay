@@ -10,6 +10,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { connectControl, connectPipe, dataPipe } = require('./lib');
+const { waitForIdleOrExit } = require('./wait');
 
 function rpc(msg, opts) {
   return new Promise((resolve, reject) => {
@@ -135,6 +136,35 @@ server.registerTool('switchboard_read_output', {
     return { content: [{ type: 'text', text }] };
   } catch (e) {
     return { content: [{ type: 'text', text: `no such line, or it has ended (${e.code || e.message})` }], isError: true };
+  }
+});
+
+server.registerTool('switchboard_wait_for_idle', {
+  title: 'Wait for a switchboard line to go idle or exit',
+  description: 'Blocks until a line stops producing new output for idleMs (it ' +
+    'went idle — finished a turn, hit a prompt, is waiting on a decision, or is ' +
+    'wedged; this call cannot tell which) or its process exits, whichever happens ' +
+    'first, up to maxWaitMs. Call this the way you would call any tool that might ' +
+    'take a while and that you want to be notified about rather than block on — ' +
+    'the tool call itself is the thing to run in the background; its return is the ' +
+    'wake. This only works if your harness can run an arbitrary MCP tool call in ' +
+    'the background; if it cannot (e.g. only plain shell commands are ' +
+    'backgroundable), run `sb wait <id> [idleMs] [maxWaitMs]` instead — same ' +
+    'detection logic (server/board/wait.js), reachable as a Bash command. After ' +
+    'either one returns, use switchboard_read_output to see what actually ' +
+    'happened; neither tells you what or why, only that something is worth ' +
+    'looking at.',
+  inputSchema: {
+    id: z.string().describe('Line id'),
+    idleMs: z.number().int().positive().optional().describe('No new output for this long counts as idle (default 12000)'),
+    maxWaitMs: z.number().int().positive().optional().describe('Give up and return reason:"timeout" after this long (default 600000)'),
+  },
+}, async ({ id, idleMs, maxWaitMs }) => {
+  try {
+    const r = await waitForIdleOrExit(id, { idleMs, maxWaitMs });
+    return { content: [{ type: 'text', text: JSON.stringify(r) }] };
+  } catch (e) {
+    return { content: [{ type: 'text', text: `no such line, or it has already ended (${e.code || e.message})` }], isError: true };
   }
 });
 
