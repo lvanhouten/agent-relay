@@ -72,6 +72,13 @@ Closure check: `mcp-server.test.js` — `endLine (C1 leak, round 2)` asserts `fo
 
 **W2 (new). `handleKill` has the identical double-submit shape `handleCreate` was just fixed for, with no guard at all** — `client/src/screens/SessionsScreen.jsx:44-46, 226-240` · confidence 80
 
+**Status:** Resolved (A) — see below.
+**Resolution:** Exactly the finding as framed. Added a `killingRef` Set (per-id, not a single ref like `creatingRef` — killing two *different* sessions concurrently is legitimate; only a repeat click on the *same* id needs blocking), checked synchronously before the first `await`, mirroring `handleCreate`'s existing pattern.
+
+Closure check: named guarded code path — the same standard the round-2 verify itself accepted for `handleCreate`'s identical fix ("no DOM test... legitimate substitute for this class of bug"); no component-rendering test harness exists in this repo. Full suite green (32 server, 12 client). Commit: `92cd1e7`.
+
+---
+
 The Terminate `IconButton`'s `onClick` (`:44-46`) calls `onKill(session.id)` directly with **no `disabled` prop passed** (unlike the original half-mitigated `handleCreate` bug — this one lacks even the DOM-disabled fallback) and **no ref guard**. A fast double-click fires two concurrent `killSession(id, ...)` calls against the same session id; the loser's error response is swallowed by a bare `finally` (`:238-239`) with no user-facing message. Same class of bug W4 named, on a file this round's remediation already touched, just not generalized to the sibling handler.
 
 **Fix:** Apply the same `creatingRef`-style synchronous guard pattern to `handleKill`.
@@ -80,6 +87,13 @@ The Terminate `IconButton`'s `onClick` (`:44-46`) calls `onKill(session.id)` dir
 
 **W3 (new). `api.test.js`'s local error-handling middleware still encodes the pre-fix N3 behavior, so the real fix has zero regression coverage** — `server/src/api.test.js:13-25` · confidence 80
 
+**Status:** Resolved (A) — see below.
+**Resolution:** Extracted the real handler to `server/src/errorHandler.js`, imported by both `index.js` and `api.test.js` — one implementation, drift is no longer possible. Also added the missing branch coverage the finding named: 3 direct unit tests against the real export (mock `res`/`next`, no live HTTP request needed), including one that actually drives the `headersSent`-true path.
+
+Closure check: `errorHandler: delegates to next(err) when headers are already sent` — fails against the old duplicate's `if (res.headersSent) return;` behavior (would call neither `status`/`json` nor `next`), passes against the real handler. Full suite green (32 server, 12 client). Commit: `f7488dd`.
+
+---
+
 This test file builds its own throwaway Express app with a hand-rolled error handler for test isolation, rather than mounting the real `server/index.js`. That duplicate was never updated when `2a4a005` fixed N3-new — it still reads `if (res.headersSent) return;` while the real `index.js:37` now reads `return next(err)`. The 24/24 green suite includes no coverage of the actual fixed line; a future "simplification" of `index.js`'s error handler (plausibly copying the pattern visible in this test file) would silently regress N3-new with no test failure.
 
 **Fix:** Either import/mount the real `index.js` app in `api.test.js`, or add a dedicated assertion against the actual handler.
@@ -87,6 +101,13 @@ This test file builds its own throwaway Express app with a hand-rolled error han
 ---
 
 **W4 (new). `TerminalScreen.jsx`'s message dispatch trusts `msg.payload`'s shape once `msg.type` matches, reopening N4-orig's failure mode one field deeper** — `client/src/screens/TerminalScreen.jsx:82-83` · confidence 60
+
+**Status:** Resolved (A) — see below.
+**Resolution:** Exactly the finding as framed. Added `isValidDataPayload(msg)` to `wsFrame.js` alongside `parseFrame` (`typeof msg.payload === 'string'`), so the per-type payload guard is unit-testable the same way the envelope guard already is. Dispatch site now requires both `msg.type === 'data'` and `isValidDataPayload(msg)`.
+
+Closure check: `wsFrame.test.js` — string payload accepted, object/number/null/missing payloads rejected (fails on the pre-fix dispatch, which had no such check). Full suite green (32 server, 12 client). Commit: `cf85913`.
+
+---
 
 `parseFrame` only guarantees "parsed to a non-null, non-array-excluded... actually non-null object" — it says nothing about the shape of a given `type`'s payload. `if (msg.type === 'data') onData(msg.payload)` passes `msg.payload` straight to `term.write()` (`:186`) with no type check; a well-formed-envelope-but-wrong-shaped frame (`{"type":"data","payload":{...}}`) either silently corrupts terminal output via string coercion or throws inside `xterm.js`'s `write()` — inside the same `onmessage` handler N4-orig's fix was written to protect. The object-shape gate was closed; the per-type field-shape gate was not.
 
@@ -140,14 +161,14 @@ Covers the **new findings** from this round's sweep only; the close-out table ab
 |----|----------|------|---------|--------|
 | ~~C1~~ | CRITICAL | 80 | `refreshBoot`'s TTL short-circuit reopens C1's re-corruption window | ✅ Resolved in `1244bfb` |
 | ~~W1~~ | WARNING | 90 | `switchboard_end_line` skips `forgetLine` on RPC rejection | ✅ Resolved in `1244bfb` |
-| W2 | WARNING | 80 | `handleKill` has no double-submit guard (same shape as W4) | (open) |
-| W3 | WARNING | 80 | `api.test.js`'s duplicate error handler gives zero coverage for N3-new | (open) |
-| W4 | WARNING | 60 | `TerminalScreen.jsx` trusts `msg.payload` shape without validation | (open) |
+| ~~W2~~ | WARNING | 80 | `handleKill` has no double-submit guard (same shape as W4) | ✅ Resolved in `92cd1e7` |
+| ~~W3~~ | WARNING | 80 | `api.test.js`'s duplicate error handler gives zero coverage for N3-new | ✅ Resolved in `f7488dd` |
+| ~~W4~~ | WARNING | 60 | `TerminalScreen.jsx` trusts `msg.payload` shape without validation | ✅ Resolved in `cf85913` |
 | N1 | NOTE | 40 | `board.js`'s `onData` broadcast loop remains unguarded (same shape as N10) | (open) |
 | N2 | NOTE | 55 | `sessions.js` constructor injection weakens the "single seam" guarantee | (open) |
 | N3 | NOTE | 40 | `ws.js`'s N4-new log line narrower than framed | (open) |
 | N4 | NOTE | 30 | `hostTrust.js` scheme regex assumption undocumented | (open) |
 
-**What's left (as of `1244bfb`):** Resolved: C1, W1 (both closed in the round-3 interactive pass, commit `1244bfb`). Open: W2, W3, W4, N1, N2, N3, N4 — none CRITICAL, none block-merge on their own severity, but not yet worked. Re-review recommended: `/adversarial-review --diff 1244bfb` covers the round-3 fix itself (new code the original panel never saw).
+**What's left (as of `cf85913`):** Resolved: C1, W1, W2, W3, W4 (round-3 interactive pass, commits `1244bfb`, `92cd1e7`, `f7488dd`, `cf85913`). Open: N1, N2, N3, N4 — all NOTE severity, none block-merge, left as-is per the user's explicit scope for this pass ("fix the rest of the Ws"). Re-review recommended before merge: an independent verify over the full round-3 range (`8711f9b..cf85913`) covers all four fixes as new code the original panel never saw.
 
 **Original findings requiring another remediation pass:** C1 (regressed — leak + re-corruption both need fixing in `mcp-server.js`), N2-new (same root cause as C1, closed once C1 is).
