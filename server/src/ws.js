@@ -38,8 +38,16 @@ function createWSHub(server, sessions) {
         onData: buf => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'data', payload: decoder.write(buf) })); },
         onExit: code => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code })); },
       });
-    } catch {
-      if (ws.readyState === 1) ws.close(1011, 'attach failed');
+    } catch (e) {
+      // The get()->attach() gap is an inherent TOCTOU: the line can end between
+      // the existence check and the attach. When it does, the data pipe is gone
+      // and connectPipe rejects with ENOENT/ECONNREFUSED — that's "the session
+      // just ended" (permanent, code 1008), NOT the generic "attach failed"
+      // (1011) the old catch reported, which misled the client into treating a
+      // normal end as a retryable error.
+      if (ws.readyState !== 1) return;
+      const gone = e && (e.code === 'ENOENT' || e.code === 'ECONNREFUSED');
+      gone ? ws.close(1008, 'session not found') : ws.close(1011, 'attach failed');
       return;
     }
     if (closed) { handle.detach(); return; }   // WS dropped while we were attaching
