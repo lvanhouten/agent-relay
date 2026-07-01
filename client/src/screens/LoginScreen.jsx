@@ -29,6 +29,11 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const connect = async () => {
     const h = host.trim();
     if (!h) { setError('Enter a relay host.'); return; }
+    // Catch a malformed host up front with a distinct message. (The post-fetch
+    // catch below can't reliably tell DNS failure from CORS from network-down —
+    // browser fetch collapses them into one opaque TypeError — but an unparseable
+    // URL is distinguishable here, before the request.)
+    try { new URL(h); } catch { setError('That doesn\'t look like a valid host URL (e.g. http://localhost:3017).'); return; }
 
     // The token is sent to `h` as a Bearer header on the very first request.
     // Before doing that, refuse to hand it to a host we haven't successfully
