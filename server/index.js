@@ -15,6 +15,18 @@ app.use(express.json());
 const sessions = new BoardSessions();
 app.use('/api', authMiddleware, createAPI(sessions));
 
+// Final error handler. Without it, Express's default handler leaks the full stack
+// trace in the response body whenever NODE_ENV isn't 'production' (the default
+// here). Log server-side, return a generic body — a board-unreachable failure is
+// a transient 503, anything else a generic 500 with no internal detail.
+// eslint-disable-next-line no-unused-vars -- Express identifies error handlers by arity (4 args)
+app.use((err, req, res, next) => {
+  console.error('[api] unhandled route error:', err && err.stack ? err.stack : err);
+  if (res.headersSent) return;
+  if (err && err.boardUnreachable) { res.status(503).json({ error: 'board unreachable' }); return; }
+  res.status(500).json({ error: 'internal error' });
+});
+
 const server = createServer(app);
 createWSHub(server, sessions);
 
