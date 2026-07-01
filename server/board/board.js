@@ -123,20 +123,32 @@ function applyMin(s) {
 // WezTerm when the recipe is absent (older client / undetectable caller).
 const DEFAULT_RECIPE = { file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'], env: {} };
 
-function openPane(id, recipe) {
+// Decide whether a launch recipe can spawn a working pane. The {cmd} token is
+// only substituted when it's its OWN argv element. If a recipe embeds it inside a
+// larger string (e.g. SWITCHBOARD_TERM="sh -c '{cmd}'" splits to
+// ["sh","-c","'{cmd}'"]), no element equals '{cmd}', so it would silently spawn
+// with the literal token and the pane never patches in. Factored out so the
+// refusal logic is unit-testable without launching a process.
+function paneSpawnDecision(recipe) {
   const r = recipe && recipe.file ? recipe : DEFAULT_RECIPE;
+  const standalone = r.args.some(a => a === '{cmd}');
+  const embedded = r.args.some(a => a !== '{cmd}' && a.includes('{cmd}'));
+  return { recipe: r, standalone, embedded };
+}
+
+// Returns true if a pane process was spawned, false if the recipe was refused
+// (no standalone {cmd} arg). The caller threads this into the RPC reply so a
+// misconfigured SWITCHBOARD_TERM surfaces as paneOpened:false instead of a silent
+// ok:true with no window (N7's residual / new-N1). Note this reports the spawn
+// *attempt*, not the pane's eventual liveness — a spawn that later errors is
+// reported asynchronously via the child 'error' log, which openPane can't await.
+function openPane(id, recipe) {
+  const { recipe: r, standalone, embedded } = paneSpawnDecision(recipe);
   const cmd = [process.execPath, path.join(__dirname, 'patch.js'), id];
-  // The {cmd} token is only substituted when it's its OWN argv element. If a
-  // recipe embeds it inside a larger string (e.g. SWITCHBOARD_TERM="sh -c
-  // '{cmd}'" splits to ["sh","-c","'{cmd}'"]), no element equals '{cmd}', so it
-  // would silently spawn with the literal token and the pane never patches in.
-  // Detect that and refuse loudly instead of spawning a broken pane.
-  const hasStandaloneToken = r.args.some(a => a === '{cmd}');
-  const hasEmbeddedToken = r.args.some(a => a !== '{cmd}' && a.includes('{cmd}'));
-  if (!hasStandaloneToken) {
+  if (!standalone) {
     log('pane spawn skipped for line', id, '- recipe has no standalone {cmd} arg',
-      hasEmbeddedToken ? '({cmd} is embedded in a larger string — it must be its own argument; join the line manually with `sb join ' + id + '`)' : '');
-    return;
+      embedded ? '({cmd} is embedded in a larger string — it must be its own argument; join the line manually with `sb join ' + id + '`)' : '');
+    return false;
   }
   const args = r.args.flatMap(a => (a === '{cmd}' ? cmd : [a]));
   const child = spawn(r.file, args, {
@@ -146,15 +158,19 @@ function openPane(id, recipe) {
   });
   child.on('error', e => log('pane spawn failed for line', id, 'via', r.file, '-', e.message));
   child.unref();
+  return true;
 }
 
 function handle(m, sock) {
   switch (m.cmd) {
     case 'new': {
       const id = createLine(m);
-      if (m.open !== false) openPane(id, m.spawn);
+      // paneOpened: true/false when a pane was requested (so a caller learns a
+      // refused recipe didn't produce a window — N7/new-N1); null when no pane was
+      // requested at all (open:false — the web/MCP case, the browser is the pane).
+      const paneOpened = m.open !== false ? openPane(id, m.spawn) : null;
       const s = sessions.get(id);
-      sock.write(JSON.stringify({ ok: true, boot: BOOT, id, pid: s.pty.pid, shell: s.shell, name: s.name, cwd: s.cwd, dataPipe: dataPipe(id) }) + '\n');
+      sock.write(JSON.stringify({ ok: true, boot: BOOT, id, pid: s.pty.pid, shell: s.shell, name: s.name, cwd: s.cwd, dataPipe: dataPipe(id), paneOpened }) + '\n');
       break;
     }
     case 'list': {
@@ -173,8 +189,10 @@ function handle(m, sock) {
     }
     case 'join': {
       const s = sessions.get(m.id);
-      if (s) openPane(m.id, m.spawn);
-      sock.write(JSON.stringify({ ok: !!s, id: m.id, dataPipe: s ? dataPipe(m.id) : null }) + '\n');
+      // paneOpened: the result of the join's whole point (opening a pane), or null
+      // when the line doesn't exist so no pane was even attempted (N7/new-N1).
+      const paneOpened = s ? openPane(m.id, m.spawn) : null;
+      sock.write(JSON.stringify({ ok: !!s, id: m.id, dataPipe: s ? dataPipe(m.id) : null, paneOpened }) + '\n');
       break;
     }
     case 'end': {
@@ -235,4 +253,11 @@ board.on('error', e => {
   log('board error:', e.message);
   throw e;
 });
-board.listen(CTRL, () => log('switchboard online:', CTRL));
+
+// Only bind the control pipe when run as the daemon (`node board.js`); when
+// required by a test, just expose the pure helpers below.
+if (require.main === module) {
+  board.listen(CTRL, () => log('switchboard online:', CTRL));
+}
+
+module.exports = { paneSpawnDecision, openPane, handle };
