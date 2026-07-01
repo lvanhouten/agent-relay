@@ -7,7 +7,7 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import { ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Sun, Moon } from 'lucide-react';
-import { parseFrame } from '../wsFrame.js';
+import { parseFrame, isValidDataPayload } from '../wsFrame.js';
 
 const XTERM_THEMES = {
   dark: {
@@ -79,7 +79,7 @@ function useSessionWS(sessionId, token, { onData, onExit, onReady }) {
         // silently stops receiving" freeze this handler exists to prevent.
         const msg = parseFrame(e.data);
         if (!msg) return;
-        if (msg.type === 'data') onData(msg.payload);
+        if (msg.type === 'data' && isValidDataPayload(msg)) onData(msg.payload);
         if (msg.type === 'exit') { ended = true; setConnStatus('offline'); onExit(msg.code); }
       };
 
