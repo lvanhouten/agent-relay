@@ -1,6 +1,9 @@
 const BASE = '/api';
 
-function headers(token) {
+// Single source of truth for request headers (incl. the Bearer scheme). Exported
+// so other call sites — e.g. LoginScreen's connection probe — don't re-implement
+// the auth-header construction and silently drift if the scheme ever changes.
+export function headers(token) {
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

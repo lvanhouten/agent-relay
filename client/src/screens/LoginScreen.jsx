@@ -2,8 +2,18 @@ import React from 'react';
 import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
 import { Sun, Moon } from 'lucide-react';
+import { headers } from '../api.js';
 
 const HOST_KEY = 'ar-host';
+const TRUSTED_HOST_KEY = 'ar-host-trusted'; // last host a probe actually succeeded against
+
+// localhost / loopback is inherently trusted — the token can't leave the machine.
+function isLocalhost(h) {
+  try {
+    const { hostname } = new URL(h);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+  } catch { return false; }
+}
 
 export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [host, setHost] = React.useState(
@@ -12,19 +22,35 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [token, setToken] = React.useState('');
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  // When set, the user has been warned the host is untrusted and must click
+  // Connect again to actually send the token to it.
+  const [pendingHost, setPendingHost] = React.useState(null);
 
   const connect = async () => {
     const h = host.trim();
     if (!h) { setError('Enter a relay host.'); return; }
+
+    // The token is sent to `h` as a Bearer header on the very first request.
+    // Before doing that, refuse to hand it to a host we haven't successfully
+    // connected to before, unless it's localhost — `ar-host` is only ever a
+    // convenience seed and can be pre-set by a hostile actor (crafted link,
+    // shared machine), so a stored value is NOT proof of trust. Require an
+    // explicit second click that acknowledges the untrusted host.
+    const trusted = localStorage.getItem(TRUSTED_HOST_KEY);
+    if (token && !isLocalhost(h) && h !== trusted && pendingHost !== h) {
+      setPendingHost(h);
+      setError(`This will send your access token to ${h}, which you haven't connected to before. Click Connect again to confirm you trust this host.`);
+      return;
+    }
+    setPendingHost(null);
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${h}/api/sessions`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`${h}/api/sessions`, { headers: headers(token) });
       if (res.status === 401) { setError('Invalid access token.'); return; }
       if (!res.ok) throw new Error();
       localStorage.setItem(HOST_KEY, h);
+      localStorage.setItem(TRUSTED_HOST_KEY, h); // this host proved reachable — trust it next time
       onConnect(h, token);
     } catch {
       setError('Could not reach relay. Check the host and try again.');
