@@ -170,8 +170,24 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
   const [createError, setCreateError] = React.useState('');
   const [creating, setCreating] = React.useState(false);
 
+  // Sequence guard so overlapping load()s (a slow poll interleaving with a fresh
+  // one) can't let an older response stomp a newer one, and a set of ids killed
+  // locally but possibly still present in an in-flight poll's stale list, so a
+  // just-killed session can't flicker back for a poll cycle. Refs, not state — we
+  // never render off them and don't want them to retrigger the effect.
+  const loadSeq = React.useRef(0);
+  const latestApplied = React.useRef(0);
+  const killed = React.useRef(new Set());
+
   const load = React.useCallback(async () => {
-    try { setSessions(await listSessions(token)); } catch { /* offline — keep stale list */ }
+    const seq = ++loadSeq.current;
+    try {
+      const list = await listSessions(token);
+      // Drop a stale response: a newer load() already applied its result.
+      if (seq < latestApplied.current) return;
+      latestApplied.current = seq;
+      setSessions(list.filter((s) => !killed.current.has(s.id)));
+    } catch { /* offline — keep stale list */ }
   }, [token]);
 
   React.useEffect(() => {
@@ -200,8 +216,19 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
   const openDialog = () => { setCreateError(''); setDialog(true); };
 
   const handleKill = async (id) => {
-    await killSession(id, token);
+    // Mark before the request so any poll response that resolves during the kill
+    // (and still lists this id from a stale board snapshot) is filtered out — no
+    // flicker-back. Remove the mark once we've confirmed it's gone from a fresh
+    // list, so a future reused id isn't permanently hidden.
+    killed.current.add(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await killSession(id, token);
+    } finally {
+      // Reconcile against a fresh list, then stop suppressing the id.
+      await load();
+      killed.current.delete(id);
+    }
   };
 
   const filtered = sessions.filter((s) =>
