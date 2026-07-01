@@ -101,6 +101,10 @@ function createLine(o = {}) {
   return id;
 }
 
+// A valid terminal dimension: a finite positive integer. Guards the resize path
+// so garbage can't poison a line's size via NaN (see the 'resize' handler).
+const isDim = n => Number.isInteger(n) && n > 0;
+
 // Clamp a line's PTY to its smallest patched pane (tmux-style) so no pane renders
 // garbled. Each pane reports its size over its long-lived control socket; we key
 // by that socket and resize the PTY to the min across all currently-patched panes.
@@ -166,7 +170,10 @@ function handle(m, sock) {
     }
     case 'resize': {
       const s = sessions.get(m.id);
-      if (s) { s.sizes.set(sock, { cols: m.cols, rows: m.rows }); applyMin(s); }
+      // Only store finite positive-integer sizes. A non-numeric value would
+      // propagate NaN through every subsequent applyMin (Math.min) for the line
+      // and wedge every pane's resize until the poisoned client disconnects.
+      if (s && isDim(m.cols) && isDim(m.rows)) { s.sizes.set(sock, { cols: m.cols, rows: m.rows }); applyMin(s); }
       break;
     }
     case 'shutdown': {
