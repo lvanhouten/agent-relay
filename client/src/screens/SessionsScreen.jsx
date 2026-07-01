@@ -63,7 +63,7 @@ function SessionCard({ session, onAttach, onKill }) {
   );
 }
 
-function NewSessionDialog({ onClose, onCreate }) {
+function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const [name, setName] = React.useState('');
   const [cwd, setCwd] = React.useState('~/');
   const [command, setCommand] = React.useState('claude');
@@ -143,9 +143,18 @@ function NewSessionDialog({ onClose, onCreate }) {
           </span>
         </div>
 
+        {error && (
+          <p style={{
+            color: 'var(--danger)', fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--text-sm)', margin: 0,
+          }}>
+            {error}
+          </p>
+        )}
+
         <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button fullWidth leadingIcon={<Terminal size={15} />} onClick={handleCreate}>
+          <Button fullWidth loading={busy} leadingIcon={<Terminal size={15} />} onClick={handleCreate}>
             Create &amp; attach
           </Button>
         </div>
@@ -158,6 +167,8 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
   const [sessions, setSessions] = React.useState([]);
   const [query, setQuery] = React.useState('');
   const [dialog, setDialog] = React.useState(false);
+  const [createError, setCreateError] = React.useState('');
+  const [creating, setCreating] = React.useState(false);
 
   const load = React.useCallback(async () => {
     try { setSessions(await listSessions(token)); } catch { /* offline — keep stale list */ }
@@ -170,10 +181,23 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
   }, [load]);
 
   const handleCreate = async (opts) => {
-    setDialog(false);
-    const session = await createSession(opts, token);
-    onAttach(session);
+    // Keep the dialog open until the create actually succeeds — createSession
+    // throws on any non-ok response (expired token, 500, network drop); closing
+    // first would drop that failure into an unhandled rejection with no feedback.
+    setCreateError('');
+    setCreating(true);
+    try {
+      const session = await createSession(opts, token);
+      setDialog(false);
+      onAttach(session);
+    } catch {
+      setCreateError('Could not create the session. Check the server and try again.');
+    } finally {
+      setCreating(false);
+    }
   };
+
+  const openDialog = () => { setCreateError(''); setDialog(true); };
 
   const handleKill = async (id) => {
     await killSession(id, token);
@@ -239,7 +263,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <Button leadingIcon={<Plus size={15} />} onClick={() => setDialog(true)}>
+            <Button leadingIcon={<Plus size={15} />} onClick={openDialog}>
               New session
             </Button>
           </div>
@@ -270,6 +294,8 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
         <NewSessionDialog
           onClose={() => setDialog(false)}
           onCreate={handleCreate}
+          error={createError}
+          busy={creating}
         />
       )}
     </div>
