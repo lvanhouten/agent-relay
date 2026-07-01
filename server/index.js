@@ -9,7 +9,14 @@ const { authMiddleware } = require('./src/auth');
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
 const app = express();
-app.use(cors());
+// CORS. By default (unset) we reflect any origin — fine for the same-origin
+// localhost deployment this tool ships as. Set AR_CORS_ORIGIN (comma-separated)
+// to restrict to an allowlist once the port is tunneled/exposed, so an arbitrary
+// page the operator visits can't issue cross-origin requests to /api.
+const CORS_ORIGIN = process.env.AR_CORS_ORIGIN;
+app.use(cors(CORS_ORIGIN
+  ? { origin: CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean) }
+  : undefined));
 app.use(express.json());
 
 const sessions = new BoardSessions();

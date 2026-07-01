@@ -36,10 +36,18 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
     // convenience seed and can be pre-set by a hostile actor (crafted link,
     // shared machine), so a stored value is NOT proof of trust. Require an
     // explicit second click that acknowledges the untrusted host.
+    // Cleartext warning: a token sent to a non-localhost host over plain http://
+    // travels unencrypted. Fold it into the same confirm-with-a-second-click gate.
+    const cleartext = token && !isLocalhost(h) && /^http:\/\//i.test(h);
     const trusted = localStorage.getItem(TRUSTED_HOST_KEY);
-    if (token && !isLocalhost(h) && h !== trusted && pendingHost !== h) {
+    const untrusted = token && !isLocalhost(h) && h !== trusted;
+    if ((untrusted || cleartext) && pendingHost !== h) {
       setPendingHost(h);
-      setError(`This will send your access token to ${h}, which you haven't connected to before. Click Connect again to confirm you trust this host.`);
+      setError(
+        cleartext
+          ? `${h} is not https:// — your access token would be sent to a remote host in cleartext. Click Connect again to send it anyway, or switch to https://.`
+          : `This will send your access token to ${h}, which you haven't connected to before. Click Connect again to confirm you trust this host.`
+      );
       return;
     }
     setPendingHost(null);
