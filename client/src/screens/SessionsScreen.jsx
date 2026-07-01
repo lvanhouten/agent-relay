@@ -223,7 +223,14 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
 
   const openDialog = () => { setCreateError(''); setDialog(true); };
 
+  // Per-id re-entrancy guard (W2): a fast double-click on the same Terminate
+  // button before React commits any state fires two concurrent killSession
+  // calls otherwise. A Set (not a single ref) because killing two *different*
+  // sessions concurrently is fine — only a repeat click on the same id blocks.
+  const killingRef = React.useRef(new Set());
   const handleKill = async (id) => {
+    if (killingRef.current.has(id)) return;
+    killingRef.current.add(id);
     // Mark before the request so any poll response that resolves during the kill
     // (and still lists this id from a stale board snapshot) is filtered out — no
     // flicker-back. Remove the mark once we've confirmed it's gone from a fresh
@@ -236,6 +243,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
       // Reconcile against a fresh list, then stop suppressing the id.
       await load();
       killed.current.delete(id);
+      killingRef.current.delete(id);
     }
   };
 
