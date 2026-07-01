@@ -196,7 +196,14 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
     return () => clearInterval(id);
   }, [load]);
 
+  const creatingRef = React.useRef(false);
   const handleCreate = async (opts) => {
+    // Synchronous re-entrancy guard: the Button's `disabled` attribute only takes
+    // effect after React commits the `creating` state, so a fast double-click
+    // before that re-render would otherwise fire two concurrent createSession
+    // calls (W4). A ref flips immediately, closing that window.
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     // Keep the dialog open until the create actually succeeds — createSession
     // throws on any non-ok response (expired token, 500, network drop); closing
     // first would drop that failure into an unhandled rejection with no feedback.
@@ -210,12 +217,20 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
       setCreateError('Could not create the session. Check the server and try again.');
     } finally {
       setCreating(false);
+      creatingRef.current = false;
     }
   };
 
   const openDialog = () => { setCreateError(''); setDialog(true); };
 
+  // Per-id re-entrancy guard (W2): a fast double-click on the same Terminate
+  // button before React commits any state fires two concurrent killSession
+  // calls otherwise. A Set (not a single ref) because killing two *different*
+  // sessions concurrently is fine — only a repeat click on the same id blocks.
+  const killingRef = React.useRef(new Set());
   const handleKill = async (id) => {
+    if (killingRef.current.has(id)) return;
+    killingRef.current.add(id);
     // Mark before the request so any poll response that resolves during the kill
     // (and still lists this id from a stale board snapshot) is filtered out — no
     // flicker-back. Remove the mark once we've confirmed it's gone from a fresh
@@ -228,6 +243,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
       // Reconcile against a fresh list, then stop suppressing the id.
       await load();
       killed.current.delete(id);
+      killingRef.current.delete(id);
     }
   };
 

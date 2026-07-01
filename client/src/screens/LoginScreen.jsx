@@ -3,17 +3,10 @@ import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
 import { Sun, Moon } from 'lucide-react';
 import { headers } from '../api.js';
+import { normalizeHost, isLocalhost } from '../hostTrust.js';
 
 const HOST_KEY = 'ar-host';
 const TRUSTED_HOST_KEY = 'ar-host-trusted'; // last host a probe actually succeeded against
-
-// localhost / loopback is inherently trusted — the token can't leave the machine.
-function isLocalhost(h) {
-  try {
-    const { hostname } = new URL(h);
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
-  } catch { return false; }
-}
 
 export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [host, setHost] = React.useState(
@@ -27,8 +20,12 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [pendingHost, setPendingHost] = React.useState(null);
 
   const connect = async () => {
-    const h = host.trim();
-    if (!h) { setError('Enter a relay host.'); return; }
+    const raw = host.trim();
+    if (!raw) { setError('Enter a relay host.'); return; }
+    // Normalize a scheme-less `host:port` shorthand to an absolute http:// URL
+    // BEFORE any validation/trust/fetch, so `localhost:3017` isn't misparsed
+    // (empty hostname -> looks remote) or slipped past the malformed-host guard.
+    const h = normalizeHost(raw);
     // Catch a malformed host up front with a distinct message. (The post-fetch
     // catch below can't reliably tell DNS failure from CORS from network-down —
     // browser fetch collapses them into one opaque TypeError — but an unparseable

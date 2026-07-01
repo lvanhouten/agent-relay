@@ -53,7 +53,7 @@ function createAPI(sessions) {
       (await sessions.kill(req.params.id))
         ? res.status(204).end()
         : res.status(404).json({ error: 'not found' });
-    } catch (e) { next(e); }
+    } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
   return r;
