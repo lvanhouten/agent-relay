@@ -21,6 +21,13 @@ const DEFAULT_SHELL = process.platform === 'win32'
 
 const SCROLLBACK = 2000; // chunks of output replayed to a freshly-patched pane
 
+// Per-process boot nonce. Line ids come from `seq`, which resets to 0 on every
+// board restart (a designed, autostart-triggered event), so an id like "1" is
+// reused across restarts. Clients that cache per-line state (e.g. mcp-server's
+// read cursor) must namespace it by this nonce so a reused id can't inherit a
+// stale entry from a previous board process.
+const BOOT = `${process.pid}-${Date.now()}`;
+
 const sessions = new Map(); // id -> { pty, clients:Set<socket>, buf:[], sizes, server, name, shell, cwd, startedAt, lastActivity }
 let seq = 0;
 
@@ -119,7 +126,7 @@ function handle(m, sock) {
       const id = createLine(m);
       if (m.open !== false) openPane(id, m.spawn);
       const s = sessions.get(id);
-      sock.write(JSON.stringify({ ok: true, id, pid: s.pty.pid, shell: s.shell, name: s.name, dataPipe: dataPipe(id) }) + '\n');
+      sock.write(JSON.stringify({ ok: true, boot: BOOT, id, pid: s.pty.pid, shell: s.shell, name: s.name, cwd: s.cwd, dataPipe: dataPipe(id) }) + '\n');
       break;
     }
     case 'list': {
@@ -133,7 +140,7 @@ function handle(m, sock) {
         uptimeMs: Date.now() - s.startedAt,
         idleMs: Date.now() - s.lastActivity,
       }));
-      sock.write(JSON.stringify({ ok: true, lines }) + '\n');
+      sock.write(JSON.stringify({ ok: true, boot: BOOT, lines }) + '\n');
       break;
     }
     case 'join': {

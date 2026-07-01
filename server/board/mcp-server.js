@@ -10,7 +10,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { connectControl, connectPipe, dataPipe } = require('./lib');
-const { waitForIdleOrExit } = require('./wait');
+const { waitForIdleOrExit, EXIT_RE } = require('./wait');
 
 function rpc(msg, opts) {
   return new Promise((resolve, reject) => {
@@ -30,11 +30,34 @@ function rpc(msg, opts) {
 // The board always replays its full scrollback to a fresh attach. We track how
 // much of that stream each line has already handed back so repeat reads return
 // only the new tail instead of the whole buffer every time.
-const seen = new Map(); // id -> chars already returned
+//
+// Lifecycle hazards this cache has to survive (all three are real — see below):
+//  1. Board restart reuses line ids (board.js `seq` resets to 0), so the cursor
+//     must be namespaced by the board's per-process boot nonce; a stale entry
+//     from a previous board must never apply to a freshly-reused id.
+//  2. A line that exits should drop its cursor, or the entry leaks forever in a
+//     process explicitly designed to outlive Claude Code session restarts.
+//  3. Concurrent reads of the same line share one cursor entry; the update must
+//     be monotonic (never roll the cursor backward and re-deliver, never jump it
+//     forward past output no reader ever saw).
+const seen = new Map(); // "<boot>:<id>" -> chars already returned
+let boot = null;        // the board's current boot nonce; refreshed on every read
+
+// Learn the board's boot nonce. When it changes (a restart happened), every
+// cached cursor is from a dead board process and reused ids would inherit stale
+// values, so drop the whole cache. Best-effort: a failed probe leaves `boot`
+// untouched rather than wiping a valid cache.
+async function refreshBoot() {
+  const r = await rpc({ cmd: 'list' }, { autostart: false }).catch(() => null);
+  if (r && r.boot && r.boot !== boot) { seen.clear(); boot = r.boot; }
+  return boot;
+}
 
 const DEFAULT_TAIL_CHARS = 4000;
 
-function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TAIL_CHARS, full = false } = {}) {
+async function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TAIL_CHARS, full = false } = {}) {
+  const b = await refreshBoot();
+  const key = `${b ?? '?'}:${id}`;
   return new Promise((resolve, reject) => {
     connectPipe(dataPipe(id), { retries: 3, delay: 50 }).then(sock => {
       let text = '';
@@ -51,8 +74,15 @@ function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TA
         clearTimeout(hardStop);
         if (quiet) clearTimeout(quiet);
         try { sock.end(); } catch { /* already closed */ }
-        const already = seen.get(id) || 0;
-        seen.set(id, text.length); // advance the cursor even if we only hand back the tail below
+        const already = seen.get(key) || 0;
+        // Monotonic advance: concurrent reads share this entry, so never roll the
+        // cursor backward (would re-deliver) — but a shrunk replay (line exited &
+        // respawned under the same id within one boot) is a legit reset, caught by
+        // the exit-sentinel clear below rather than by clamping here.
+        seen.set(key, Math.max(already, text.length));
+        // Line has ended: drop the cursor so a future line reusing this id starts
+        // clean, and so the entry doesn't leak for a line that will never return.
+        if (EXIT_RE.test(text)) seen.delete(key);
         const delta = text.slice(already);
         if (full || delta.length <= tailChars) { resolve(delta); return; }
         const dropped = delta.length - tailChars;
