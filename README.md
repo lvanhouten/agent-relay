@@ -35,9 +35,9 @@ Browser (any device)          Relay server :3017            Board kernel (daemon
 ## Features
 
 - **Session list** — see all running agent processes at a glance, with name, status, and last activity
-- **Spawn & kill** — create new agent sessions or terminate them from the UI
+- **Spawn & kill** — create new agent sessions or terminate them from the UI; give a session a command to run on launch (e.g. `claude`, `npm run dev`) — it's typed into the shell, which stays open when the command exits
 - **Live terminal** — full PTY passthrough via xterm.js, handles escape codes, prompts, and interactive input correctly
-- **Scrollback** — reconnect to a session and see what happened while you were away
+- **Scrollback & auto-reconnect** — reconnect to a session and see what happened while you were away; the terminal auto-reconnects after a network blip or server restart and repaints current state
 - **Multi-client** — multiple browsers (and terminal panes) can observe the same session simultaneously
 - **Crash-safe** — sessions live in the board daemon, so the web server can restart without losing them
 - **Model agnostic** — works with any CLI-based agent (Claude Code, Codex CLI, Gemini CLI, custom scripts)
@@ -63,11 +63,17 @@ Browser (any device)          Relay server :3017            Board kernel (daemon
 npm install                 # install workspaces
 npm run server              # API + WS on :3017  (set PORT to override)
 npm run client              # Vite dev server on :5173 (proxies to :3017)
+npm run kill                # free :3017 and :5173 (stop orphaned dev processes)
 ```
 
+A `predev` guard frees the port before `server`/`client` start, so a restart can't
+collide with an orphaned process.
+
 The board kernel auto-starts on the server's first request and outlives it. For
-terminal access to the same sessions, use the bundled `sb` CLI
-(`node server/board/sb.js list` — see [server/board/README.md](server/board/README.md)).
+terminal access to the same sessions, use the bundled `sb` CLI — e.g.
+`node server/board/sb.js list`, or `node server/board/sb.js new --run claude` to
+spawn a session that runs `claude` and open a local terminal pane (see
+[server/board/README.md](server/board/README.md)).
 
 **Autostart at login** (Windows) — `autostart.ps1` registers a per-user logon task
 that launches the server hidden via `start-relay.vbs`:
@@ -83,6 +89,8 @@ powershell -ExecutionPolicy Bypass -File autostart.ps1 status      # (default) c
 ```
 GET    /api/sessions           List all sessions
 POST   /api/sessions           Spawn a new session
+                               body { name, cwd, shell, command }
+                               command runs in the shell on launch (shell stays open)
 GET    /api/sessions/:id       Get one session
 DELETE /api/sessions/:id       Kill a session
 
