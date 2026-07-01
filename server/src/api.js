@@ -1,6 +1,24 @@
 'use strict';
 const { Router } = require('express');
 
+// Field caps for POST /sessions. These fields flow into pty.spawn (and `command`
+// is typed into a real shell), so validate type + length here rather than let a
+// non-string throw opaquely inside resolveCwd/pty.spawn, or a multi-MB payload
+// reach a live shell.
+const FIELD_MAX = { name: 200, cwd: 4096, shell: 500, command: 8192 };
+
+// Every field is optional, but any present one must be a string within its cap.
+// Returns an error string, or null if valid.
+function validateSpawnBody(body) {
+  for (const [field, max] of Object.entries(FIELD_MAX)) {
+    const v = body[field];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== 'string') return `${field} must be a string`;
+    if (v.length > max) return `${field} exceeds the ${max}-character limit`;
+  }
+  return null;
+}
+
 // REST over the board-backed session store. Handlers are async because every
 // operation is an RPC to the board kernel; errors propagate to Express via next().
 function createAPI(sessions) {
@@ -15,9 +33,12 @@ function createAPI(sessions) {
 
   r.post('/sessions', async (req, res, next) => {
     try {
-      const { name, cwd, shell, command } = req.body ?? {};
+      const body = req.body ?? {};
+      const invalid = validateSpawnBody(body);
+      if (invalid) return res.status(400).json({ error: invalid });
+      const { name, cwd, shell, command } = body;
       res.status(201).json(await sessions.spawn({ name, cwd, shell, command }));
-    } catch (e) { next(e); }
+    } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
   r.get('/sessions/:id', async (req, res, next) => {
