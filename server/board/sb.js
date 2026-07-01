@@ -5,12 +5,12 @@ const { connectControl } = require('./lib');
 const { detectSpawner } = require('./spawners');
 
 // Detect the caller's terminal here (the board can't — it's detached) and pass
-// the launch recipe along so the board opens the pane in *this* terminal.
+// the launch recipe along so the board opens the tab in *this* terminal.
 function spawnRecipe() {
   const r = detectSpawner();
   if (!r) {
     console.error('switchboard: could not detect your terminal — set ' +
-      'SWITCHBOARD_TERM="<term> -e {cmd}" to auto-open panes (line still started; join it manually)');
+      'SWITCHBOARD_TERM="<term> -e {cmd}" to auto-open tabs (line still started; join it manually)');
   }
   return r || undefined;
 }
@@ -35,9 +35,9 @@ const HELP = `switchboard — a PTY exchange for your terminal
 usage:
   sb up             bring the board online
   sb new [shell] [--run <cmd>]
-                    start a new line + join a pane (e.g. sb new --run claude)
+                    start a new line + join a tab (e.g. sb new --run claude)
   sb list           list active lines
-  sb join <id>      join a new pane to an existing line
+  sb join <id>      join a new tab to an existing line
   sb end <id>       end a line
   sb down           take the board offline (ends every line)
   sb help           show this help`;
@@ -66,7 +66,7 @@ async function main() {
       if (shell) msg.shell = shell;
       if (run) msg.run = run;
       const r = await rpc(msg);
-      console.log(`line ${r.id} started${run ? ` (running: ${run})` : ''} — joining a pane`);
+      console.log(`line ${r.id} started${run ? ` (running: ${run})` : ''} — joining a tab`);
       break;
     }
     case 'list':
@@ -87,7 +87,7 @@ async function main() {
     case 'join': {
       if (!arg) { console.error('usage: sb join <id>'); process.exit(1); }
       const r = await rpc({ cmd: 'join', id: arg, spawn: spawnRecipe() });
-      console.log(r.ok ? `joining a pane to line ${arg}` : `no such line: ${arg}`);
+      console.log(r.ok ? `joining a tab to line ${arg}` : `no such line: ${arg}`);
       break;
     }
     case 'end': {

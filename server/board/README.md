@@ -38,26 +38,26 @@ on PATH (see [Terminals](#terminals)).
 
 ```
 sb up             bring the board online (auto-starts on first use anyway)
-sb new [shell]    start a new line + join a pane to it   (e.g. sb new bash)
+sb new [shell]    start a new line + join a tab to it   (e.g. sb new bash)
 sb list           list active lines  (ID  PID  SHELL  JOINED  UPTIME)
-sb join <id>      join another pane to an existing line
+sb join <id>      join another tab to an existing line
 sb end <id>       end one line
 sb down           take the board offline (ends every line)
 ```
 
-`sb new` starts the line in the **current working directory** and opens a pane
+`sb new` starts the line in the **current working directory** and opens a tab
 joined to it, in the terminal you ran `sb` from. Default shell is `pwsh.exe`
 (Windows) / `$SHELL` (otherwise); pass an explicit one as the argument. Close the
-pane and the shell lives on; `sb join <id>` brings it back.
+tab and the shell lives on; `sb join <id>` brings it back.
 
 ### Typical session
 
 ```sh
-sb new             # a pane opens on a fresh pwsh line in this dir
+sb new             # a tab opens on a fresh pwsh line in this dir
 sb list            # ID  PID    SHELL     JOINED  UPTIME
                    # 1   31012  pwsh.exe  1       12s
-# ...close the pane; the shell keeps running...
-sb join 1          # join a new pane into line 1, scrollback replayed
+# ...close the tab; the shell keeps running...
+sb join 1          # join a new tab into line 1, scrollback replayed
 sb down            # tear everything down
 ```
 
@@ -65,15 +65,15 @@ sb down            # tear everything down
 
 Detection runs **client-side in `sb`** — the board is a detached daemon and can't
 see your terminal, so `sb new` / `sb join` capture it and tell the board how to
-open the pane. Auto-detected (each opens a pane in your *current* window where the
+open the tab. Auto-detected (each opens a tab in your *current* window where the
 mux supports it):
 
-| Terminal | How a pane is opened |
+| Terminal | How a tab is opened |
 |----------|----------------------|
 | WezTerm | `wezterm cli spawn` |
-| tmux | `tmux split-window` |
-| kitty | `kitty @ launch` (needs `allow_remote_control`) |
-| Windows Terminal | `wt -w 0 split-pane` |
+| tmux | `tmux new-window` |
+| kitty | `kitty @ launch --type=tab` (needs `allow_remote_control`) |
+| Windows Terminal | `wt -w 0 new-tab` |
 
 Anything else: set `SWITCHBOARD_TERM` to a launch template containing a `{cmd}`
 token —
@@ -83,7 +83,7 @@ export SWITCHBOARD_TERM="alacritty -e {cmd}"   # or: gnome-terminal -- {cmd}
 ```
 
 On Windows with no match, `wt` is the default. If nothing can be detected the line
-is still started — `sb join <id>` a pane into it later from a supported terminal.
+is still started — `sb join <id>` a tab into it later from a supported terminal.
 Because detection is per-command, `sb join <id>` from a *different* terminal opens
 the mirror there, so two different emulators can share one line.
 
@@ -144,6 +144,39 @@ sb new ──▶ board: spawn PTY (a line), open data pipe
 The agent-relay web server is just another client of this same data pipe: a
 browser WebSocket in place of a terminal pane.
 
+## MCP server
+
+`mcp-server.js` exposes the board to Claude Code (or any MCP client) as tools —
+`switchboard_new_line`, `switchboard_list_lines`, `switchboard_read_output`,
+`switchboard_send_input`, `switchboard_end_line`. This is the same control +
+data pipes `sb` uses, but for an agent instead of a human: `sb join` opens a
+terminal tab, which is useless to an agent that can't see it, so this attaches
+to a line's raw byte stream directly and hands output back as tool-call text —
+no pane required. Lines it creates aren't tied to the calling session; a human
+can `sb join <id>` a real tab onto one at any time, and an agent can pick a
+line back up across a Claude Code restart/compaction by id.
+
+Because the board's pipe namespace (`\\.\pipe\agent-relay`) isn't scoped to
+this repo, the server is registered once, globally, and works from any
+project directory:
+
+```sh
+claude mcp add --scope user switchboard -- node "<repo>\server\board\mcp-server.js"
+```
+
+`switchboard_read_output` tracks how much of each line it's already returned
+(in-memory, per MCP server process) so repeat reads get only the new output
+instead of the board's full replayed scrollback every time. If that new output
+is large — a line running for hours, or one this MCP session didn't create —
+the response is capped to the last `tailChars` (default 4000) with a note
+saying how much was dropped. The cursor still advances past everything seen,
+so a dropped middle section can't be recovered later; `full: true` is a
+same-read escape hatch for that case, not a default — the tool description
+tells the agent to always read the tail first and only re-read with
+`full: true` if the truncation note says it actually needs the rest. An agent
+reaching for `full: true` on its very first read of a line (e.g. because the
+user said "show me the output") is working against the tool, not with it.
+
 ## Files
 
 | file | role |
@@ -151,6 +184,7 @@ browser WebSocket in place of a terminal pane.
 | `board.js`        | the daemon — owns every line, runs the control + data pipes |
 | `patch.js`        | pane-side raw relay (runs inside the terminal pane) |
 | `sb.js`           | CLI dispatcher |
+| `mcp-server.js`   | MCP server — programmatic (non-pane) access to lines for agents |
 | `spawners.js`     | per-terminal pane-launch recipes + client-side detection |
 | `lib.js`          | pipe names, detached auto-start, connect-with-retry |
 | `start-board.vbs` | launches the board hidden (no console) for autostart |
