@@ -7,6 +7,7 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import { ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Sun, Moon } from 'lucide-react';
+import { parseFrame } from '../wsFrame.js';
 
 const XTERM_THEMES = {
   dark: {
@@ -72,8 +73,12 @@ function useSessionWS(sessionId, token, { onData, onExit, onReady }) {
         // close the socket or fire onerror/onclose — the connection would look
         // "online" but silently stop processing output, and the reconnect logic
         // would never engage. Swallow a bad frame instead of freezing the terminal.
-        let msg;
-        try { msg = JSON.parse(e.data); } catch { return; }
+        // parseFrame returns null for unparseable JSON AND for valid-but-non-object
+        // frames (`null`, a bare number, a string) — a naive JSON.parse().type on
+        // those would throw *outside* the parse try, reproducing the "online but
+        // silently stops receiving" freeze this handler exists to prevent.
+        const msg = parseFrame(e.data);
+        if (!msg) return;
         if (msg.type === 'data') onData(msg.payload);
         if (msg.type === 'exit') { ended = true; setConnStatus('offline'); onExit(msg.code); }
       };
