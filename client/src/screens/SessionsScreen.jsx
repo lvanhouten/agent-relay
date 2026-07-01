@@ -10,25 +10,13 @@ import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon } fr
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
-function TerminalPreview({ lines = [] }) {
-  return (
-    <div style={{
-      background: 'var(--terminal-bg)', borderRadius: 'var(--radius-md)',
-      border: '1px solid var(--border-subtle)', padding: '10px 12px',
-      fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', lineHeight: 1.65,
-      height: 72, overflow: 'hidden', color: 'var(--terminal-fg)',
-    }}>
-      {lines.length === 0
-        ? <span style={{ color: 'var(--terminal-dim)', opacity: 0.6 }}>no output yet</span>
-        : lines.slice(-4).map((line, i) => (
-          <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {line}
-          </div>
-        ))
-      }
-    </div>
-  );
-}
+// NOTE: the per-card scrollback preview was removed here — the server DTO never
+// carried a `preview` field (neither toDto() nor spawn() in server/src/sessions.js
+// populate one), so the widget rendered a permanent "no output yet" placeholder.
+// The data does exist one layer down (the board keeps a 2000-chunk scrollback per
+// line), so this can be revived by exposing a scrollback tail through the board's
+// `list` reply and threading it into toDto(). Deferred as a feature, not a bug —
+// see _docs/issues/2026-07-01-session-card-live-preview.md.
 
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
@@ -57,8 +45,6 @@ function SessionCard({ session, onAttach, onKill }) {
           <Trash2 size={14} />
         </IconButton>
       </div>
-
-      <TerminalPreview lines={session.preview} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
