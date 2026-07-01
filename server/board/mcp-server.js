@@ -32,9 +32,30 @@ let boot = null;        // the board's current boot nonce; re-probed on a TTL
 let bootTs = 0;         // when `boot` was last confirmed against a live board
 const BOOT_TTL_MS = 3000; // re-probe the nonce at most this often (N2: hot-path latency)
 
-// The board's list RPC, injectable so the cursor logic can be unit-tested without
-// a live board. Defaults to the shared lib.rpc(); tests swap it via __setRpc().
-let probeRpc = (msg, opts) => rpc(msg, opts);
+// Every board RPC this module makes, injectable so the cursor logic (and the
+// end_line leak path) can be unit-tested without a live board. Defaults to the
+// shared lib.rpc(); tests swap it via __setRpc(). Was probe-only (refreshBoot's
+// dedicated re-probe); broadened to the new_line/list_lines/end_line call sites
+// too so their RPC failures are exercisable in tests, not just refreshBoot's.
+let boardRpc = (msg, opts) => rpc(msg, opts);
+
+// Fold a freshly-observed boot nonce into the cache's understanding of the
+// board's identity — the same effect as refreshBoot()'s own probe, but sourced
+// from a reply this process already received for another reason (a `new` or
+// `list` RPC always carries the board's CURRENT nonce), so it costs zero extra
+// round-trips. Called eagerly wherever the board hands one back, so a restart
+// is detected at the earliest possible moment — specifically, before any read
+// can reach a line id the restart caused to be reused. refreshBoot()'s TTL fast
+// path can't tell a live board from one that restarted inside the TTL window,
+// but the *only* way a client learns of an id that got reused post-restart is
+// via a `new` or `list` reply — so observing the nonce there closes that
+// specific collision window without paying a round-trip on every read.
+function observeBoot(freshBoot) {
+  if (!freshBoot) return;
+  if (freshBoot !== boot) seen.clear();
+  boot = freshBoot;
+  bootTs = Date.now();
+}
 
 // Pure cursor-advance decision, factored out of readOutput's finish() so it can
 // be tested in isolation. Given the current cache, a cache key (or null when the
@@ -69,12 +90,8 @@ function advanceCursor(cache, key, textLen, pipeClosed) {
 // window). N2: skip the round-trip entirely while a confirmed nonce is fresh.
 async function refreshBoot() {
   if (boot && Date.now() - bootTs < BOOT_TTL_MS) return { boot, confirmed: true };
-  const r = await probeRpc({ cmd: 'list' }, { autostart: false }).catch(() => null);
-  if (r && r.boot) {
-    if (r.boot !== boot) { seen.clear(); boot = r.boot; }
-    bootTs = Date.now();
-    return { boot, confirmed: true };
-  }
+  const r = await boardRpc({ cmd: 'list' }, { autostart: false }).catch(() => null);
+  if (r && r.boot) { observeBoot(r.boot); return { boot, confirmed: true }; }
   return { boot, confirmed: false };
 }
 
@@ -128,6 +145,18 @@ function forgetLine(id) {
   for (const key of seen.keys()) if (key.endsWith(`:${id}`)) seen.delete(key);
 }
 
+// End a line and drop its read cursor regardless of whether the RPC itself
+// succeeded — a failed/racy end must not leave a stale entry for a reused id
+// (the end_line leak: forgetLine used to run only after a successful rpc(),
+// so a rejected call — a timeout, a wedged board — skipped it entirely).
+async function endLine(id) {
+  try {
+    return await boardRpc({ cmd: 'end', id });
+  } finally {
+    forgetLine(id);
+  }
+}
+
 function sendInput(id, text, submit) {
   return new Promise((resolve, reject) => {
     connectPipe(dataPipe(id), { retries: 3, delay: 50 }).then(sock => {
@@ -155,7 +184,8 @@ server.registerTool('switchboard_new_line', {
     name: z.string().optional().describe('Optional label shown in switchboard_list_lines'),
   },
 }, async ({ shell, cwd, run, name }) => {
-  const r = await rpc({ cmd: 'new', open: false, shell, cwd, run, name });
+  const r = await boardRpc({ cmd: 'new', open: false, shell, cwd, run, name });
+  observeBoot(r.boot);
   return { content: [{ type: 'text', text: JSON.stringify(r) }] };
 });
 
@@ -168,7 +198,8 @@ server.registerTool('switchboard_list_lines', {
     'idle time. Always mention the name when reporting on a line, not just its id.',
   inputSchema: {},
 }, async () => {
-  const r = await rpc({ cmd: 'list' }, { autostart: false }).catch(() => ({ lines: [] }));
+  const r = await boardRpc({ cmd: 'list' }, { autostart: false }).catch(() => ({ lines: [] }));
+  observeBoot(r.boot);
   const lines = (r.lines || []).map(l => ({ ...l, name: l.name || null }));
   return { content: [{ type: 'text', text: JSON.stringify(lines) }] };
 });
@@ -254,11 +285,7 @@ server.registerTool('switchboard_end_line', {
     id: z.string().describe('Line id'),
   },
 }, async ({ id }) => {
-  const r = await rpc({ cmd: 'end', id });
-  // Drop the read cursor so the entry doesn't leak for a line that will never
-  // return (C1 sub-defect 1). Do this regardless of the RPC result: even a
-  // failed/racy end shouldn't leave a stale cursor around for a reused id.
-  forgetLine(id);
+  const r = await endLine(id);
   return { content: [{ type: 'text', text: JSON.stringify(r) }] };
 });
 
@@ -277,9 +304,11 @@ module.exports = {
   seen,
   advanceCursor,
   refreshBoot,
+  observeBoot,
   forgetLine,
+  endLine,
   BOOT_TTL_MS,
   // test seams
-  __setRpc: fn => { probeRpc = fn; },
+  __setRpc: fn => { boardRpc = fn; },
   __resetBoot: () => { boot = null; bootTs = 0; seen.clear(); },
 };

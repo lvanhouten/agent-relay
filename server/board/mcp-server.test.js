@@ -90,3 +90,44 @@ test('refreshBoot (N2): a fresh confirmed nonce is reused without a new round-tr
   await mcp.refreshBoot();
   assert.strictEqual(calls, 1, 'subsequent reads inside the TTL do not re-probe the board');
 });
+
+// --- observeBoot: the round-2 regression — TTL trust with no live signal ---
+
+test('observeBoot (C1 re-corruption, round 2): a fresh boot observed via new/list invalidates a stale entry immediately, independent of the read-path TTL', () => {
+  mcp.observeBoot('A');           // refreshBoot's TTL is now "confirmed" fresh under A
+  mcp.seen.set('A:3', 999);       // an orphaned pre-restart entry for a reused id
+  mcp.observeBoot('B');           // e.g. a switchboard_new_line reply after a restart
+  assert.strictEqual(mcp.seen.has('A:3'), false, 'stale entry dropped the instant a different boot is observed');
+  assert.strictEqual(mcp.seen.size, 0);
+});
+
+test('observeBoot: repeating the same boot value is a no-op — must not wipe live cursors', () => {
+  mcp.observeBoot('A');
+  mcp.seen.set('A:3', 999);
+  mcp.observeBoot('A');
+  assert.strictEqual(mcp.seen.get('A:3'), 999, 'same-boot observation must not clear an unrelated live cursor');
+});
+
+test('observeBoot: a falsy boot (a failed RPC reply) is ignored, not treated as a change', () => {
+  mcp.observeBoot('A');
+  mcp.seen.set('A:3', 999);
+  mcp.observeBoot(undefined);
+  assert.strictEqual(mcp.seen.get('A:3'), 999, 'an RPC failure must not corrupt the cache');
+});
+
+// --- endLine: the round-2 regression — end_line's leak path still had no try/finally ---
+
+test('endLine (C1 leak, round 2): forgets the cursor even when the end RPC rejects', async () => {
+  mcp.seen.set('bootA:9', 42);
+  mcp.__setRpc(async () => { throw new Error('board unreachable'); });
+  await assert.rejects(() => mcp.endLine('9'), /board unreachable/);
+  assert.strictEqual(mcp.seen.has('bootA:9'), false, 'cursor dropped despite the failed end RPC');
+});
+
+test('endLine: forgets the cursor on a successful end too, and returns the RPC reply', async () => {
+  mcp.seen.set('bootA:9', 42);
+  mcp.__setRpc(async () => ({ ok: true }));
+  const r = await mcp.endLine('9');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(mcp.seen.has('bootA:9'), false);
+});
