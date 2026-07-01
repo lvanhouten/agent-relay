@@ -4,7 +4,7 @@
 // just logged. Uses the pure helpers so no pty/process is launched.
 const test = require('node:test');
 const assert = require('node:assert');
-const { paneSpawnDecision, openPane, handle } = require('./board');
+const { paneSpawnDecision, openPane, handle, notifyClientsClosed } = require('./board');
 
 test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   const d = paneSpawnDecision({ file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'] });
@@ -44,4 +44,15 @@ test('join reply for a missing line reports ok:false and paneOpened:null (new-N1
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.paneOpened, null, 'no pane attempted for a missing line');
   assert.ok('paneOpened' in r, 'the field is present so callers can branch on it');
+});
+
+// N10: a throwing client .end() in the line-exit path must not abort the loop or
+// propagate out (it runs in an async pty callback, uncaught == daemon down).
+test('notifyClientsClosed (N10): a throwing client does not abort the others or propagate', () => {
+  const notified = [];
+  const good = suffix => ({ end: f => notified.push(suffix + f) });
+  const bad = { end: () => { throw new Error('socket in a bad state'); } };
+  const clients = new Set([good('a:'), bad, good('b:')]);
+  assert.doesNotThrow(() => notifyClientsClosed(clients, 'BYE'));
+  assert.deepStrictEqual(notified, ['a:BYE', 'b:BYE'], 'both healthy clients still notified');
 });

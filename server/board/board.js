@@ -73,7 +73,12 @@ function createLine(o = {}) {
     for (const c of s.clients) c.write(d);
   });
   p.onExit(({ exitCode }) => {
-    for (const c of s.clients) c.end(lineClosedFarewell(id, exitCode));
+    // This runs in an async pty callback OUTSIDE the control-plane dispatch's
+    // try/catch — an uncaught throw here would take down the whole daemon (and
+    // every other live line) on one line's exit (N10). notifyClientsClosed guards
+    // each client .end() so one wedged pane can't abort the farewell to the rest,
+    // nor the cleanup below.
+    notifyClientsClosed(s.clients, lineClosedFarewell(id, exitCode));
     try { server.close(); } catch { /* ignore */ }
     sessions.delete(id);
     log('line', id, 'closed, exit', exitCode);
@@ -102,6 +107,14 @@ function createLine(o = {}) {
 
   log('line', id, 'placed:', shell, 'in', cwd);
   return id;
+}
+
+// Send the farewell to every patched-in client, guarding each write so one
+// socket in a bad state can't throw and abort the loop (leaving other panes
+// un-notified) or the caller's post-loop cleanup. Factored out of p.onExit so the
+// per-client isolation (N10) is unit-testable without spawning a pty.
+function notifyClientsClosed(clients, farewell) {
+  for (const c of clients) { try { c.end(farewell); } catch { /* pane already gone */ } }
 }
 
 // A valid terminal dimension: a finite positive integer. Guards the resize path
@@ -260,4 +273,4 @@ if (require.main === module) {
   board.listen(CTRL, () => log('switchboard online:', CTRL));
 }
 
-module.exports = { paneSpawnDecision, openPane, handle };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed };
