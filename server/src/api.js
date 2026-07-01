@@ -6,8 +6,11 @@ const { Router } = require('express');
 function createAPI(sessions) {
   const r = Router();
 
+  // A board-unreachable failure is a transient 503, not a 500 — the board is a
+  // separate process that restarts (autostart, code changes) as normal operation.
   r.get('/sessions', async (_req, res, next) => {
-    try { res.json(await sessions.list()); } catch (e) { next(e); }
+    try { res.json(await sessions.list()); }
+    catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
   r.post('/sessions', async (req, res, next) => {
@@ -21,7 +24,7 @@ function createAPI(sessions) {
     try {
       const s = await sessions.get(req.params.id);
       s ? res.json(s) : res.status(404).json({ error: 'not found' });
-    } catch (e) { next(e); }
+    } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
   r.delete('/sessions/:id', async (req, res, next) => {

@@ -39,10 +39,34 @@ function toDto(line) {
   };
 }
 
+// A board RPC failed (board down, pipe error, malformed reply). Distinct from an
+// empty session list so callers can tell "board unreachable" from "zero sessions":
+// the API answers 503 (not 200 []), and the WS hub closes with a "board
+// unreachable" reason (not "session not found") — otherwise every live session
+// looks dead during any transient board hiccup.
+class BoardUnreachableError extends Error {
+  constructor(cause) {
+    super('board unreachable');
+    this.name = 'BoardUnreachableError';
+    this.boardUnreachable = true;
+    if (cause) this.cause = cause;
+  }
+}
+
 class BoardSessions {
   async list() {
-    const r = await rpc({ cmd: 'list' }).catch(() => null);
-    return r && r.ok ? r.lines.map(toDto) : [];
+    let r;
+    try {
+      r = await rpc({ cmd: 'list' });
+    } catch (e) {
+      console.error('[sessions] board list RPC failed:', e.message);
+      throw new BoardUnreachableError(e);
+    }
+    if (!r || !r.ok) {
+      console.error('[sessions] board list RPC returned a non-ok reply:', JSON.stringify(r));
+      throw new BoardUnreachableError();
+    }
+    return r.lines.map(toDto);
   }
 
   async get(id) {
@@ -82,4 +106,4 @@ class BoardSessions {
   }
 }
 
-module.exports = { BoardSessions };
+module.exports = { BoardSessions, BoardUnreachableError };

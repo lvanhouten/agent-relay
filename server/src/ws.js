@@ -12,7 +12,20 @@ function createWSHub(server, sessions) {
     const id = (parsed.pathname ?? '').split('/').filter(Boolean).pop();
 
     if (!checkToken(parsed.query.token)) { ws.close(1008, 'unauthorized'); return; }
-    if (!id || !(await sessions.get(id))) { ws.close(1008, 'session not found'); return; }
+    if (!id) { ws.close(1008, 'session not found'); return; }
+
+    // Distinguish "board unreachable" from "session not found": a board hiccup
+    // (restart, pipe error) must NOT make a live session look permanently gone.
+    // 1013 (Try Again Later) is transient, so the client keeps reconnecting;
+    // 1008 (session not found) is permanent and stops the retry loop.
+    let existing;
+    try {
+      existing = await sessions.get(id);
+    } catch (e) {
+      if (e && e.boardUnreachable) { ws.close(1013, 'board unreachable'); return; }
+      ws.close(1011, 'session lookup failed'); return;
+    }
+    if (!existing) { ws.close(1008, 'session not found'); return; }
 
     // Attach to the board line. Scrollback replays down the data pipe on connect,
     // so there's no separate history step. Decode raw bytes -> string for the client.
