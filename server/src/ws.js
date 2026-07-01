@@ -23,6 +23,10 @@ function createWSHub(server, sessions) {
       existing = await sessions.get(id);
     } catch (e) {
       if (e && e.boardUnreachable) { ws.close(1013, 'board unreachable'); return; }
+      // Log before closing 1011: unlike a board-unreachable close (a known,
+      // expected condition), an unexpected lookup failure leaves an operator with
+      // a closed socket and nothing to grep for. Mirror sessions.js's own pattern.
+      console.error('[ws] session lookup failed:', e && e.message ? e.message : e);
       ws.close(1011, 'session lookup failed'); return;
     }
     if (!existing) { ws.close(1008, 'session not found'); return; }
