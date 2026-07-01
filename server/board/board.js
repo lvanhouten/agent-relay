@@ -126,6 +126,18 @@ const DEFAULT_RECIPE = { file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'],
 function openPane(id, recipe) {
   const r = recipe && recipe.file ? recipe : DEFAULT_RECIPE;
   const cmd = [process.execPath, path.join(__dirname, 'patch.js'), id];
+  // The {cmd} token is only substituted when it's its OWN argv element. If a
+  // recipe embeds it inside a larger string (e.g. SWITCHBOARD_TERM="sh -c
+  // '{cmd}'" splits to ["sh","-c","'{cmd}'"]), no element equals '{cmd}', so it
+  // would silently spawn with the literal token and the pane never patches in.
+  // Detect that and refuse loudly instead of spawning a broken pane.
+  const hasStandaloneToken = r.args.some(a => a === '{cmd}');
+  const hasEmbeddedToken = r.args.some(a => a !== '{cmd}' && a.includes('{cmd}'));
+  if (!hasStandaloneToken) {
+    log('pane spawn skipped for line', id, '- recipe has no standalone {cmd} arg',
+      hasEmbeddedToken ? '({cmd} is embedded in a larger string — it must be its own argument; join the line manually with `sb join ' + id + '`)' : '');
+    return;
+  }
   const args = r.args.flatMap(a => (a === '{cmd}' ? cmd : [a]));
   const child = spawn(r.file, args, {
     stdio: 'ignore',
