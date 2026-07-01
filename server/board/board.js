@@ -21,6 +21,14 @@ const DEFAULT_SHELL = process.platform === 'win32'
 
 const SCROLLBACK = 2000; // chunks of output replayed to a freshly-patched pane
 
+// Initial-command ("run" field) keystroke-feed timing. ConPTY drops keystrokes
+// fed before the shell's input reader is ready, so we wait for the shell's first
+// output (prompt up) — debounced by FEED_DEBOUNCE_MS after each output burst —
+// before injecting, with FEED_FALLBACK_MS as a hard backstop for a shell that
+// emits nothing on start. Both feed the same one-shot send (`sent` guard).
+const FEED_DEBOUNCE_MS = 120;
+const FEED_FALLBACK_MS = 1500;
+
 // Per-process boot nonce. Line ids come from `seq`, which resets to 0 on every
 // board restart (a designed, autostart-triggered event), so an id like "1" is
 // reused across restarts. Clients that cache per-line state (e.g. mcp-server's
@@ -75,6 +83,7 @@ function createLine(o = {}) {
   // afterwards. Wait for the shell's first output (prompt up) before sending —
   // ConPTY drops keystrokes fed before the shell's input reader is ready — with a
   // timer fallback in case the shell is silent on start. Fires at most once.
+  // (Timing rationale + constants: see FEED_DEBOUNCE_MS / FEED_FALLBACK_MS above.)
   const run = typeof o.run === 'string' ? o.run.trim() : '';
   if (run) {
     let sent = false;
@@ -83,8 +92,8 @@ function createLine(o = {}) {
       sent = true;
       try { p.write(run + '\r'); } catch { /* line closed */ }
     };
-    p.onData(() => setTimeout(feed, 120));
-    setTimeout(feed, 1500);
+    p.onData(() => setTimeout(feed, FEED_DEBOUNCE_MS));
+    setTimeout(feed, FEED_FALLBACK_MS);
     log('line', id, 'will run:', run);
   }
 
