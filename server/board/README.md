@@ -42,6 +42,9 @@ sb new [shell]    start a new line + join a tab to it   (e.g. sb new bash)
 sb list           list active lines  (ID  PID  SHELL  JOINED  UPTIME)
 sb join <id>      join another tab to an existing line
 sb end <id>       end one line
+sb wait <id> [idleMs] [maxWaitMs]
+                  block until the line goes quiet (default 12s) or exits, up
+                  to maxWaitMs (default 10min) — see "Waiting on a line" below
 sb down           take the board offline (ends every line)
 ```
 
@@ -177,16 +180,31 @@ tells the agent to always read the tail first and only re-read with
 reaching for `full: true` on its very first read of a line (e.g. because the
 user said "show me the output") is working against the tool, not with it.
 
-`switchboard_wait_for_idle` blocks until a line goes quiet (no new bytes for
-`idleMs`, default 12s) or its process exits, whichever comes first, up to
-`maxWaitMs` (default 10 minutes) — meant to be called through the calling
-agent's own background-task mechanism (e.g. `run_in_background: true`) so the
-wait doesn't block a turn; the tool call's own completion is the wake, the same
-way a `run_in_background` `Bash`/`Agent` call notifies on completion. It only
-tells you *that* something changed (finished a turn, hit a prompt, is waiting
-on a decision, or is wedged — a quiet line can't be told apart from any of
-those by byte count alone), never *what* — follow up with
-`switchboard_read_output` to see what actually happened.
+## Waiting on a line
+
+`wait.js` holds `waitForIdleOrExit` — one implementation, two entry points:
+`switchboard_wait_for_idle` (MCP tool) and `sb wait <id>` (plain CLI command).
+Both block until a line goes quiet (no new bytes for `idleMs`, default 12s) or
+its process exits, whichever comes first, up to `maxWaitMs` (default 10
+minutes). Neither tells you *what* happened, only *that* something did —
+finished a turn, hit a prompt, is waiting on a decision, or is wedged all look
+identical from byte-quiet alone — so always follow up with
+`switchboard_read_output` / `sb list` + reading the line to see what actually
+happened.
+
+The point of either is to get notified instead of polling, but that only works
+if whatever's waiting can itself be run in the background:
+- `switchboard_wait_for_idle` is only backgroundable if your MCP client can run
+  an arbitrary tool call in the background — Claude Code's own tool surface
+  can background a `Bash` or `Agent` call, but not a bare MCP tool call, so
+  calling this tool directly blocks the calling turn for however long the wait
+  takes.
+- `sb wait` is a plain shell command, so it's backgroundable anywhere a shell
+  command is — including via `Bash`'s own `run_in_background: true` from
+  inside a Claude Code session, which is the actual way to get a
+  non-blocking wait today: launch `sb wait <id> ...` as a background Bash
+  task and let its exit be the notification, instead of hand-writing the same
+  idle/exit-polling loop as a one-off script.
 
 ## Files
 
@@ -196,6 +214,7 @@ those by byte count alone), never *what* — follow up with
 | `patch.js`        | pane-side raw relay (runs inside the terminal pane) |
 | `sb.js`           | CLI dispatcher |
 | `mcp-server.js`   | MCP server — programmatic (non-pane) access to lines for agents |
+| `wait.js`         | shared idle/exit detection, used by both `sb wait` and `switchboard_wait_for_idle` |
 | `spawners.js`     | per-terminal pane-launch recipes + client-side detection |
 | `lib.js`          | pipe names, detached auto-start, connect-with-retry |
 | `start-board.vbs` | launches the board hidden (no console) for autostart |

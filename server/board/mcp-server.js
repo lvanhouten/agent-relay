@@ -10,6 +10,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { connectControl, connectPipe, dataPipe } = require('./lib');
+const { waitForIdleOrExit } = require('./wait');
 
 function rpc(msg, opts) {
   return new Promise((resolve, reject) => {
@@ -61,44 +62,6 @@ function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TA
       sock.on('error', finish);
       sock.on('close', finish);
       arm();
-    }, reject);
-  });
-}
-
-const EXIT_RE = /closed \(exit (-?\d+)\)/; // the board's data-pipe farewell sentinel
-
-// Block until a line goes quiet (no new bytes for idleMs) or exits, whichever
-// comes first, up to maxWaitMs. Meant to be called with the calling harness's
-// own background-task mechanism so the wait doesn't block a turn — the tool
-// call's own completion is the "wake". Never touches the `seen` read cursor:
-// this only detects state, switchboard_read_output is still how you see it.
-function waitForIdleOrExit(id, { idleMs = 12000, maxWaitMs = 600000 } = {}) {
-  const pollMs = Math.min(2000, Math.max(250, Math.floor(idleMs / 4)));
-  return new Promise((resolve, reject) => {
-    connectPipe(dataPipe(id), { retries: 3, delay: 50 }).then(sock => {
-      const start = Date.now();
-      let tail = '';
-      let lastActivity = start;
-      let done = false;
-      const hardStop = setTimeout(() => finish('timeout'), maxWaitMs);
-      const poll = setInterval(() => {
-        if (Date.now() - lastActivity >= idleMs) finish('idle');
-      }, pollMs);
-      function finish(reason) {
-        if (done) return;
-        done = true;
-        clearTimeout(hardStop);
-        clearInterval(poll);
-        try { sock.end(); } catch { /* already closed */ }
-        const m = EXIT_RE.exec(tail);
-        resolve({ reason, exitCode: m ? Number(m[1]) : null, waitedMs: Date.now() - start });
-      }
-      sock.on('data', d => {
-        lastActivity = Date.now();
-        tail = (tail + d.toString('latin1')).slice(-200);
-      });
-      sock.on('close', () => finish('exit'));
-      sock.on('error', () => finish('exit'));
     }, reject);
   });
 }
@@ -184,9 +147,13 @@ server.registerTool('switchboard_wait_for_idle', {
     'first, up to maxWaitMs. Call this the way you would call any tool that might ' +
     'take a while and that you want to be notified about rather than block on — ' +
     'the tool call itself is the thing to run in the background; its return is the ' +
-    'wake. After it returns, use switchboard_read_output to see what actually ' +
-    'happened; this tool only tells you that something is worth looking at, never ' +
-    'what or why.',
+    'wake. This only works if your harness can run an arbitrary MCP tool call in ' +
+    'the background; if it cannot (e.g. only plain shell commands are ' +
+    'backgroundable), run `sb wait <id> [idleMs] [maxWaitMs]` instead — same ' +
+    'detection logic (server/board/wait.js), reachable as a Bash command. After ' +
+    'either one returns, use switchboard_read_output to see what actually ' +
+    'happened; neither tells you what or why, only that something is worth ' +
+    'looking at.',
   inputSchema: {
     id: z.string().describe('Line id'),
     idleMs: z.number().int().positive().optional().describe('No new output for this long counts as idle (default 12000)'),

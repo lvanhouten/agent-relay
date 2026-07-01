@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// switchboard CLI — new / list / join / end lines.
+// switchboard CLI — new / list / join / end / wait on lines.
 const { connectControl } = require('./lib');
 const { detectSpawner } = require('./spawners');
 
@@ -39,6 +39,10 @@ usage:
   sb list           list active lines
   sb join <id>      join a new tab to an existing line
   sb end <id>       end a line
+  sb wait <id> [idleMs] [maxWaitMs]
+                    block until the line goes quiet or exits (default 12s idle,
+                    10min cap) — backgroundable via your shell's own job control,
+                    unlike an MCP tool call
   sb down           take the board offline (ends every line)
   sb help           show this help`;
 
@@ -94,6 +98,15 @@ async function main() {
       if (!arg) { console.error('usage: sb end <id>'); process.exit(1); }
       const r = await rpc({ cmd: 'end', id: arg });
       console.log(r.ok ? `line ${arg} ended` : `no such line: ${arg}`);
+      break;
+    }
+    case 'wait': {
+      if (!arg) { console.error('usage: sb wait <id> [idleMs] [maxWaitMs]'); process.exit(1); }
+      const { waitForIdleOrExit } = require('./wait');
+      const idleMs = args[2] ? Number(args[2]) : undefined;
+      const maxWaitMs = args[3] ? Number(args[3]) : undefined;
+      const r = await waitForIdleOrExit(arg, { idleMs, maxWaitMs });
+      console.log(JSON.stringify(r));
       break;
     }
     case 'help':
