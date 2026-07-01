@@ -68,4 +68,44 @@ function connectControl({ autostart = true, retries = 30, delay = 100 } = {}) {
   });
 }
 
-module.exports = { CTRL, dataPipe, startBoard, connectPipe, connectControl };
+// One control RPC: connect, write one JSON line, read one JSON line back, done.
+// Owned here (rather than reimplemented in board-client.js / sb.js /
+// mcp-server.js) so the framing — and the timeout — can't drift between callers.
+// A hung board (accepts the connection but never replies) now rejects after
+// `timeout` ms instead of leaving the caller waiting forever.
+const RPC_TIMEOUT_MS = 10000;
+
+function rpc(msg, { autostart = true, retries, delay, timeout = RPC_TIMEOUT_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    connectControl({ autostart, retries, delay }).then(sock => {
+      let buf = '';
+      let settled = false;
+      const done = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { sock.end(); } catch { /* already closed */ }
+        fn(arg);
+      };
+      const timer = setTimeout(
+        () => done(reject, new Error(`board rpc timed out after ${timeout}ms`)),
+        timeout,
+      );
+      sock.on('data', d => {
+        buf += d;
+        const i = buf.indexOf('\n');
+        if (i >= 0) {
+          let parsed;
+          try { parsed = JSON.parse(buf.slice(0, i)); }
+          catch (e) { return done(reject, e); }
+          done(resolve, parsed);
+        }
+      });
+      sock.on('error', e => done(reject, e));
+      sock.on('close', () => done(reject, new Error('board closed the connection before replying')));
+      sock.write(JSON.stringify(msg) + '\n');
+    }, reject);
+  });
+}
+
+module.exports = { CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS };

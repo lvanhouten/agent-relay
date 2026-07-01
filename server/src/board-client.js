@@ -3,26 +3,11 @@
 // the single seam where the board's telephone vocabulary (line / call / patch /
 // hangup) is spoken; everything above it deals in "sessions". The web tier never
 // imports node-pty or the board internals directly.
-const { connectControl, connectPipe, dataPipe } = require('../board/lib');
+const { connectPipe, connectControl, dataPipe, rpc } = require('../board/lib');
+const { EXIT_RE } = require('../board/wait');   // shared exit sentinel, one source of truth
 
-// One request -> one response over a short-lived control connection.
-// (call / lines / hangup / shutdown each reply with a single JSON line.)
-function rpc(msg, { autostart = true } = {}) {
-  return new Promise((resolve, reject) => {
-    connectControl({ autostart }).then(sock => {
-      let buf = '';
-      sock.on('data', d => {
-        buf += d;
-        const i = buf.indexOf('\n');
-        if (i >= 0) { sock.end(); resolve(JSON.parse(buf.slice(0, i))); }
-      });
-      sock.on('error', reject);
-      sock.write(JSON.stringify(msg) + '\n');
-    }, reject);
-  });
-}
-
-const EXIT_RE = /closed \(exit (-?\d+)\)/;   // the board's data-pipe farewell sentinel
+// rpc() (one control request -> one response, with a timeout) now lives in
+// board/lib.js so its framing can't drift from sb.js / mcp-server.js.
 
 // Attach to a line's raw byte stream. Scrollback replays automatically on connect.
 // Opens a dedicated control connection too, so this client's resizes register as a

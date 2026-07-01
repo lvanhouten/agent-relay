@@ -9,23 +9,10 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
-const { connectControl, connectPipe, dataPipe } = require('./lib');
+const { connectPipe, dataPipe, rpc } = require('./lib');
 const { waitForIdleOrExit, EXIT_RE } = require('./wait');
-
-function rpc(msg, opts) {
-  return new Promise((resolve, reject) => {
-    connectControl(opts).then(sock => {
-      let buf = '';
-      sock.on('data', d => {
-        buf += d;
-        const i = buf.indexOf('\n');
-        if (i >= 0) { sock.end(); resolve(JSON.parse(buf.slice(0, i))); }
-      });
-      sock.on('error', reject);
-      sock.write(JSON.stringify(msg) + '\n');
-    }, reject);
-  });
-}
+// rpc() (one control request -> one response, with a timeout) is shared from
+// lib.js so its framing can't drift from sb.js / board-client.js.
 
 // The board always replays its full scrollback to a fresh attach. We track how
 // much of that stream each line has already handed back so repeat reads return

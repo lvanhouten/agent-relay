@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // switchboard CLI — new / list / join / end / wait on lines.
-const { connectControl } = require('./lib');
+const { connectControl, rpc } = require('./lib');
 const { detectSpawner } = require('./spawners');
 
 // Detect the caller's terminal here (the board can't — it's detached) and pass
@@ -15,20 +15,8 @@ function spawnRecipe() {
   return r || undefined;
 }
 
-// One request, one response.
-async function rpc(msg, { autostart = true } = {}) {
-  const sock = await connectControl({ autostart });
-  return new Promise((resolve, reject) => {
-    let buf = '';
-    sock.on('data', d => {
-      buf += d;
-      const i = buf.indexOf('\n');
-      if (i >= 0) { sock.end(); resolve(JSON.parse(buf.slice(0, i))); }
-    });
-    sock.on('error', reject);
-    sock.write(JSON.stringify(msg) + '\n');
-  });
-}
+// rpc() (one control request -> one response, with a timeout) is shared from
+// lib.js so its framing can't drift from board-client.js / mcp-server.js.
 
 const HELP = `switchboard — a PTY exchange for your terminal
 
