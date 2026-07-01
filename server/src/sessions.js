@@ -54,10 +54,17 @@ class BoardUnreachableError extends Error {
 }
 
 class BoardSessions {
+  // rpc/attach are injectable (defaults = the real board-client) so the board-down
+  // classification can be unit-tested without a live board.
+  constructor({ rpc: rpcFn = rpc, attach: attachFn = attach } = {}) {
+    this._rpc = rpcFn;
+    this._attach = attachFn;
+  }
+
   async list() {
     let r;
     try {
-      r = await rpc({ cmd: 'list' });
+      r = await this._rpc({ cmd: 'list' });
     } catch (e) {
       console.error('[sessions] board list RPC failed:', e.message);
       throw new BoardUnreachableError(e);
@@ -75,14 +82,23 @@ class BoardSessions {
 
   async spawn({ name, cwd, shell, command } = {}) {
     const wd = resolveCwd(cwd);
-    const r = await rpc({
-      cmd: 'new',
-      open: false,                              // the browser is the "pane" — no terminal
-      name: (name ?? '').trim(),
-      shell: shell || undefined,                // which interactive shell; undefined -> board default
-      run: (command ?? '').trim() || undefined, // initial command typed into the shell; it stays open
-      cwd: wd,
-    });
+    let r;
+    try {
+      r = await this._rpc({
+        cmd: 'new',
+        open: false,                            // the browser is the "pane" — no terminal
+        name: (name ?? '').trim(),
+        shell: shell || undefined,              // which interactive shell; undefined -> board default
+        run: (command ?? '').trim() || undefined, // initial command typed into the shell; it stays open
+        cwd: wd,
+      });
+    } catch (e) {
+      // Same board-down contract as list()/get(): a spawn against a down board is
+      // a transient 503, not a 500. Without this, api.js's e.boardUnreachable
+      // check doesn't recognize the bare Error and POST /sessions 500s.
+      console.error('[sessions] board new RPC failed:', e.message);
+      throw new BoardUnreachableError(e);
+    }
     if (!r || !r.ok) throw new Error('board refused spawn');
     // Build the DTO through the same toDto() the list path uses, off the board's
     // own `new` reply, so the shape can't drift between the two call sites and the
@@ -96,13 +112,23 @@ class BoardSessions {
   }
 
   async kill(id) {
-    const r = await rpc({ cmd: 'end', id }).catch(() => null);
+    // Distinguish "board unreachable" (throw -> 503) from "board says no such
+    // line" (return false -> 404). The old `.catch(() => null)` collapsed a
+    // board-down failure into `false`, which api.js maps to a permanent 404 —
+    // "down looks indistinguishable from gone", the exact C2 bug relocated here.
+    let r;
+    try {
+      r = await this._rpc({ cmd: 'end', id });
+    } catch (e) {
+      console.error('[sessions] board end RPC failed:', e.message);
+      throw new BoardUnreachableError(e);
+    }
     return !!(r && r.ok);
   }
 
   // Per-WS attach: returns { write, resize, detach }. Scrollback replays on connect.
   attach(id, handlers) {
-    return attach(id, handlers);
+    return this._attach(id, handlers);
   }
 }
 
