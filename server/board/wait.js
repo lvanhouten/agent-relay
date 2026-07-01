@@ -6,9 +6,9 @@
 // run an arbitrary MCP tool call in the background — not a given). Two
 // callers, one implementation, so the detection logic never drifts between
 // them the way board-client.js's rpc() and mcp-server.js's used to.
-const { connectPipe, dataPipe } = require('./lib');
-
-const EXIT_RE = /closed \(exit (-?\d+)\)/; // the board's data-pipe farewell sentinel
+const { connectPipe, dataPipe, EXIT_RE } = require('./lib');
+// EXIT_RE (the board's data-pipe farewell sentinel) and the string it matches
+// both live in lib.js now, so a reworded farewell can't silently break detection.
 
 // Block until a line goes quiet (no new bytes for idleMs) or exits, whichever
 // comes first, up to maxWaitMs. Detection only: this cannot tell "finished" from

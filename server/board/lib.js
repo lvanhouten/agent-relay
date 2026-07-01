@@ -12,6 +12,14 @@ const PIPE_BASE = process.env.AGENT_RELAY_PIPE || 'agent-relay';
 const CTRL = `\\\\.\\pipe\\${PIPE_BASE}`;
 const dataPipe = id => `\\\\.\\pipe\\${PIPE_BASE}.${id}`;
 
+// The line's data-pipe farewell sentinel — the single source shared by the
+// producer (board.js, which writes it on line exit) and the consumers (wait.js /
+// board-client.js, which parse the exit code out of it). Keeping the format and
+// its matching regex here stops a reworded farewell from silently breaking
+// exit-code detection (which would fail open to exitCode:null with no error).
+const lineClosedFarewell = (id, exitCode) => `\r\n[switchboard: line ${id} closed (exit ${exitCode})]\r\n`;
+const EXIT_RE = /closed \(exit (-?\d+)\)/;
+
 // Launch the board as a detached daemon that outlives whoever started it.
 function startBoard() {
   const child = spawn(process.execPath, [path.join(__dirname, 'board.js')], {
@@ -108,4 +116,4 @@ function rpc(msg, { autostart = true, retries, delay, timeout = RPC_TIMEOUT_MS }
   });
 }
 
-module.exports = { CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS };
+module.exports = { CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS, lineClosedFarewell, EXIT_RE };

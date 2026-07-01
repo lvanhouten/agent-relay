@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
-const { CTRL, dataPipe } = require('./lib');
+const { CTRL, dataPipe, lineClosedFarewell } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -73,7 +73,7 @@ function createLine(o = {}) {
     for (const c of s.clients) c.write(d);
   });
   p.onExit(({ exitCode }) => {
-    for (const c of s.clients) c.end(`\r\n[switchboard: line ${id} closed (exit ${exitCode})]\r\n`);
+    for (const c of s.clients) c.end(lineClosedFarewell(id, exitCode));
     try { server.close(); } catch { /* ignore */ }
     sessions.delete(id);
     log('line', id, 'closed, exit', exitCode);
@@ -94,7 +94,10 @@ function createLine(o = {}) {
     };
     p.onData(() => setTimeout(feed, FEED_DEBOUNCE_MS));
     setTimeout(feed, FEED_FALLBACK_MS);
-    log('line', id, 'will run:', run);
+    // Log only that a run command exists and its length, not its text — the
+    // command can embed a credential as an argv (e.g. --api-key=...) and
+    // switchboard.log is persistent and unrotated.
+    log('line', id, 'will run a command', `(${run.length} chars)`);
   }
 
   log('line', id, 'placed:', shell, 'in', cwd);
@@ -200,7 +203,11 @@ const board = net.createServer(sock => {
       if (!line.trim()) continue;
       let m;
       try { m = JSON.parse(line); } catch { continue; }
-      handle(m, sock);
+      // Guard the whole command dispatch: a field that doesn't match the assumed
+      // shape (e.g. `args` as a non-array) must not throw uncaught here and take
+      // down the daemon — and every live line with it — for one bad request.
+      try { handle(m, sock); }
+      catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
   });
   sock.on('error', () => {});
