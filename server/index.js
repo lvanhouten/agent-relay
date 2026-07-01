@@ -5,6 +5,7 @@ const { BoardSessions } = require('./src/sessions');
 const { createAPI } = require('./src/api');
 const { createWSHub } = require('./src/ws');
 const { authMiddleware } = require('./src/auth');
+const { errorHandler } = require('./src/errorHandler');
 
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
@@ -25,19 +26,9 @@ app.use('/api', authMiddleware, createAPI(sessions));
 // Final error handler. Without it, Express's default handler leaks the full stack
 // trace in the response body whenever NODE_ENV isn't 'production' (the default
 // here). Log server-side, return a generic body — a board-unreachable failure is
-// a transient 503, anything else a generic 500 with no internal detail.
-// eslint-disable-next-line no-unused-vars -- Express identifies error handlers by arity (4 args)
-app.use((err, req, res, next) => {
-  console.error('[api] unhandled route error:', err && err.stack ? err.stack : err);
-  // If the response is already streaming, we can't set a status/body — Express's
-  // documented pattern is to delegate to the default handler via next(err), which
-  // aborts the connection, rather than bare-return (which would leave a
-  // half-written response hanging). Matters if any middleware is ever chained
-  // after this one.
-  if (res.headersSent) return next(err);
-  if (err && err.boardUnreachable) { res.status(503).json({ error: 'board unreachable' }); return; }
-  res.status(500).json({ error: 'internal error' });
-});
+// a transient 503, anything else a generic 500 with no internal detail. Shared
+// with api.test.js (./src/errorHandler.js) so the two can't drift.
+app.use(errorHandler);
 
 const server = createServer(app);
 createWSHub(server, sessions);

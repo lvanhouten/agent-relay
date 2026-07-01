@@ -9,18 +9,15 @@ const express = require('express');
 const http = require('http');
 const { createAPI } = require('./api');
 const { BoardUnreachableError } = require('./sessions');
+const { errorHandler } = require('./errorHandler');
 
 function serve(sessions) {
   const app = express();
   app.use(express.json());
   app.use('/api', createAPI(sessions));
-  // Match index.js's final error handler (the non-boardUnreachable 500 path).
-  app.use((err, req, res, _next) => {
-    if (res.headersSent) return;
-    err && err.boardUnreachable
-      ? res.status(503).json({ error: 'board unreachable' })
-      : res.status(500).json({ error: 'internal error' });
-  });
+  // The real handler (index.js's own), not a duplicate — W3-new: a hand-rolled
+  // copy here had drifted from index.js's actual fix and gave it zero coverage.
+  app.use(errorHandler);
   return app;
 }
 
@@ -71,4 +68,37 @@ test('DELETE /sessions/:id -> 500 on a non-board error (not swallowed as 404)', 
   const app = serve({ kill: async () => { throw new Error('boom'); } });
   const { status } = await request(app, 'DELETE', '/api/sessions/7');
   assert.strictEqual(status, 500);
+});
+
+// Direct unit tests against the real handler (W3-new: the branch below had no
+// coverage under either the old duplicate or the new shared version until now).
+test('errorHandler: delegates to next(err) when headers are already sent, does not double-respond', () => {
+  const err = new Error('boom');
+  const calls = [];
+  const res = {
+    headersSent: true,
+    status: () => { calls.push('status'); return res; },
+    json: () => { calls.push('json'); },
+  };
+  const next = (e) => { calls.push('next'); assert.strictEqual(e, err); };
+  errorHandler(err, {}, res, next);
+  assert.deepStrictEqual(calls, ['next'], 'must delegate to next(err), never call status/json after headers are sent');
+});
+
+test('errorHandler: a board-unreachable error returns 503 with a generic body', () => {
+  const err = Object.assign(new Error('down'), { boardUnreachable: true });
+  let statusCode, body;
+  const res = { headersSent: false, status: (c) => { statusCode = c; return res; }, json: (b) => { body = b; } };
+  errorHandler(err, {}, res, () => assert.fail('next should not be called'));
+  assert.strictEqual(statusCode, 503);
+  assert.deepStrictEqual(body, { error: 'board unreachable' });
+});
+
+test('errorHandler: a non-board error returns a generic 500 with no internal detail leaked', () => {
+  const err = new Error('sensitive stack detail');
+  let statusCode, body;
+  const res = { headersSent: false, status: (c) => { statusCode = c; return res; }, json: (b) => { body = b; } };
+  errorHandler(err, {}, res, () => assert.fail('next should not be called'));
+  assert.strictEqual(statusCode, 500);
+  assert.deepStrictEqual(body, { error: 'internal error' });
 });
