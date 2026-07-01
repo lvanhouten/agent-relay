@@ -177,6 +177,17 @@ tells the agent to always read the tail first and only re-read with
 reaching for `full: true` on its very first read of a line (e.g. because the
 user said "show me the output") is working against the tool, not with it.
 
+`switchboard_wait_for_idle` blocks until a line goes quiet (no new bytes for
+`idleMs`, default 12s) or its process exits, whichever comes first, up to
+`maxWaitMs` (default 10 minutes) — meant to be called through the calling
+agent's own background-task mechanism (e.g. `run_in_background: true`) so the
+wait doesn't block a turn; the tool call's own completion is the wake, the same
+way a `run_in_background` `Bash`/`Agent` call notifies on completion. It only
+tells you *that* something changed (finished a turn, hit a prompt, is waiting
+on a decision, or is wedged — a quiet line can't be told apart from any of
+those by byte count alone), never *what* — follow up with
+`switchboard_read_output` to see what actually happened.
+
 ## Files
 
 | file | role |
