@@ -49,6 +49,11 @@ The `claude` segmented button is rendered `selected` whenever `isClaudeCommand(c
 
 **N2. A valid, CLI-accepted model/effort not in the chip list shows *no* chip selected — not even "default"** — `client/src/screens/SessionsScreen.jsx:62` · confidence 35
 
+**Status:** Open — deliberately left for the next dialog pass.
+**Resolution:** Not remediated this run by the user's explicit call: the behavior is design-consistent (chips are suggestions; the command field is the source of truth and shows the custom value), and a "custom" chip state is a small design decision worth making when the dialog is next touched rather than inventing under remediation. No issue doc — this Status block plus the open row in the ranking table is the tracking.
+
+---
+
 `FlagChipRow` computes `selected = current === value`, where `current = getFlag(command, flag)`. When the command carries a model the chips don't know (e.g. `claude --model claude-3-5-haiku-latest`, exactly the free-text-with-suggestions case the design doc blesses), `current` is a non-null string that matches neither the named options nor the `null` "default" chip — so the whole row renders with nothing lit. That reads as "no selection / broken" rather than "custom value active, see the command field." Consistent with the "chips are suggestions, field is source of truth" intent (so not a defect), but a maintainer/operator has no on-chip signal that a custom value is deliberately in play. A subtle "custom" affordance or a lit-but-unnamed state would resolve it; documented here as the most likely point of UI confusion.
 
 **N3. Model/effort enumerations are now duplicated across three locations that will drift on the next Anthropic release** — `server/board/mcp-server.js:240` · confidence 40
@@ -62,7 +67,7 @@ The alias/effort lists now live in the client chips (`CLAUDE_MODELS`/`CLAUDE_EFF
 
 **N4. `isClaudeCommand` misses `claude.exe`/`claude.cmd` and any case variation — the model/effort chips silently vanish for a Windows-style invocation** — `client/src/core/claudeFlags.ts:16` · confidence 30
 
-**Status:** ✅ Resolved in <N4 gate SHA>.
+**Status:** ✅ Resolved in 6ec4376.
 **Resolution:** Accepted as framed, fixed with the reviewer's own suggestion: `(\.\w+)?` before the boundary plus the `i` flag — `claude.cmd`, `claude.exe`, and cased forms now match while the `(\s|$)` boundary still excludes `claudette` (and `claudette.exe`, added to the negative tests). Closure check: red→green — the new Windows-qualified/cased assertions fail on the old regex and pass now; suite 37/37.
 
 ---
@@ -77,11 +82,13 @@ The pure module and the chip UI do the hard part correctly — in-place single-f
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| W1 | WARNING | 55 | `setFlag` inserts value verbatim — `$` hits String.replace substitution; spaced value round-trips lossily | (open) |
-| N1 | NOTE | 40 | re-clicking the lit `claude` chip wipes a hand-edited command | (open) |
-| N3 | NOTE | 40 | model/effort lists duplicated in MCP prose (drifts on next release) | (open) |
-| N2 | NOTE | 35 | a CLI-valid model not in the chip list shows no chip selected | (open) |
-| N4 | NOTE | 30 | `isClaudeCommand` misses `claude.exe`/`.cmd`/case variants | (open) |
+| ~~W1~~ | WARNING | 55 | `setFlag` inserts value verbatim — `$` hits String.replace substitution; spaced value round-trips lossily | ✅ Resolved in 35b2801 |
+| ~~N1~~ | NOTE | 40 | re-clicking the lit `claude` chip wipes a hand-edited command | ✅ Resolved in c483550 |
+| ~~N3~~ | NOTE | 40 | model/effort lists duplicated in MCP prose (drifts on next release) | ✅ Resolved in bdc8b7f |
+| N2 | NOTE | 35 | a CLI-valid model not in the chip list shows no chip selected | (open — accepted, next dialog pass) |
+| ~~N4~~ | NOTE | 30 | `isClaudeCommand` misses `claude.exe`/`.cmd`/case variants | ✅ Resolved in 6ec4376 |
+
+**What's left:** 4 resolved, 0 deferred, 0 rejected, 1 open (N2 — accepted as-is until the dialog is next touched).
 
 ## Review methodology
 
