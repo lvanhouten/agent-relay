@@ -7,7 +7,7 @@ import { createPollSequence, filterKilled } from './sessionGuards.ts';
 import type { Session } from './types.ts';
 
 const session = (id: string): Session => ({
-  id, name: `s-${id}`, shell: 'bash', cwd: '~', pid: 1, status: 'online', lastActive: 'just now',
+  id, name: `s-${id}`, shell: 'bash', cwd: '~', pid: 1, status: 'running', lastActive: 'just now',
 });
 
 test('pollSequence: a response applies in the ordinary case', () => {

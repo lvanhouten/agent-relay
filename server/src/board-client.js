@@ -4,7 +4,7 @@
 // hangup) is spoken; everything above it deals in "sessions". The web tier never
 // imports node-pty or the board internals directly.
 const { connectPipe, connectControl, dataPipe, rpc } = require('../board/lib');
-const { EXIT_RE } = require('../board/wait');   // shared exit sentinel, one source of truth
+const { EXIT_RE, DEFAULT_IDLE_MS } = require('../board/wait'); // shared exit sentinel + idle threshold, one source of truth
 
 // rpc() (one control request -> one response, with a timeout) now lives in
 // board/lib.js so its framing can't drift from sb.js / mcp-server.js.
@@ -41,4 +41,6 @@ async function attach(id, { onData, onExit } = {}) {
   };
 }
 
-module.exports = { rpc, attach };
+// DEFAULT_IDLE_MS rides through this seam so sessions.js never imports board
+// internals directly — the same "quiet" definition sb wait and the MCP tool use.
+module.exports = { rpc, attach, DEFAULT_IDLE_MS };

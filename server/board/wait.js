@@ -10,10 +10,16 @@ const { connectPipe, dataPipe, EXIT_RE } = require('./lib');
 // EXIT_RE (the board's data-pipe farewell sentinel) and the string it matches
 // both live in lib.js now, so a reworded farewell can't silently break detection.
 
+// The canonical "quiet" threshold: no new bytes for this long counts as idle.
+// Exported so every consumer — `sb wait`, switchboard_wait_for_idle, and the
+// session DTO's running/idle attention state (server/src/sessions.js) — shares
+// one definition instead of growing a third.
+const DEFAULT_IDLE_MS = 12000;
+
 // Block until a line goes quiet (no new bytes for idleMs) or exits, whichever
 // comes first, up to maxWaitMs. Detection only: this cannot tell "finished" from
 // "waiting on a decision" from "wedged" — read the line's own output for that.
-function waitForIdleOrExit(id, { idleMs = 12000, maxWaitMs = 600000 } = {}) {
+function waitForIdleOrExit(id, { idleMs = DEFAULT_IDLE_MS, maxWaitMs = 600000 } = {}) {
   const pollMs = Math.min(2000, Math.max(250, Math.floor(idleMs / 4)));
   return new Promise((resolve, reject) => {
     connectPipe(dataPipe(id), { retries: 3, delay: 50 }).then(sock => {
@@ -44,4 +50,4 @@ function waitForIdleOrExit(id, { idleMs = 12000, maxWaitMs = 600000 } = {}) {
   });
 }
 
-module.exports = { waitForIdleOrExit, EXIT_RE };
+module.exports = { waitForIdleOrExit, EXIT_RE, DEFAULT_IDLE_MS };

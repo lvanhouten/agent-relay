@@ -6,7 +6,7 @@
 // are shared with the `sb` CLI / terminal panes.
 const os = require('os');
 const path = require('path');
-const { rpc, attach } = require('./board-client');
+const { rpc, attach, DEFAULT_IDLE_MS } = require('./board-client');
 
 // Expand a leading ~ and fall back to home. The board hands cwd straight to
 // pty.spawn, which throws on a literal "~/".
@@ -27,6 +27,13 @@ function relTime(ms) {
 }
 
 // board "line" -> agent-relay session DTO (the shape the client already expects).
+// status is the attention state: 'running' (output within the shared idle
+// threshold) or 'idle' (quiet beyond it — deliberately NOT "done": an idle
+// agent may be thinking, blocked on a prompt, or finished, and PTY bytes can't
+// tell those apart). The threshold is wait.js's DEFAULT_IDLE_MS so the card,
+// `sb wait`, and switchboard_wait_for_idle can't disagree about what idle
+// means. Tombstones map via endedToDto, which overrides to 'exited'. A missing
+// idleMs (older board, or the `new` reply) counts as 0 — just active.
 function toDto(line) {
   return {
     id: line.id,
@@ -34,7 +41,7 @@ function toDto(line) {
     shell: line.shell,
     cwd: line.cwd,
     pid: line.pid ?? null,
-    status: 'online',                          // live lines; tombstones map via endedToDto
+    status: (line.idleMs ?? 0) < DEFAULT_IDLE_MS ? 'running' : 'idle',
     lastActive: relTime(line.idleMs ?? 0),
   };
 }

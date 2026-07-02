@@ -1,7 +1,7 @@
 # Session cards can't answer "which session needs me?"
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — the cheaper sibling of the deferred live-preview idea (`2026-07-01-session-card-live-preview.md`): most of what a preview would communicate is really a one-word state.
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** ✅ Phase 1 landed — 2026-07-02 (`running`/`idle` derived in `toDto()` from the board's `idleMs` against `wait.js`'s exported `DEFAULT_IDLE_MS`; card shows the dot next to the name and a labeled dot — "running" / "quiet" — beside the last-active time; `exited` came with the tombstone work). Phase 2 (`needs-input` via a Notification hook) remains proposed.
 **Kind:** Enhancement
 **Modules:** server/sessions, board (list reply), client/SessionsScreen
 **Severity:** Medium — small effort, large navigation payoff.
