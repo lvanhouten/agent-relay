@@ -28,6 +28,10 @@ tests cover the pure logic modules (`hostTrust.js`, and in `src/core/`:
 UI-only fix (e.g. a re-entrancy guard in a click handler) is proven by a named
 guarded code path instead of a DOM test. `npm run typecheck --workspace=client`
 type-checks `src/core/` (the client's TypeScript seam; screens stay JSX).
+A regression guard written *after* the code it guards passes trivially — prove it
+by mutation before trusting it: break the guarded invariant (delete the
+assignment, flip the branch), watch the test fail, revert. One run, and it also
+tells you whether the test guards the real invariant or just the line order.
 
 ## Architecture
 
@@ -44,7 +48,7 @@ This is an npm workspaces monorepo (`server/`, `client/`). The two packages are 
 - `src/ws.js` — WebSocket hub; each connection is origin-gated (`src/origin.js`) then token-gated before it `attach`es to one line by ID from the URL (`/sessions/:id`). Scrollback replays down the data pipe on connect. Inbound `input` / `resize`; outbound `data` / `exit` (the exit frame carries the code parsed from the board's farewell sentinel). An exited session (tombstone) refuses attach with 1008 — its data pipe is gone.
 - `index.js` — wires Express + `WebSocketServer` onto one `http.Server`. Port via `PORT` env (default 3017). Closes the listener gracefully on SIGINT/SIGTERM.
 
-> **The board is a separate, long-lived process.** `node --watch` reloads only the web tier (`index.js`, `src/`). Changes under `server/board/` (the kernel `board.js`, the `sb` CLI, `lib.js`) do **not** take effect until the board daemon itself restarts — and restarting it ends every line it owns, including any agent session attached to the board. To test board changes safely, run an isolated board on a separate pipe via `AGENT_RELAY_PIPE`.
+> **The board is a separate, long-lived process.** `node --watch` reloads only the web tier (`index.js`, `src/`). Changes under `server/board/` (the kernel `board.js`, the `sb` CLI, `lib.js`) do **not** take effect until the board daemon itself restarts — and restarting it ends every line it owns, including any agent session attached to the board. To test board changes safely, run an isolated board on a separate pipe via `AGENT_RELAY_PIPE` — `server/board/tombstone.e2e.test.js` is the template for making that a permanent integration test instead of a throwaway script (set the env var *before* requiring `lib.js`, spawn `board.js` as a child, poll `list`, clean up pipe + secret file in `t.after`; `node --test` runs each file in its own process, so the override can't leak). **Every RPC in teardown/cleanup code must go through the same namespaced env** — a bare `rpc({cmd:'shutdown'})` with no `AGENT_RELAY_PIPE` hits the production board and ends every live line on it.
 
 **Client** (`client/`) — Vite + React, no router
 - Navigation is manual screen state in `App.jsx`: `login` → `sessions` → `terminal`.
