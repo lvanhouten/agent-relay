@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
-const { CTRL, dataPipe, lineClosedFarewell, writeBootSecret,
+const { CTRL, dataPipe, lineClosedFarewell, generateSecret, persistSecret,
   makeHandshake, AUTH_TIMEOUT_MS, MAX_CMD_BYTES } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
@@ -382,14 +382,32 @@ board.on('error', e => {
   throw e;
 });
 
+// Bring the board online. The control pipe is itself the mutex: only ONE process
+// can listen on CTRL, so the bind is the race winner. We therefore bind FIRST and
+// persist the secret to disk only from the bind-success callback — a process that
+// LOSES the bind race (EADDRINUSE -> the 'error' handler above -> process.exit(0))
+// never reaches persist, so it can't overwrite the winner's on-disk secret and
+// permanently desync every client from the surviving daemon's in-memory secret
+// (C2). The secret is generated and assigned to the module SECRET *before* the
+// bind, so any connection accepted between bind and the file-write is still
+// compared against a real secret. Injectable so the ordering is unit-testable
+// without a real pipe.
+function bringOnline({ generate, assign, listen, persist, ready } = {}) {
+  const secret = generate();
+  assign(secret);                              // module SECRET set before any connection is handled
+  listen(() => { persist(secret); if (ready) ready(); });  // persist ONLY after a successful bind
+}
+
 // Only bind the control pipe when run as the daemon (`node board.js`); when
 // required by a test, just expose the pure helpers below.
 if (require.main === module) {
-  // Generate + persist the access secret BEFORE listening, so it exists by the
-  // time any client can connect (autostart included). Every data pipe created
-  // later reads the same module-level SECRET.
-  SECRET = writeBootSecret();
-  board.listen(CTRL, () => log('switchboard online:', CTRL));
+  bringOnline({
+    generate: generateSecret,
+    assign: s => { SECRET = s; },
+    listen: cb => board.listen(CTRL, cb),
+    persist: s => persistSecret(s),
+    ready: () => log('switchboard online:', CTRL),
+  });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline };

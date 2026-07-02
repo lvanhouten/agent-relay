@@ -4,7 +4,7 @@
 // just logged. Uses the pure helpers so no pty/process is launched.
 const test = require('node:test');
 const assert = require('node:assert');
-const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder } = require('./board');
+const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline } = require('./board');
 
 test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   const d = paneSpawnDecision({ file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'] });
@@ -55,6 +55,45 @@ test('notifyClientsClosed (N10): a throwing client does not abort the others or 
   const clients = new Set([good('a:'), bad, good('b:')]);
   assert.doesNotThrow(() => notifyClientsClosed(clients, 'BYE'));
   assert.deepStrictEqual(notified, ['a:BYE', 'b:BYE'], 'both healthy clients still notified');
+});
+
+// --- bringOnline: C2, the write-then-listen ordering that desyncs the secret ---
+// The fix: persist the secret ONLY from the bind-success callback, so a process
+// that loses the control-pipe bind race never overwrites the winner's on-disk
+// secret. These pin the ordering invariant without binding a real pipe.
+
+test('bringOnline (C2): persists the secret ONLY after the bind succeeds, never before', () => {
+  const calls = [];
+  let bindCb = null;
+  bringOnline({
+    generate: () => 'SEKRET',
+    assign: s => calls.push(['assign', s]),
+    listen: cb => { calls.push(['listen']); bindCb = cb; },  // bind not confirmed yet
+    persist: s => calls.push(['persist', s]),
+    ready: () => calls.push(['ready']),
+  });
+  // Before the OS confirms the bind, the secret is set in memory + listen is
+  // attempted, but NOTHING is written to disk — the old code wrote it here.
+  assert.deepStrictEqual(calls, [['assign', 'SEKRET'], ['listen']],
+    'no persist before the bind-success callback fires');
+  bindCb();  // this process won the pipe
+  assert.deepStrictEqual(calls,
+    [['assign', 'SEKRET'], ['listen'], ['persist', 'SEKRET'], ['ready']],
+    'secret persisted only inside the bind-success callback');
+});
+
+test('bringOnline (C2): a process that LOSES the bind race never persists the secret', () => {
+  const calls = [];
+  bringOnline({
+    generate: () => 'LOSER',
+    assign: s => calls.push(['assign', s]),
+    // Bind fails (EADDRINUSE): the success callback is never invoked; the real
+    // 'error' handler calls process.exit(0).
+    listen: () => { calls.push(['listen']); },
+    persist: s => calls.push(['persist', s]),
+  });
+  assert.ok(!calls.some(c => c[0] === 'persist'),
+    "the losing process must never overwrite the winner's on-disk secret");
 });
 
 // --- makeRunFeeder: initial-command feed debounce + confirm-and-retry ---
