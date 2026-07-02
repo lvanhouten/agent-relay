@@ -72,6 +72,15 @@ This is a clean, well-scoped, additive change: the tombstone ring is bounded (ca
 
 **What's left:** 3 resolved, 2 accepted as-is, 0 deferred, 0 open.
 
+## Verify pass (remediation)
+
+**Range:** `1c764f9..d684080` (remediation `ad51a08` + doc annotations). **Verdict: CLEARED.**
+
+- **W1** — falsified by mutation: with `s.endReason = 'killed'` deleted from the `end` handler, `tombstone.e2e.test.js` fails (`reason` comes back `'exited'`); restored, it passes. The guard genuinely trips on the regression class that matters — the assignment being dropped or skipped. One precision note: the review's specific "reorder after `pty.kill()`" scenario would *not* actually misbehave (onExit fires async, so a same-tick assignment after the kill still lands first); the test guards the observable invariant rather than the line order, which is the right contract.
+- **N1** — `endedToDto` spreads `toDto(...)` with the exit-specific overrides listed after the spread; the pre-existing `lastActive comes from endedAt` assertion in `sessions.test.js` pins the override ordering.
+- **N2** — single `failed` predicate feeds both dot and badge; `exitCode != null` renders unknown as neutral. Typecheck + client suite green.
+- Fresh full run at close-out: server 87/87, client 37/37, typecheck clean.
+
 ## Review methodology
 
 Run via the `adversarial-review` skill in **in-context mode** — the change is small (1 commit, 6 code files, ~200 reviewable lines) and, while it touches a security-relevant kernel, carries no new trust boundary (tombstones ride the same secret-gated pipes and token-gated REST as live lines; no new PHI, no new access-control surface, no credential storage — the `run` command is deliberately *not* recorded in the tombstone). So the standing trio (Saboteur, Maintainer, Security Auditor) ran sequentially rather than as isolated subagents; no conditional specialist was summoned (no DB, no data-sized loop, no hot path, no HIPAA identifiers). Constraints brief built from the feature's own design doc (`2026-07-02-session-exit-metadata.md`) and the repo CLAUDE.md, whose stated intents were treated as authoritative — so the in-memory-only ring (id-reuse hygiene), the additive-`ended`/`sb`-ignores-it decision, `status` staying a loose `string` until attention-states, and the tombstone-stays-tiny (transcript retention is a separate feature) are **by design, not findings**. Security Auditor surfaced no finding above NOTE level (closest security-relevant assumption: dead-session `cwd`/`name` persist in memory and are served to any token-holder for up to 20 sessions — acceptable in the documented single-operator, single-token model, and identical to the live-line disclosure). Mechanical pre-checks (both test suites, typecheck) run green before the persona pass; W1's gap and N2's `null`-exitCode path were traced directly against the source before scoring.
