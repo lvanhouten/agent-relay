@@ -1,14 +1,18 @@
 # Root and board autostart PowerShell scripts are near-identical duplicates
 
 **Source:** Came up auditing the repo's Windows autostart scripts. Two `autostart.ps1` files — one at the repo root (agent-relay server) and one under the vendored board kernel (switchboard board) — are structurally near-identical, differing only in the task name and the target launcher script.
-**Status:** ⏸ Deferred — 2026-07-01.
+**Status:** ✅ Resolved — 2026-07-02 (Option A: keep the vendored copy pristine, cross-reference only).
 **Kind:** Tech-debt
 **Modules:** scripts, board (vendored)
 **Severity:** Low
 
-## What's already been closed
+## Resolution — Option A (keep vendored pristine)
 
-Nothing — this is a maintainability cleanup, not a defect.
+Chose **not** to deduplicate. The board copy is vendored from the switchboard kernel; extracting a shared parameterized script would force an edit to the vendored file and permanently fork it from upstream, turning every future re-vendor into a manual merge — a recurring cost to save ~40 lines of frozen register/unregister-a-task logic. The two scripts also belong to genuinely different products (the agent-relay server vs the switchboard board daemon); they share a shape, not an owner.
+
+Instead: added a maintainer cross-reference note to the **root** `autostart.ps1` (agent-relay's own, non-vendored) pointing at `server/board/autostart.ps1`, explaining they're intentionally separate and that board-side changes go upstream + re-vendor rather than a hand-edit. The note lives only in the non-vendored file **on purpose** — adding a comment to the vendored script would itself diverge it from upstream, defeating the whole rationale. `server/board/autostart.ps1` is left byte-identical to upstream.
+
+This addresses the "maintainer forgets the sibling" trigger (a pointer sits in the file a maintainer would edit) without any vendoring divergence.
 
 ## What remains
 

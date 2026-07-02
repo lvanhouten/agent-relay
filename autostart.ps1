@@ -7,6 +7,14 @@
   the board's shells land in your desktop session, not session 0. No admin needed
   for a self-scoped task; if registration is denied, run from an elevated shell.
 
+  Sibling script: server/board/autostart.ps1 registers the *board* daemon's own
+  logon task and shares this exact structure (differing only in task name and
+  launcher .vbs). They are intentionally NOT deduplicated into a shared script:
+  the board copy is vendored from the switchboard kernel and is kept byte-identical
+  to upstream so re-vendoring never conflicts. If you change the register/
+  unregister logic here, check whether the sibling wants the same change — but make
+  the board-side change upstream and re-vendor, don't hand-edit the vendored copy.
+
   Usage:
     powershell -ExecutionPolicy Bypass -File autostart.ps1 install
     powershell -ExecutionPolicy Bypass -File autostart.ps1 uninstall

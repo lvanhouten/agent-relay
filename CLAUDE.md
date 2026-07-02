@@ -67,4 +67,3 @@ In production the client is served statically by Express (not yet wired up), so 
 | Issue | File |
 |---|---|
 | Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | `_docs/issues/2026-07-01-session-card-live-preview.md` |
-| Root and vendored-board `autostart.ps1` scripts are near-identical duplicates | `_docs/issues/2026-07-01-duplicated-autostart-scripts.md` |
