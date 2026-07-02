@@ -39,16 +39,15 @@ function toDto(line) {
   };
 }
 
-// board tombstone -> exited-session DTO. Same shape as toDto plus the exit
-// metadata (exitCode, reason) the tombstone exists to carry; pid is gone with
-// the process. `reason: 'killed'` means the board's `end` command (an operator
-// kill) rather than the process exiting on its own.
+// board tombstone -> exited-session DTO. Built THROUGH toDto (not a parallel
+// field list) so a field added to the base session shape lands in both
+// producers; only the exit metadata (exitCode, reason) and the dead-process
+// overrides (pid, status, endedAt-based lastActive) differ. `reason: 'killed'`
+// means the board's `end` command (an operator kill) rather than the process
+// exiting on its own.
 function endedToDto(t) {
   return {
-    id: t.id,
-    name: t.name || `session-${t.id}`,
-    shell: t.shell,
-    cwd: t.cwd,
+    ...toDto({ id: t.id, name: t.name, shell: t.shell, cwd: t.cwd }),
     pid: null,
     status: 'exited',
     exitCode: t.exitCode ?? null,

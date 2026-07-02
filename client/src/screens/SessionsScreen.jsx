@@ -138,9 +138,10 @@ function ExitedSessionCard({ session, onDismiss }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const killed = session.reason === 'killed';
   const label = killed ? 'killed' : `exit ${session.exitCode ?? '?'}`;
-  // A kill is expected and a clean exit is fine — only a non-zero exit code
-  // (crash / failure) earns the error color.
-  const dotStatus = !killed && session.exitCode !== 0 ? 'error' : 'offline';
+  // The one crash predicate — dot color and badge variant must agree. A kill is
+  // expected, a clean exit is fine, and an UNKNOWN (null) exit code is not
+  // presented as a crash: only a known non-zero code earns the error styling.
+  const failed = !killed && session.exitCode != null && session.exitCode !== 0;
   return (
     <Card padding="md" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', opacity: 0.75 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -150,7 +151,7 @@ function ExitedSessionCard({ session, onDismiss }) {
             fontFamily: 'var(--font-display)', fontWeight: 600,
             fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
           }}>
-            <StatusDot status={dotStatus} pulse={false} size="sm" showLabel={false} />
+            <StatusDot status={failed ? 'error' : 'offline'} pulse={false} size="sm" showLabel={false} />
             {session.name}
           </span>
           <span style={{
@@ -169,7 +170,7 @@ function ExitedSessionCard({ session, onDismiss }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Badge variant="neutral">{shellLabel}</Badge>
-          <Badge variant={!killed && session.exitCode !== 0 ? 'danger' : 'neutral'}>{label}</Badge>
+          <Badge variant={failed ? 'danger' : 'neutral'}>{label}</Badge>
         </div>
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
