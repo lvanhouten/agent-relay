@@ -10,6 +10,11 @@ Method: full-file reads (not diff hunks) by the orchestrator, cross-checked agai
 
 **C1. Control-plane pipe has no pre/post-auth buffer cap — unbounded memory growth and a full daemon crash, reachable by exactly the threat actor this PR targets** — `server/board/board.js:337-362` (vs. the capped sibling at `server/board/board.js:138-158`, cap at line 146) · confidence 85
 
+**Status:** ✅ Resolved in 64e9250 (bundled with W2) — see below.
+**Resolution:** Accepted as framed. The control-plane accumulator was genuinely uncapped both pre- and post-auth, and with no `uncaughtException` handler a V8 max-string-length `RangeError` in the `'data'` listener would crash the whole daemon. Rather than paste a second copy of the cap into the control plane (which is precisely the W2 duplication that let the gap exist), the fix extracts the shared pre-auth handshake — accumulate-until-newline, strip `\r`, constant-time compare, and the cap — into one `makeHandshake` helper in `lib.js` that both pipe planes now call, so the cap can never again diverge from the compare (this closes C1 and W2 together; hence the bundle). A separate post-auth cap (`MAX_CMD_BYTES`) was added to the control-plane command loop, where an authed oversized newline-less command had the same unbounded-growth shape with no auth-timeout backstop. The per-chunk UTF-8 decode (N2, out of scope) is preserved verbatim. Closure check: `lib.test.js` `makeHandshake` tests — a newline-less stream past the cap returns `{ type: 'overflow' }` (verified red against the uncapped path, which returns `'pending'` and grows unbounded), with accept / reject / split-chunk / `\r`-strip also pinned.
+
+---
+
 Independently flagged by **all three personas** (Maintainer, Security Auditor, and Saboteur), each via a different angle — genuine distinct-lens convergence, promoted to CRITICAL.
 
 The data-plane socket handler (`createLine`'s `net.createServer`, board.js:138) explicitly caps its pre-auth accumulator: `if (authBuf.length > 4096) sock.destroy();` (line 146), with a comment citing memory as the reason. The control-plane's `board` server (board.js:337) does `buf += chunk` (line 342) with **no equivalent cap**, either before or after auth succeeds. `while ((i = buf.indexOf('\n')) >= 0)` never fires without a `\n`, so a connection that streams bytes with no newline grows `buf` without bound for the full `AUTH_TIMEOUT_MS` (5000ms) window before the pre-auth timer destroys the socket — and post-auth, an oversized single JSON "line" has the same unbounded growth with no timeout backstop at all.
@@ -23,6 +28,11 @@ The attacker profile is exactly the one this entire PR range exists to defend ag
 ---
 
 **C2. Concurrent cold-start board launches can permanently desync the on-disk secret file from the surviving daemon's in-memory secret, locking out every client** — `server/board/board.js:381-386` (write-then-listen ordering) + `server/board/lib.js:122-144` (`connectControl`'s per-call `started` flag) · confidence 68
+
+**Status:** ✅ Resolved in 88907a7 — see below.
+**Resolution:** Accepted as framed; took the finding's first suggested fix (bind first, persist only on a successful bind) rather than a lockfile/mutex. The insight is that the control pipe is *itself* the mutex — only one process can `listen()` on `CTRL` — so the bind is the race winner. The daemon-entry sequence was reordered (via a testable `bringOnline` helper) to generate the secret and assign it to the in-memory `SECRET` first, then `listen()`, and persist the secret to disk **only** from the bind-success callback. A process that loses the bind race takes the existing `EADDRINUSE` → `process.exit(0)` path and never reaches `persist`, so it can no longer overwrite the winner's on-disk secret. `writeBootSecret` was split into `generateSecret` + `persistSecret` to make this ordering possible. The residual sub-millisecond window between bind and file-write is compared against a real in-memory secret and self-heals on the next connect — a strict improvement over the prior *permanent, unrecoverable* desync. The `connectControl` per-call `started` flag was left as-is: it is not itself the defect (two racing cold-start callers each legitimately spawn a board); the write ordering was the desync mechanism, and that is what the fix removes. Closure check: `board.test.js` `bringOnline` tests — `persist` is invoked only from inside the bind-success callback (red against the old persist-then-listen order), and a process whose bind never succeeds never persists.
+
+---
 
 Found by the Saboteur persona; independently confirmed by the orchestrator against the full text of both files.
 
@@ -38,6 +48,11 @@ Every subsequent client calls `readSecret()` fresh, uncached, per connect (lib.j
 
 **W1. Windows secret-file permission bits are a no-op; the real confidentiality boundary was never verified with the same rigor as the pipe DACL** — `server/board/lib.js:44-45` · confidence 58
 
+**Status:** ⏸ Deferred — see [issue doc](../../issues/2026-07-01-secret-file-acl-verification.md).
+**Resolution:** Recommended verdict D (defer) — parked for the user's call, not fixed in this run. The finding is real (the `mode` bits are inert on Windows; the on-disk secret's confidentiality now rests on an inherited profile ACL that was never live-verified the way the pipe DACL was), but the substantive fix is bigger than the cited two lines and turns on a policy decision the agent should not make unattended: when the effective ACL is broader than the creating user, should the board fail-closed, warn, or auto-tighten? Fail-closed can brick startup on legitimate roaming/redirected profiles. The Windows arms (an `icacls /inheritance:r` reset, a live `Get-Acl` probe wired into a test) require a multi-user Windows ACL rig that does not exist in this worktree, so no honest closure check is possible here. Only the POSIX retroactive-`chmod` arm is safely scoped — but shipping it alone would leave the primary (Windows) gap open and imply more coverage than delivered. Deferred whole, with the fix outline, the policy question, and trigger signals captured in the issue doc.
+
+---
+
 `writeBootSecret` passes `{ mode: 0o700 }` / `{ mode: 0o600 }` to `fs.mkdirSync`/`fs.writeFileSync` unconditionally on every platform. On Windows, Node's `mode` option does not set an NTFS ACL — it has no meaningful effect on who can read the file (well-documented Node/Windows behavior). So the entire real protection for the plaintext secret is whatever ACL `%LOCALAPPDATA%\agent-relay\` *inherits* from the user profile directory — an assumption stated in the lib.js:28-33 comment ("NTFS already denies other non-admin users traversal into another profile") but never live-tested. Contrast this with the pipe DACL, which the same PR range's own issue doc (`2026-07-01-named-pipe-dacl-verification.md`) verified with a live `.GetAccessControl()` probe before shipping the fix. The secret file — the thing that now *is* the security boundary — got no equivalent probe. If the inherited directory ACL is ever broader than the creating user (roaming/redirected profiles, a loosened AppData ACL, a sync/backup agent), a foreign local user reads the secret straight from disk and fully reopens the exact vulnerability (PTY-output disclosure, and via the control pipe, command dispatch) this PR claims to close — just via file read instead of pipe read. POSIX has a lesser version of the same gap: `mode` only applies at file-creation time, so a pre-existing `~/.agent-relay` directory with wider permissions is never retroactively tightened.
 
 **Fix:** verify the effective ACL on the secret file/directory with a live probe the way the pipe DACL was verified, and/or explicitly reset the file's ACL post-creation on Windows (e.g. `icacls /inheritance:r` granting only the current user + SYSTEM/Administrators) rather than relying on inheritance.
@@ -46,6 +61,11 @@ Every subsequent client calls `readSecret()` fresh, uncached, per connect (lib.j
 
 **W2. Duplicated auth-handshake and constant-time-compare logic is the root cause that let C1 happen — and will let it happen again** — `server/board/board.js:138-158` vs `server/board/board.js:337-362`; `server/board/lib.js:59-64` (`secretEqual`) vs `server/src/auth.js:21-27` (`safeEqual`) · confidence 70
 
+**Status:** ✅ Resolved in 64e9250 (bundled with C1) — see below.
+**Resolution:** Re-framed and partially resolved. The **handshake** half — the actual root cause of C1 — is fixed: the two hand-rolled accumulate/compare copies in `board.js` are replaced by one `makeHandshake` helper in `lib.js` (with the buffer cap built in from the start), so the cap and the compare now live in exactly one place and cannot diverge again. That extraction is what makes C1's recurrence structurally impossible, so C1 and W2 were bundled into one fix. The **constant-time-compare** half was re-framed rather than merged: `lib.secretEqual` (board kernel, pipe secret) and `src/auth.safeEqual` (web tier, HTTP token) sit on opposite sides of a deliberate package boundary — the board kernel is independent and runs standalone via `sb`/`mcp-server` with no dependency on `server/src`, so importing one into the other to dedupe would violate that independence. Instead a reciprocal cross-reference comment was added to `auth.js` (matching the existing "mirrors src/auth.js" note in `lib.js`) so a maintainer changing one algorithm knows to change the other — addressing the finding's real concern ("nothing keeps them in sync") without the wrong coupling. Closure check: same as C1 — the `makeHandshake` tests in `lib.test.js`.
+
+---
+
 Flagged by the Maintainer persona; confirmed by the orchestrator. The data-plane and control-plane `net.createServer` callbacks in `board.js` each independently hand-roll the identical handshake shape: accumulate bytes into a local buffer, find the first `\n`, strip a trailing `\r`, compare via `secretEqual`, flip an `authed` flag, clear an `authTimer`. C1 is the direct, observed consequence of this duplication — a hardening detail (the buffer cap) landed in one copy and was never carried to its twin, in the *same commit*. Separately, `secretEqual` (lib.js) and `safeEqual` (auth.js) are two independent implementations of the same constant-time compare, living in different modules with no shared import or cross-reference (lib.js's comment says "mirrors src/auth.js"; auth.js has no reciprocal pointer). They are logically equivalent today, but nothing keeps them that way.
 
 **Fix:** factor the shared handshake (accumulate-until-newline, strip `\r`, `secretEqual` compare, `authTimer`, buffer cap) into one helper in `lib.js` that both `createServer` callbacks call, the same way `secretEqual`/`AUTH_TIMEOUT_MS` are already centralized there.
@@ -53,6 +73,11 @@ Flagged by the Maintainer persona; confirmed by the orchestrator. The data-plane
 ---
 
 **W3. A data-pipe auth/connect failure is indistinguishable from "the line just went quiet"** — `server/board/mcp-server.js:100-136` (`readOutput`/`finish`/`advanceCursor`), `server/board/lib.js:95-118` (`sendSecret`, `connectPipe`) · confidence 55
+
+**Status:** ✅ Resolved in b186f25 — see below.
+**Resolution:** Accepted as framed; took the finding's minimal ("at minimum") client-side option rather than adding an explicit board-side auth ack/nak (which would be a protocol change across every data-pipe consumer and would need careful framing to avoid polluting the raw PTY byte stream). The distinguishing signal is precise: a pipe that *closed* with *zero bytes* ever received can only be a failed attach — a quiet-but-healthy line keeps its socket open, so its read ends via the client's own quiet/hardStop timer with `pipeClosed=false`; and a normal line exit reaches an authed client, which always receives the farewell sentinel before close, so `text` is non-empty. `readOutput`'s `finish()` now surfaces that case as a rejection (`EREADCLOSED`, rendered by the tool as `isError`) and leaves the read cursor untouched, so an auth/connect failure can no longer masquerade as an empty read — which was the specific way it silently compounded the C2 desync lockout. Factored the decision into the pure `readClosedBeforeOutput(text, pipeClosed)` for testability. Note: the analogous silent path on `sendInput` (a write that flushes before the board's post-auth `destroy`) was observed but not fixed — it needs a design decision about confirming a send landed without adding latency to every write; see the discovered-findings note in the run report. Closure check: `mcp-server.test.js` `readClosedBeforeOutput` tests — `('', true)` → failed attach, `('', false)` → quiet line, `(farewell, true)` → normal exit; red without the fix, where `finish()` resolved `''` regardless.
+
+---
 
 `connectPipe()` resolves as soon as the pipe connects and `sendSecret()` has fired-and-forgotten the secret line — it never waits for the board to actually accept or reject it. If the board destroys the socket for any reason (a mismatched secret from the C2 race above, a transient `readSecret()` hiccup, a board restart mid-connect), the client sees a `'close'`/`'error'` event; `readOutput`'s `finish()` sets `pipeClosed = true` and resolves with whatever text arrived (empty, since the connection was killed before any data), while `advanceCursor` deletes the cursor cache entry exactly as it would for a genuinely-exited line. The MCP caller gets a **clean, successful empty read** — indistinguishable from "the shell hasn't produced anything new" — with no signal that the read itself silently failed. This directly compounds C2: an operator hitting the secret-desync lockout would see every `switchboard_read_output` call quietly return nothing, not an error pointing at the real cause.
 
@@ -92,14 +117,16 @@ Two CRITICAL findings, both grounded in code the orchestrator read in full and c
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| C1 | CRITICAL | 85 | Control-plane pipe has no buffer cap — DoS + full daemon crash (no uncaughtException handler) | (open) |
-| C2 | CRITICAL | 68 | Concurrent cold-start races can desync the secret file, permanently locking out every client | (open) |
-| W2 | WARNING | 70 | Duplicated auth-handshake/compare logic is the root cause behind C1 | (open) |
-| W1 | WARNING | 58 | Windows secret-file mode bits are inert; inherited ACL never verified | (open) |
-| W3 | WARNING | 55 | Auth/connect failures on a data pipe masquerade as a clean empty read | (open) |
+| ~~C1~~ | CRITICAL | 85 | Control-plane pipe has no buffer cap — DoS + full daemon crash (no uncaughtException handler) | ✅ Resolved in 64e9250 (bundled w/ W2) |
+| ~~C2~~ | CRITICAL | 68 | Concurrent cold-start races can desync the secret file, permanently locking out every client | ✅ Resolved in 88907a7 |
+| ~~W2~~ | WARNING | 70 | Duplicated auth-handshake/compare logic is the root cause behind C1 | ✅ Resolved in 64e9250 (re-framed; compare kept separate by design) |
+| W1 | WARNING | 58 | Windows secret-file mode bits are inert; inherited ACL never verified | ⏸ Deferred — [issue doc](../../issues/2026-07-01-secret-file-acl-verification.md) |
+| ~~W3~~ | WARNING | 55 | Auth/connect failures on a data pipe masquerade as a clean empty read | ✅ Resolved in b186f25 |
 | N6 | NOTE | 55 | `makeRunFeeder`'s reaction check is a tautology given monotonic time | (open) |
 | N4 | NOTE | 45 | `sendInput`'s options object is undocumented at its own call site | (open) |
 | N2 | NOTE | 40 | Per-chunk UTF-8 decode in the pre-auth path can corrupt split multi-byte chars | (open) |
 | N3 | NOTE | 40 | `makeRunFeeder`'s accepted double-run risk has no regression test | (open) |
 | N1 | NOTE | 33 | Empty-string `Origin` treated as trusted non-browser client | (open) |
 | N5 | NOTE | 25 | `server/board/autostart.ps1`'s relative path to the shared script is unenforced | (open) |
+
+**What's left (this run's scope — C1, C2, W1, W2, W3):** 4 Resolved (C1, C2, W2, W3) · 1 Deferred (W1) · 0 Rejected · 0 open in scope. The six Notes (N1–N6) were explicitly out of scope for this pass and remain open for a later review.

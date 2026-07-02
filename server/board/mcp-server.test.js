@@ -45,6 +45,26 @@ test('advanceCursor (C1 re-corruption): null key neither reads nor writes the ca
   assert.strictEqual(cache.size, 1, 'nothing written under a null key');
 });
 
+// --- readClosedBeforeOutput: W3, a failed attach must not read as a quiet line ---
+// The pure decision readOutput's finish() makes: only a pipe that closed with zero
+// bytes ever received is a failed attach (auth rejected / board restart mid-connect
+// / line gone). A quiet-but-healthy line keeps its socket open (pipeClosed=false);
+// a normal exit delivers the farewell sentinel first (text non-empty).
+
+test('readClosedBeforeOutput (W3): closed with zero bytes is a failed attach', () => {
+  assert.strictEqual(mcp.readClosedBeforeOutput('', true), true);
+});
+
+test('readClosedBeforeOutput (W3): a quiet-but-open line (timer-driven finish) is NOT a failure', () => {
+  // The quiet/hardStop timers fire finish() with pipeClosed=false — a legit empty read.
+  assert.strictEqual(mcp.readClosedBeforeOutput('', false), false);
+});
+
+test('readClosedBeforeOutput (W3): a normal exit (farewell bytes received) is NOT a failure', () => {
+  // An authed client always receives the farewell sentinel before the pipe closes.
+  assert.strictEqual(mcp.readClosedBeforeOutput('[switchboard: line 1 closed (exit 0)]', true), false);
+});
+
 // --- forgetLine: C1 sub-defect 1, the end_line leak ---
 
 test('forgetLine (C1 leak): drops every cursor for an id across all boot nonces', () => {

@@ -6,7 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
-const { CTRL, dataPipe, lineClosedFarewell, writeBootSecret, secretEqual, AUTH_TIMEOUT_MS } = require('./lib');
+const { CTRL, dataPipe, lineClosedFarewell, generateSecret, persistSecret,
+  makeHandshake, makeCommandBuffer, AUTH_TIMEOUT_MS } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -136,22 +137,20 @@ function createLine(o = {}) {
   // reader that can open the pipe (the OS default DACL allows read) still sees
   // nothing. Bytes after the secret line on the same connection are PTY input.
   const server = net.createServer(sock => {
-    let authed = false, authBuf = '';
+    let authed = false;
+    const gate = makeHandshake(SECRET);   // shared pre-auth handshake (cap + compare)
     const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
     const drop = () => { clearTimeout(authTimer); s.clients.delete(sock); };
     sock.on('data', d => {
       if (authed) { p.write(d.toString('utf8')); return; }
-      authBuf += d.toString('utf8');
-      const i = authBuf.indexOf('\n');
-      if (i < 0) { if (authBuf.length > 4096) sock.destroy(); return; }  // cap pre-auth buffer
-      const provided = authBuf.slice(0, i).replace(/\r$/, '');
-      const rest = authBuf.slice(i + 1);
-      if (!secretEqual(provided, SECRET)) { sock.destroy(); return; }
+      const r = gate.feed(d);
+      if (r.type === 'pending') return;
+      if (r.type === 'overflow' || r.type === 'reject') { sock.destroy(); return; }
       authed = true;
       clearTimeout(authTimer);
       s.clients.add(sock);
       for (const chunk of s.buf) sock.write(chunk);   // replay scrollback, post-auth
-      if (rest) p.write(rest);  // input bytes bundled in the same chunk as the secret line
+      if (r.rest) p.write(r.rest);  // input bytes bundled in the same chunk as the secret line
     });
     sock.on('close', drop);
     sock.on('error', drop);
@@ -335,21 +334,24 @@ function handle(m, sock) {
 // command is dispatched, so a foreign process that can open the control pipe
 // still can't list, spawn, resize, or shut down lines.
 const board = net.createServer(sock => {
-  let buf = '';
   let authed = false;
+  let cmd = null;                        // post-auth command accumulator (makeCommandBuffer)
+  const gate = makeHandshake(SECRET);    // shared pre-auth handshake (cap + compare)
   const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
   sock.on('data', chunk => {
-    buf += chunk;
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i);
-      buf = buf.slice(i + 1);
-      if (!authed) {
-        if (!secretEqual(line.replace(/\r$/, ''), SECRET)) { sock.destroy(); return; }
-        authed = true;
-        clearTimeout(authTimer);
-        continue;
-      }
+    let res;
+    if (!authed) {
+      const r = gate.feed(chunk);
+      if (r.type === 'pending') return;
+      if (r.type === 'overflow' || r.type === 'reject') { sock.destroy(); return; }
+      authed = true;
+      clearTimeout(authTimer);
+      cmd = makeCommandBuffer(r.rest);   // bytes after the secret line begin the command stream
+      res = cmd.feed('');                // drain any command bundled in the secret-line chunk
+    } else {
+      res = cmd.feed(chunk.toString('utf8'));
+    }
+    for (const line of res.lines) {
       if (!line.trim()) continue;
       let m;
       try { m = JSON.parse(line); } catch { continue; }
@@ -359,6 +361,10 @@ const board = net.createServer(sock => {
       try { handle(m, sock); }
       catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
+    // Post-auth cap (the other half of C1): an oversized newline-less command would
+    // otherwise grow unbounded until V8's RangeError crashes the daemon, with no
+    // auth-timeout backstop once authed. makeCommandBuffer flags it; we destroy.
+    if (res.overflow) { sock.destroy(); return; }
   });
   sock.on('error', () => {});
   // A pane's control socket lives for the pane's lifetime; when it drops, forget
@@ -375,14 +381,32 @@ board.on('error', e => {
   throw e;
 });
 
+// Bring the board online. The control pipe is itself the mutex: only ONE process
+// can listen on CTRL, so the bind is the race winner. We therefore bind FIRST and
+// persist the secret to disk only from the bind-success callback — a process that
+// LOSES the bind race (EADDRINUSE -> the 'error' handler above -> process.exit(0))
+// never reaches persist, so it can't overwrite the winner's on-disk secret and
+// permanently desync every client from the surviving daemon's in-memory secret
+// (C2). The secret is generated and assigned to the module SECRET *before* the
+// bind, so any connection accepted between bind and the file-write is still
+// compared against a real secret. Injectable so the ordering is unit-testable
+// without a real pipe.
+function bringOnline({ generate, assign, listen, persist, ready } = {}) {
+  const secret = generate();
+  assign(secret);                              // module SECRET set before any connection is handled
+  listen(() => { persist(secret); if (ready) ready(); });  // persist ONLY after a successful bind
+}
+
 // Only bind the control pipe when run as the daemon (`node board.js`); when
 // required by a test, just expose the pure helpers below.
 if (require.main === module) {
-  // Generate + persist the access secret BEFORE listening, so it exists by the
-  // time any client can connect (autostart included). Every data pipe created
-  // later reads the same module-level SECRET.
-  SECRET = writeBootSecret();
-  board.listen(CTRL, () => log('switchboard online:', CTRL));
+  bringOnline({
+    generate: generateSecret,
+    assign: s => { SECRET = s; },
+    listen: cb => board.listen(CTRL, cb),
+    persist: s => persistSecret(s),
+    ready: () => log('switchboard online:', CTRL),
+  });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline };

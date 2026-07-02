@@ -36,14 +36,28 @@ const SECRET_DIR = process.platform === 'win32'
   : path.join(os.homedir(), '.agent-relay');
 const secretPath = () => path.join(SECRET_DIR, `board.${PIPE_BASE}.secret`);
 
-// Generate a fresh secret and persist it (owner-only). Called once by the board
-// daemon at startup, before it starts listening, so the file exists by the time
-// any client can successfully connect. `file` is injectable for tests.
-function writeBootSecret(file = secretPath()) {
-  const secret = crypto.randomBytes(32).toString('base64url');
+// A fresh high-entropy secret, in memory only. Split out from persistence so the
+// daemon can generate + hold the secret BEFORE it wins the control-pipe bind, and
+// write it to disk ONLY after the bind succeeds — a process that loses the bind
+// race then never overwrites the winner's on-disk secret (C2).
+function generateSecret() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+// Persist an already-generated secret to the owner-only secret file. `file` is
+// injectable for tests. (On Windows the mode bits are inert — the real boundary
+// is the inherited profile-directory ACL; see the SECRET_DIR comment above.)
+function persistSecret(secret, file = secretPath()) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, secret, { mode: 0o600 });
   return secret;
+}
+
+// Generate a fresh secret and persist it in one step (owner-only). Retained for
+// callers/tests that want the old atomic behavior; the daemon now uses the
+// generate/persist split above so it can order persistence after the bind (C2).
+function writeBootSecret(file = secretPath()) {
+  return persistSecret(generateSecret(), file);
 }
 
 // Read the current board's secret. Read fresh on every connect (not cached at
@@ -66,6 +80,80 @@ function secretEqual(a, b) {
 // A connection that opens but never presents the secret is dropped after this
 // long, so a foreign process can't hold a pre-auth socket open indefinitely.
 const AUTH_TIMEOUT_MS = 5000;
+
+// Cap on the pre-auth accumulator (both pipe planes). A foreign process that can
+// open a pipe under the OS default DACL but doesn't know the secret can stream
+// bytes with no newline; without a cap the accumulated string grows until it hits
+// V8's max string length, whose RangeError throws SYNCHRONOUSLY inside the
+// 'data' listener — and there is no uncaughtException handler in the board, so
+// that one connection crashes the whole daemon and every live line with it (C1).
+// A legitimate secret line is ~43 bytes, so 4096 is generous headroom.
+const MAX_PREAUTH_BYTES = 4096;
+
+// The shared pre-auth handshake used by BOTH pipe planes (data + control). Each
+// plane must: accumulate incoming bytes until the first newline, cap that pre-auth
+// buffer (C1), strip a trailing \r, and constant-time-compare the first line to
+// the secret. This logic was previously hand-rolled TWICE in board.js; the cap
+// landed in the data-plane copy and was never carried to the control-plane twin —
+// which is exactly how the control plane shipped uncapped and crash-prone (W2 is
+// the root cause of C1). Centralized here, with secretEqual/AUTH_TIMEOUT_MS/the
+// cap, so the compare and the cap can never diverge from each other again.
+//
+// Per-connection: create one, feed() each raw 'data' chunk to it until it returns
+// a terminal result. Note it decodes each chunk independently (utf8), matching the
+// prior data-plane behavior verbatim — the split-multibyte edge (a separate, out-
+// of-scope note) is intentionally NOT changed here.
+//   { type: 'pending' }         still accumulating, under the cap — caller waits
+//   { type: 'overflow' }        pre-auth cap exceeded — caller destroys the socket
+//   { type: 'reject' }          first line != secret — caller destroys the socket
+//   { type: 'accept', rest }    secret matched; `rest` = bytes after the first \n
+// After 'accept' the caller owns the byte stream; do not feed() again.
+function makeHandshake(secret, { cap = MAX_PREAUTH_BYTES } = {}) {
+  let buf = '';
+  return {
+    feed(chunk) {
+      buf += chunk.toString('utf8');
+      const i = buf.indexOf('\n');
+      if (i < 0) return buf.length > cap ? { type: 'overflow' } : { type: 'pending' };
+      const provided = buf.slice(0, i).replace(/\r$/, '');
+      const rest = buf.slice(i + 1);
+      if (!secretEqual(provided, secret)) return { type: 'reject' };
+      return { type: 'accept', rest };
+    },
+  };
+}
+
+// Cap on the post-auth control-plane command buffer. Pre-auth is capped by
+// makeHandshake; post-auth an authenticated client still accumulates bytes until a
+// newline before a JSON command is parsed, so an oversized newline-less command
+// has the same unbounded-growth → RangeError → daemon-crash shape (C1). Set well
+// above any legitimate command (a `new` with a long `run` field is still tiny
+// relative to this) and far below V8's limit, so only a pathological stream trips
+// it. The data plane needs no post-auth cap: after auth it pumps raw bytes
+// straight to the pty without accumulating.
+const MAX_CMD_BYTES = 1024 * 1024;
+
+// Post-auth control-plane command accumulator, with the MAX_CMD_BYTES cap. Mirrors
+// makeHandshake (pure, no socket) so the cap is unit-testable rather than buried in
+// the control server's inline data handler. Seed with the post-handshake leftover
+// bytes, then feed() each chunk (already utf8-decoded): it returns the complete
+// newline-terminated command lines and flags `overflow` when the un-terminated
+// tail — an oversized newline-less command — blows the cap, exactly as the inline
+// code did (split first, then cap the remainder). On overflow the caller destroys
+// the socket. Call feed('') once right after seeding to drain any commands that
+// arrived bundled in the same chunk as the secret line.
+function makeCommandBuffer(rest = '', { cap = MAX_CMD_BYTES } = {}) {
+  let buf = rest;
+  return {
+    feed(chunk) {
+      buf += chunk;
+      const lines = [];
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) { lines.push(buf.slice(0, i)); buf = buf.slice(i + 1); }
+      return { lines, overflow: buf.length > cap };
+    },
+  };
+}
 
 // The line's data-pipe farewell sentinel — the single source shared by the
 // producer (board.js, which writes it on line exit) and the consumers (wait.js /
@@ -186,5 +274,6 @@ function rpc(msg, { autostart = true, retries, delay, timeout = RPC_TIMEOUT_MS }
 module.exports = {
   CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS,
   lineClosedFarewell, EXIT_RE,
-  writeBootSecret, readSecret, secretEqual, secretPath, AUTH_TIMEOUT_MS,
+  generateSecret, persistSecret, writeBootSecret, readSecret, secretEqual, secretPath,
+  AUTH_TIMEOUT_MS, MAX_PREAUTH_BYTES, MAX_CMD_BYTES, makeHandshake, makeCommandBuffer,
 };
