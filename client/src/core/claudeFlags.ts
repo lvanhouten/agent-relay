@@ -33,9 +33,18 @@ export function getFlag(command: string, name: string): string | null {
 // null. Present flags are replaced in place; absent ones are appended. The
 // removal match includes the flag's leading whitespace, so no space-collapse
 // pass is needed (which would mangle runs of spaces inside quoted args).
+//
+// Two write-side hazards are guarded (both bit for real — see the branch
+// review's W1): the replacement is a function so a `$` in the value is literal
+// text, never a String.replace substitution pattern; and a value containing
+// whitespace is re-quoted on write, so what getFlag read out of quotes writes
+// back into them instead of shedding tokens across a read→write round trip.
+// A value containing a double quote itself is beyond this module's shell-naive
+// contract (see the header) and is not handled.
 export function setFlag(command: string, name: string, value: string | null): string {
   const re = new RegExp(`\\s*--${name}(?:=|\\s+)(?:"[^"]*"|'[^']*'|[^\\s]+)`);
   if (value === null) return command.replace(re, '');
-  if (re.test(command)) return command.replace(re, ` --${name} ${value}`);
-  return `${command.trimEnd()} --${name} ${value}`;
+  const token = /\s/.test(value) ? `"${value}"` : value;
+  if (re.test(command)) return command.replace(re, () => ` --${name} ${token}`);
+  return `${command.trimEnd()} --${name} ${token}`;
 }

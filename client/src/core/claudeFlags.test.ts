@@ -64,6 +64,26 @@ test('setFlag: removing an absent flag is a no-op', () => {
   assert.strictEqual(setFlag('claude --effort high', 'model', null), 'claude --effort high');
 });
 
+// W1 of the branch review: both write paths must treat the value as literal
+// text, and a value getFlag read out of quotes must write back into them.
+test('setFlag: a $ in the value is literal, not a replace-pattern (W1)', () => {
+  // Before the fix, $& re-inserted the matched flag: 'claude --model a --model xb'.
+  assert.strictEqual(setFlag('claude --model x', 'model', 'a$&b'), 'claude --model a$&b');
+  assert.strictEqual(setFlag('claude', 'model', 'a$&b'), 'claude --model a$&b');
+});
+
+test('setFlag: a value with whitespace is re-quoted on write (W1)', () => {
+  assert.strictEqual(setFlag('claude', 'model', 'a b'), 'claude --model "a b"');
+  assert.strictEqual(setFlag('claude --model x', 'model', 'a b'), 'claude --model "a b"');
+});
+
+test('read→write round trip preserves a quoted value (W1)', () => {
+  const read = getFlag('claude --model "a b"', 'model');
+  assert.strictEqual(read, 'a b');
+  const written = setFlag('claude', 'model', read);
+  assert.strictEqual(getFlag(written, 'model'), 'a b');
+});
+
 test('round trip: chips toggling both flags compose', () => {
   let cmd = 'claude';
   cmd = setFlag(cmd, 'model', 'haiku');
