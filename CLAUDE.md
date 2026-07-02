@@ -87,3 +87,4 @@ One doc per idea under `_docs/issues/`, each with motivation, outline, risks, an
 | Session exit metadata: tombstones instead of silent disappearance | `_docs/issues/2026-07-02-session-exit-metadata.md` |
 | Terminal QoL: search, transcript download, scroll-to-bottom pill | `_docs/issues/2026-07-02-terminal-qol.md` |
 | Desktop workspace shell: two shells over one core, spectator attach, panes, palette | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |
+| Extract the client core (`useSessionWS`, `useSessions`, `TerminalView`) in TypeScript — prerequisite for the shells | `_docs/issues/2026-07-02-extract-client-core.md` |
