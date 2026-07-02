@@ -4,22 +4,19 @@ const { createServer } = require('http');
 const { BoardSessions } = require('./src/sessions');
 const { createAPI } = require('./src/api');
 const { createWSHub } = require('./src/ws');
-const { authMiddleware } = require('./src/auth');
+const { authMiddleware, TOKEN, TOKEN_GENERATED } = require('./src/auth');
+const { originAllowed } = require('./src/origin');
 const { errorHandler } = require('./src/errorHandler');
 
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
 const app = express();
-// CORS. By default (unset) we reflect any origin. That is NOT safe on its own:
-// the operator's browser bridges every page they visit to localhost, so with
-// AR_TOKEN unset a drive-by page can POST /api/sessions (i.e. run a command) —
-// and reflecting its origin here is exactly what lets that preflight through.
-// Set AR_CORS_ORIGIN (comma-separated allowlist) and/or AR_TOKEN; token-less
-// with open CORS is a dev-only posture.
-const CORS_ORIGIN = process.env.AR_CORS_ORIGIN;
-app.use(cors(CORS_ORIGIN
-  ? { origin: CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean) }
-  : undefined));
+// CORS: reflect the request's origin only when the shared origin policy allows
+// it (loopback, same-origin, or the AR_CORS_ORIGIN allowlist — see
+// src/origin.js). Any other page gets no ACAO headers, so its preflights fail
+// and its responses are unreadable. The WS upgrade enforces the same policy in
+// ws.js, since CORS never applied to WebSockets.
+app.use(cors((req, cb) => cb(null, { origin: originAllowed(req.headers.origin, req.headers.host) })));
 app.use(express.json());
 
 const sessions = new BoardSessions();
@@ -37,6 +34,14 @@ createWSHub(server, sessions);
 
 server.listen(PORT, () => {
   console.log(`agent-relay server → http://localhost:${PORT}`);
+  if (TOKEN_GENERATED) {
+    console.log(
+      `\nAR_TOKEN not set — generated an access token for this run:\n\n  ${TOKEN}\n\n` +
+      `Paste it into the login screen. Set AR_TOKEN to pin a stable token,\n` +
+      `or AR_NO_AUTH=1 to disable auth entirely (dev only — an open relay\n` +
+      `executes commands for any page your browser visits).\n`
+    );
+  }
 });
 
 // Release the port on catchable stops (Ctrl+C, SIGTERM). A hard external

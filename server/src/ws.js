@@ -3,6 +3,7 @@ const { WebSocketServer } = require('ws');
 const { parse } = require('url');
 const { StringDecoder } = require('string_decoder');
 const { checkToken } = require('./auth');
+const { originAllowed } = require('./origin');
 
 function createWSHub(server, sessions) {
   const wss = new WebSocketServer({ server });
@@ -11,6 +12,11 @@ function createWSHub(server, sessions) {
     const parsed = parse(req.url, true);
     const id = (parsed.pathname ?? '').split('/').filter(Boolean).pop();
 
+    // Origin gate first: CORS never applied to WebSockets, so without this any
+    // page the operator's browser visits could open a socket to a line. Same
+    // policy as the REST tier (src/origin.js); non-browser clients send no
+    // Origin and pass through to the token check.
+    if (!originAllowed(req.headers.origin, req.headers.host)) { ws.close(1008, 'forbidden origin'); return; }
     if (!checkToken(parsed.query.token)) { ws.close(1008, 'unauthorized'); return; }
     if (!id) { ws.close(1008, 'session not found'); return; }
 

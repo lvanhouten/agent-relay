@@ -1,6 +1,18 @@
 const crypto = require('crypto');
 
-const TOKEN = process.env.AR_TOKEN;
+// Access-token policy — auth is ON by default. An unauthenticated relay is a
+// command-execution endpoint for any page the operator's browser visits (see
+// src/origin.js), so "AR_TOKEN unset" must not mean "open": it means a token is
+// GENERATED for this run and printed at startup (index.js). AR_TOKEN pins a
+// stable token instead; AR_NO_AUTH=1 is the explicit, dev-only opt-out.
+// Pure so the three env shapes are unit-testable without subprocess env games.
+function resolveToken(env) {
+  if (env.AR_NO_AUTH === '1') return { token: null, generated: false };
+  if (env.AR_TOKEN) return { token: env.AR_TOKEN, generated: false };
+  return { token: crypto.randomBytes(24).toString('base64url'), generated: true };
+}
+
+const { token: TOKEN, generated: TOKEN_GENERATED } = resolveToken(process.env);
 
 // Constant-time compare so a network attacker can't recover the token byte by
 // byte from response-time differences. Length is compared first (unavoidably
@@ -14,9 +26,10 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-function checkToken(candidate) {
-  if (!TOKEN) return true; // auth disabled when AR_TOKEN is unset
-  return safeEqual(candidate, TOKEN);
+// token is injectable for tests; every real call site uses the module TOKEN.
+function checkToken(candidate, token = TOKEN) {
+  if (!token) return true; // auth explicitly disabled (AR_NO_AUTH=1)
+  return safeEqual(candidate, token);
 }
 
 function authMiddleware(req, res, next) {
@@ -27,4 +40,4 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, checkToken };
+module.exports = { authMiddleware, checkToken, resolveToken, TOKEN, TOKEN_GENERATED };
