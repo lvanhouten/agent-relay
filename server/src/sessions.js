@@ -34,8 +34,25 @@ function toDto(line) {
     shell: line.shell,
     cwd: line.cwd,
     pid: line.pid ?? null,
-    status: 'online',                          // the board only lists live lines
+    status: 'online',                          // live lines; tombstones map via endedToDto
     lastActive: relTime(line.idleMs ?? 0),
+  };
+}
+
+// board tombstone -> exited-session DTO. Built THROUGH toDto (not a parallel
+// field list) so a field added to the base session shape lands in both
+// producers; only the exit metadata (exitCode, reason) and the dead-process
+// overrides (pid, status, endedAt-based lastActive) differ. `reason: 'killed'`
+// means the board's `end` command (an operator kill) rather than the process
+// exiting on its own.
+function endedToDto(t) {
+  return {
+    ...toDto({ id: t.id, name: t.name, shell: t.shell, cwd: t.cwd }),
+    pid: null,
+    status: 'exited',
+    exitCode: t.exitCode ?? null,
+    reason: t.reason === 'killed' ? 'killed' : 'exited',
+    lastActive: relTime(Date.now() - (t.endedAt ?? Date.now())),
   };
 }
 
@@ -73,7 +90,9 @@ class BoardSessions {
       console.error('[sessions] board list RPC returned a non-ok reply:', JSON.stringify(r));
       throw new BoardUnreachableError();
     }
-    return r.lines.map(toDto);
+    // Live lines first, then recently-ended tombstones (`ended` is absent from
+    // an older board's reply — treat that as none, not an error).
+    return [...r.lines.map(toDto), ...(r.ended || []).map(endedToDto)];
   }
 
   async get(id) {
@@ -123,7 +142,18 @@ class BoardSessions {
       console.error('[sessions] board end RPC failed:', e.message);
       throw new BoardUnreachableError(e);
     }
-    return !!(r && r.ok);
+    if (r && r.ok) return true;
+    // Not a live line — maybe a tombstone: DELETE on an exited session is the
+    // client dismissing it. `forget` says ok:false for an unknown id (and an
+    // older board answers unknown-cmd ok:false), so both still map to 404.
+    let f;
+    try {
+      f = await this._rpc({ cmd: 'forget', id });
+    } catch (e) {
+      console.error('[sessions] board forget RPC failed:', e.message);
+      throw new BoardUnreachableError(e);
+    }
+    return !!(f && f.ok);
   }
 
   // Per-WS attach: returns { write, resize, detach }. Scrollback replays on connect.

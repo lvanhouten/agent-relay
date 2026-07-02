@@ -38,7 +38,74 @@ test('kill(): a reachable board reporting no such line returns false (-> 404, no
   assert.strictEqual(await s.kill('nope'), false);
 });
 
-test('kill(): a successful end returns true', async () => {
-  const s = new BoardSessions({ rpc: async () => ({ ok: true }) });
+test('kill(): a successful end returns true without a forget round-trip', async () => {
+  const calls = [];
+  const s = new BoardSessions({ rpc: async m => { calls.push(m.cmd); return { ok: true }; } });
   assert.strictEqual(await s.kill('7'), true);
+  assert.deepStrictEqual(calls, ['end'], 'a live kill never falls through to forget');
+});
+
+test('kill(): falls through to forget so DELETE on a tombstone dismisses it', async () => {
+  const calls = [];
+  const s = new BoardSessions({
+    rpc: async m => { calls.push(m.cmd); return { ok: m.cmd === 'forget' }; },
+  });
+  assert.strictEqual(await s.kill('7'), true);
+  assert.deepStrictEqual(calls, ['end', 'forget']);
+});
+
+test('kill(): a board-down forget still classifies as unreachable (503, not 404)', async () => {
+  const s = new BoardSessions({
+    rpc: async m => {
+      if (m.cmd === 'end') return { ok: false };
+      throw new Error('board rpc timed out');
+    },
+  });
+  await assert.rejects(
+    () => s.kill('7'),
+    e => e instanceof BoardUnreachableError && e.boardUnreachable === true,
+  );
+});
+
+// --- tombstones: list() maps the board's `ended` ring to exited-session DTOs ---
+
+test('list(): tombstones map to status exited with their exit metadata', async () => {
+  const s = new BoardSessions({
+    rpc: async () => ({
+      ok: true,
+      lines: [{ id: '2', name: 'live', shell: 'pwsh.exe', cwd: 'C:\\w', pid: 42, idleMs: 0 }],
+      ended: [
+        { id: '1', name: 'ran', shell: 'pwsh.exe', cwd: 'C:\\w', exitCode: 3, endedAt: Date.now() - 5000, reason: 'exited' },
+        { id: '0', name: '', shell: 'bash', cwd: '/w', exitCode: 1, endedAt: Date.now(), reason: 'killed' },
+      ],
+    }),
+  });
+  const list = await s.list();
+  assert.deepStrictEqual(list.map(x => x.status), ['online', 'exited', 'exited'],
+    'live lines first, then tombstones');
+  const [, ran, anon] = list;
+  assert.strictEqual(ran.exitCode, 3);
+  assert.strictEqual(ran.reason, 'exited');
+  assert.strictEqual(ran.pid, null, 'no pid on a dead process');
+  assert.strictEqual(ran.lastActive, '5s ago', 'lastActive comes from endedAt');
+  assert.strictEqual(anon.name, 'session-0', 'unnamed tombstones get the same fallback as live lines');
+  assert.strictEqual(anon.reason, 'killed');
+});
+
+test('list(): an older board reply without `ended` still lists live lines', async () => {
+  const s = new BoardSessions({
+    rpc: async () => ({ ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: 0 }] }),
+  });
+  const list = await s.list();
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(list[0].status, 'online');
+});
+
+test('get(): finds a tombstone by id (so the WS hub can refuse it as exited)', async () => {
+  const s = new BoardSessions({
+    rpc: async () => ({ ok: true, lines: [], ended: [{ id: '9', shell: 'bash', cwd: '/', exitCode: 0, endedAt: Date.now(), reason: 'exited' }] }),
+  });
+  const got = await s.get('9');
+  assert.ok(got);
+  assert.strictEqual(got.status, 'exited');
 });

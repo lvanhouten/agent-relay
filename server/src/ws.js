@@ -36,6 +36,10 @@ function createWSHub(server, sessions) {
       ws.close(1011, 'session lookup failed'); return;
     }
     if (!existing) { ws.close(1008, 'session not found'); return; }
+    // A tombstone (recently-ended line) is listed but not attachable — its data
+    // pipe is gone. Same permanent close code as "not found" so the client
+    // doesn't retry a dead line.
+    if (existing.status === 'exited') { ws.close(1008, 'session exited'); return; }
 
     // Attach to the board line. Scrollback replays down the data pipe on connect,
     // so there's no separate history step. Decode raw bytes -> string for the client.

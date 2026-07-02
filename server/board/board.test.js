@@ -4,7 +4,8 @@
 // just logged. Uses the pure helpers so no pty/process is launched.
 const test = require('node:test');
 const assert = require('node:assert');
-const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline } = require('./board');
+const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline,
+  makeEndedRegistry, endedLines } = require('./board');
 
 test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   const d = paneSpawnDecision({ file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'] });
@@ -55,6 +56,61 @@ test('notifyClientsClosed (N10): a throwing client does not abort the others or 
   const clients = new Set([good('a:'), bad, good('b:')]);
   assert.doesNotThrow(() => notifyClientsClosed(clients, 'BYE'));
   assert.deepStrictEqual(notified, ['a:BYE', 'b:BYE'], 'both healthy clients still notified');
+});
+
+// --- ended-line tombstones: exit metadata survives the line's deletion ---
+// The registry is the pure core (capped ring + forget); the handle() tests pin
+// the wire surface: `list` carries `ended`, `forget` dismisses one tombstone.
+
+test('makeEndedRegistry: records in order and caps at the ring size', () => {
+  const reg = makeEndedRegistry(3);
+  for (let i = 1; i <= 5; i++) reg.record({ id: String(i), exitCode: 0 });
+  assert.deepStrictEqual(reg.list().map(t => t.id), ['3', '4', '5'],
+    'oldest tombstones fall off the ring first');
+});
+
+test('makeEndedRegistry: forget removes exactly one tombstone, reports unknown ids', () => {
+  const reg = makeEndedRegistry();
+  reg.record({ id: '1', exitCode: 0 });
+  reg.record({ id: '2', exitCode: 1 });
+  assert.strictEqual(reg.forget('1'), true);
+  assert.deepStrictEqual(reg.list().map(t => t.id), ['2']);
+  assert.strictEqual(reg.forget('1'), false, 'already dismissed');
+  assert.strictEqual(reg.forget('nope'), false, 'never existed');
+});
+
+test('makeEndedRegistry: list() returns a copy, not the live ring', () => {
+  const reg = makeEndedRegistry();
+  reg.record({ id: '1' });
+  reg.list().pop();
+  assert.strictEqual(reg.list().length, 1, 'mutating a listing must not drop a tombstone');
+});
+
+test("handle('list') carries the ended tombstones alongside live lines", () => {
+  endedLines.record({ id: 'tomb-1', name: 'x', exitCode: 3, reason: 'exited' });
+  try {
+    const c = capture();
+    handle({ cmd: 'list' }, c.sock);
+    const r = c.reply();
+    assert.strictEqual(r.ok, true);
+    assert.ok(Array.isArray(r.ended), 'list reply has an ended array');
+    const t = r.ended.find(e => e.id === 'tomb-1');
+    assert.ok(t, 'the recorded tombstone is listed');
+    assert.strictEqual(t.exitCode, 3);
+    assert.strictEqual(t.reason, 'exited');
+  } finally {
+    endedLines.forget('tomb-1');   // module-level registry — leave it clean
+  }
+});
+
+test("handle('forget') dismisses a tombstone once, then reports ok:false", () => {
+  endedLines.record({ id: 'tomb-2', exitCode: 0, reason: 'killed' });
+  const c1 = capture();
+  handle({ cmd: 'forget', id: 'tomb-2' }, c1.sock);
+  assert.strictEqual(c1.reply().ok, true);
+  const c2 = capture();
+  handle({ cmd: 'forget', id: 'tomb-2' }, c2.sock);
+  assert.strictEqual(c2.reply().ok, false, 'second dismiss finds nothing');
 });
 
 // --- bringOnline: C2, the write-then-listen ordering that desyncs the secret ---

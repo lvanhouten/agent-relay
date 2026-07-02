@@ -1,7 +1,35 @@
 # An exited session vanishes from the list — exit code and reason are shown to no one
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — the board *has* the exit code at the moment of death and throws it away with the line record.
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** ✅ Resolved — 2026-07-02.
+
+## Resolution
+
+Implemented as outlined, with one already-done discovery: bullet 3 (exit code in the
+WS `exit` frame) had existed end-to-end since the board-client extraction —
+`attach()` parses the code out of the farewell sentinel (`EXIT_RE`), `ws.js` sends
+`{ type: 'exit', code }`, and `TerminalView` prints "session exited · code N". What
+landed here:
+
+- Board: `makeEndedRegistry` — a capped ring (20) of `{ id, name, shell, cwd,
+  exitCode, endedAt, reason }` tombstones written in `p.onExit`; the `end` command
+  marks `endReason: 'killed'` before the signal so an operator kill is
+  distinguishable from a natural exit. `list` replies gain an additive `ended`
+  array; new `forget` command dismisses one tombstone. In-memory only, which is
+  also the id-reuse hygiene: a board restart clears the ring.
+- Web tier: `endedToDto` maps tombstones to `status: 'exited'` +
+  `exitCode`/`reason`; `kill()` falls through `end` → `forget` so DELETE on an
+  exited session is a dismiss; the WS hub refuses a tombstone attach with 1008.
+- Client: collapsed "Recently exited (N)" section on the sessions screen;
+  dismissable cards with a `killed` / `exit N` badge (danger-styled on a non-zero
+  natural exit — a ConPTY kill reports STATUS_CONTROL_C_EXIT, which is exactly why
+  `reason` exists). Header count stays live-only.
+
+Verified: unit tests (registry ring/forget, DTO mapping, kill fallthrough, wire
+surface) plus an isolated-board e2e (natural exit code 3 → `reason: 'exited'`;
+`end` → `reason: 'killed'`; forget semantics) and a browser pass over the full
+stack (crash → red `EXIT 3` badge, kill → neutral `KILLED`, dismiss → 204 +
+board-side forget).
 **Kind:** Enhancement
 **Modules:** board, server/sessions, client/SessionsScreen
 **Severity:** Low–Medium — small board change with outsized "wait, where did my session go?" payoff.
