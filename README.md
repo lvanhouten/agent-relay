@@ -106,8 +106,12 @@ WS     /sessions/:id           Bidirectional PTY stream
 
 Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS. Set
 `AR_CORS_ORIGIN` (comma-separated) to restrict cross-origin requests to an
-allowlist once the port is tunneled/exposed — unset reflects any origin, fine
-for a same-origin localhost deployment but not once `AR_TOKEN` is the only gate.
+allowlist — unset reflects any origin. Note that listening on localhost is not
+a security boundary by itself: any web page the operator's browser visits can
+reach `localhost:3017`, so with `AR_TOKEN` unset and CORS open, a drive-by page
+can spawn sessions (i.e. run commands) and attach to the WS. Treat token-less
+operation as dev-only; set `AR_TOKEN` whenever the relay runs alongside normal
+browsing, tunneled or not.
 
 ## Roadmap
 
@@ -116,6 +120,8 @@ for a same-origin localhost deployment but not once `AR_TOKEN` is the only gate.
 - [x] Frontend: session list UI
 - [x] Frontend: xterm.js terminal view
 - [x] Themes: light / dark terminal
-- [ ] Frontend: PWA manifest + mobile polish
-- [ ] Auth: enforce token-based auth on the relay endpoint
+- [x] Frontend: PWA manifest + service worker (installable on mobile)
+- [x] Auth: opt-in bearer-token auth (`AR_TOKEN`)
+- [ ] Auth: secure defaults — token required (auto-generated), WS `Origin` check, CORS allowlist
+- [ ] Frontend: mobile polish
 - [ ] Notifications: push alerts when a session needs input

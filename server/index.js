@@ -10,10 +10,12 @@ const { errorHandler } = require('./src/errorHandler');
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
 const app = express();
-// CORS. By default (unset) we reflect any origin — fine for the same-origin
-// localhost deployment this tool ships as. Set AR_CORS_ORIGIN (comma-separated)
-// to restrict to an allowlist once the port is tunneled/exposed, so an arbitrary
-// page the operator visits can't issue cross-origin requests to /api.
+// CORS. By default (unset) we reflect any origin. That is NOT safe on its own:
+// the operator's browser bridges every page they visit to localhost, so with
+// AR_TOKEN unset a drive-by page can POST /api/sessions (i.e. run a command) —
+// and reflecting its origin here is exactly what lets that preflight through.
+// Set AR_CORS_ORIGIN (comma-separated allowlist) and/or AR_TOKEN; token-less
+// with open CORS is a dev-only posture.
 const CORS_ORIGIN = process.env.AR_CORS_ORIGIN;
 app.use(cors(CORS_ORIGIN
   ? { origin: CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean) }

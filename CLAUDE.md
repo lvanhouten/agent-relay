@@ -64,9 +64,6 @@ In production the client is served statically by Express (not yet wired up), so 
 
 | Issue | File |
 |---|---|
-| Server accepts all connections regardless of the access token | `_docs/issues/auth-token-not-enforced.md` |
-| App cannot be installed on mobile home screen — no PWA manifest or service worker | `_docs/issues/pwa-manifest-missing.md` |
-| Esc and Ctrl+D keyboard shortcuts shown in the UI are not functional | `_docs/issues/keyboard-shortcuts-unimplemented.md` |
 | Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | `_docs/issues/2026-07-01-session-card-live-preview.md` |
 | "Relay host" field only governs the initial login probe — all other traffic is same-origin | `_docs/issues/2026-07-01-relay-host-only-governs-login.md` |
 | Board named pipes have no verified/explicit DACL restriction | `_docs/issues/2026-07-01-named-pipe-dacl-verification.md` |
