@@ -21,11 +21,13 @@ Ctrl+C / SIGTERM (catchable stops only).
 
 No build step is needed for development. Tests: `npm test --workspace=server` /
 `npm test --workspace=client` (Node's built-in `node --test` runner, no separate
-framework). Server tests cover the board kernel, MCP server, and API/session
-layer; client tests cover the pure logic modules (`hostTrust.js`, `wsFrame.js`) —
-there's no component-rendering harness, so a UI-only fix (e.g. a re-entrancy
-guard in a click handler) is proven by a named guarded code path instead of a
-DOM test.
+framework; Node's type stripping runs the client's `.test.ts` files directly).
+Server tests cover the board kernel, MCP server, and API/session layer; client
+tests cover the pure logic modules (`hostTrust.js`, and in `src/core/`:
+`wsFrame.ts`, `sessionGuards.ts`) — there's no component-rendering harness, so a
+UI-only fix (e.g. a re-entrancy guard in a click handler) is proven by a named
+guarded code path instead of a DOM test. `npm run typecheck --workspace=client`
+type-checks `src/core/` (the client's TypeScript seam; screens stay JSX).
 
 ## Architecture
 
@@ -46,11 +48,17 @@ This is an npm workspaces monorepo (`server/`, `client/`). The two packages are 
 
 **Client** (`client/`) — Vite + React, no router
 - Navigation is manual screen state in `App.jsx`: `login` → `sessions` → `terminal`.
-- `client/src/api.js` — thin fetch wrappers for the REST API. Paths are relative (`/api/...`) so they hit Vite's dev proxy in dev and the same origin in production. **Same-origin is the model**: the SPA is served by the relay (or the dev proxy), so every request — the login probe, session CRUD, the WS stream — targets the page's own origin. You reach a relay by loading this page from it (directly or through a tunnel), not by typing a host.
+- `client/src/core/` — the extracted client core: every piece of debugged, non-obvious client logic, in **TypeScript** (core only — screens stay JSX, the server stays CommonJS-no-build by design; `npm run typecheck --workspace=client` checks `src/core` and nothing else). Imports carry explicit `.ts`/`.tsx` extensions so Node's built-in type stripping can run the core's `.test.ts` files directly under `node --test`.
+  - `types.ts` — the contracts at the seam: the session DTO (mirrors `server/src/sessions.js` `toDto()`), the WS frame vocabulary, and `TerminalView`'s mode axis — `interactive` implemented; `spectator` (adopt reported PTY dims + CSS-scale, never send resize) declared for the desktop shell but not built.
+  - `api.ts` — thin fetch wrappers for the REST API. Paths are relative (`/api/...`) so they hit Vite's dev proxy in dev and the same origin in production. **Same-origin is the model**: the SPA is served by the relay (or the dev proxy), so every request — the login probe, session CRUD, the WS stream — targets the page's own origin. You reach a relay by loading this page from it (directly or through a tunnel), not by typing a host.
+  - `wsFrame.ts` — pure WS-frame guards: `parseFrame` rejects unparseable/non-object frames (a bad frame must never throw inside `onmessage` — that would freeze the terminal with no reconnect), `isValidDataPayload` additionally checks a `'data'` frame's payload is a string before it reaches `term.write()`.
+  - `sessionGuards.ts` — the pure halves of the polling guards (`createPollSequence` for stale-poll ordering, `filterKilled` for kill suppression), extracted so they're directly unit-tested instead of proven only as named code paths.
+  - `useSessionWS.ts` — WS lifecycle hook: auto-reconnect with exponential backoff; permanent stop on intentional detach / session `exit` / `1008`. Handlers must be stable refs — the effect intentionally excludes them from deps.
+  - `useSessions.ts` — the sessions data layer: list + 5 s poll + create/kill, with the stale-poll sequence guard, the `killed` suppression set (no flicker-back for a poll cycle), and the synchronous re-entrancy refs on create/kill (W2/W4 — a ref check before the first `await`, not just a button's `disabled` prop, which only takes effect after React re-renders). The guards are refs, not state, so they never retrigger effects — port them as-is.
+  - `xtermThemes.ts` / `TerminalView.tsx` — the terminal proper: owns xterm (fit addon, Ctrl+D detach via `onDetach`), the mount dance (fit-after-layout + font-load refit, padding on the wrapper not the mount node, reset-before-replay on reconnect, theme sync), and `useSessionWS` behind a refs bridge (the hook's callbacks are stable; the mount effect fills the refs). Exposes `getSelection()` through an imperative handle and reports `ConnStatus` via `onStatusChange` so chrome stays outside.
 - `client/src/hostTrust.js` — pure host helpers (`normalizeHost`, `isLocalhost`). `isLocalhost` backs `LoginScreen`'s cleartext gate — the one credential check left in the same-origin model: if the page was loaded over `http://` from a non-localhost host, sending the token means cleartext, so it's gated behind a confirm-and-retry.
-- `client/src/wsFrame.js` — pure WS-frame guards used by `TerminalScreen`: `parseFrame` rejects unparseable/non-object frames (a bad frame must never throw inside `onmessage` — that would freeze the terminal with no reconnect), `isValidDataPayload` additionally checks a `'data'` frame's payload is a string before it reaches `term.write()`.
-- `TerminalScreen.jsx` — `useSessionWS` hook manages the WS lifecycle with auto-reconnect (exponential backoff; stops on intentional detach / session `exit` / `1008`; resets and repaints the terminal on reconnect so the scrollback replay doesn't duplicate). Renders a real terminal via xterm.js (fit addon, theming, Ctrl+D to detach).
-- `SessionsScreen.jsx` — polls `/api/sessions` every 5 s. `handleCreate`/`handleKill` each guard against a fast double-click firing two concurrent requests (a synchronous ref check before the first `await`, not just the button's `disabled` prop, which only takes effect after React re-renders).
+- `TerminalScreen.jsx` — thin chrome around `<TerminalView>`: header (status dot fed by `onStatusChange`, copy-selection via the view's handle), footer, back button.
+- `SessionsScreen.jsx` — thin composition over `useSessions`: cards, filter, and the new-session dialog (which stays open until a create actually succeeds, so a failure surfaces instead of vanishing into an unhandled rejection).
 
 **Design system** (`_docs/design-system/`)
 - Core UI components live in `_docs/design-system/components/core/` and are imported via the `@ds` Vite alias (e.g. `import { Button } from '@ds/Button.jsx'`). These are plain React + inline styles — no CSS framework.
@@ -87,4 +95,3 @@ One doc per idea under `_docs/issues/`, each with motivation, outline, risks, an
 | Session exit metadata: tombstones instead of silent disappearance | `_docs/issues/2026-07-02-session-exit-metadata.md` |
 | Terminal QoL: search, transcript download, scroll-to-bottom pill | `_docs/issues/2026-07-02-terminal-qol.md` |
 | Desktop workspace shell: two shells over one core, spectator attach, panes, palette | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |
-| Extract the client core (`useSessionWS`, `useSessions`, `TerminalView`) in TypeScript — prerequisite for the shells | `_docs/issues/2026-07-02-extract-client-core.md` |

@@ -3,7 +3,7 @@
 // onmessage and freezes the terminal.
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseFrame, isValidDataPayload } from './wsFrame.js';
+import { parseFrame, isValidDataPayload } from './wsFrame.ts';
 
 test('parseFrame: the literal "null" frame returns null, not a throwing value (N4)', () => {
   // Before the fix: JSON.parse('null') === null, then null.type threw.
