@@ -27,3 +27,17 @@ export function isValidDataPayload(
 ): msg is Record<string, unknown> & { payload: string } {
   return typeof msg.payload === 'string';
 }
+
+// Same per-type guard for the 'exit' frame's code. server/src/ws.js only ever
+// forwards a real child-process exit code (number | null), but the envelope
+// guard doesn't validate per-type fields, and every value that reaches a
+// consumer should pass a runtime predicate, not a type assertion. Unlike the
+// data payload (where an invalid frame is dropped), an exit frame always ends
+// the session — the caller normalizes an invalid code instead of ignoring the
+// frame, so a malformed exit can't strand the client in a reconnect loop
+// against a dead line.
+export function isValidExitCode(
+  msg: Record<string, unknown>,
+): msg is Record<string, unknown> & { code: number | null } {
+  return typeof msg.code === 'number' || msg.code === null;
+}

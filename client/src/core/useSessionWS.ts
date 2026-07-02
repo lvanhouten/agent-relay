@@ -1,5 +1,5 @@
 import React from 'react';
-import { parseFrame, isValidDataPayload } from './wsFrame.ts';
+import { parseFrame, isValidDataPayload, isValidExitCode } from './wsFrame.ts';
 import type { ConnStatus } from './types.ts';
 
 export interface SessionWSHandlers {
@@ -61,9 +61,14 @@ export function useSessionWS(
         const msg = parseFrame(e.data);
         if (!msg) return;
         if (msg.type === 'data' && isValidDataPayload(msg)) onData(msg.payload);
-        // Cast, not coerce: the code is passed through verbatim like the pre-TS
-        // version did (the envelope guard doesn't validate per-type fields).
-        if (msg.type === 'exit') { ended = true; setConnStatus('offline'); onExit(msg.code as number | null); }
+        // An exit frame always ends the session — gating that on the code's
+        // validity would strand the client reconnecting to a dead line. Only
+        // the code value itself is guarded: normalized to null if malformed.
+        if (msg.type === 'exit') {
+          ended = true;
+          setConnStatus('offline');
+          onExit(isValidExitCode(msg) ? msg.code : null);
+        }
       };
 
       ws.onerror = () => { /* onclose drives recovery */ };

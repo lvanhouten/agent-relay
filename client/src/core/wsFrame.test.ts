@@ -3,7 +3,7 @@
 // onmessage and freezes the terminal.
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseFrame, isValidDataPayload } from './wsFrame.ts';
+import { parseFrame, isValidDataPayload, isValidExitCode } from './wsFrame.ts';
 
 test('parseFrame: the literal "null" frame returns null, not a throwing value (N4)', () => {
   // Before the fix: JSON.parse('null') === null, then null.type threw.
@@ -45,4 +45,22 @@ test('isValidDataPayload: a non-string payload is rejected', () => {
   assert.strictEqual(isValidDataPayload({ type: 'data', payload: 42 }), false);
   assert.strictEqual(isValidDataPayload({ type: 'data', payload: null }), false);
   assert.strictEqual(isValidDataPayload({ type: 'data' }), false);
+});
+
+// isValidExitCode — N2 of the extraction review: the exit frame's code was the
+// one per-type field trusted via a type assertion instead of a runtime
+// predicate. server/src/ws.js only forwards number|null, so both are valid;
+// anything else (missing, string, object) must be rejected so the consumer
+// normalizes it rather than interpolating garbage.
+test('isValidExitCode: a numeric or null code is valid', () => {
+  assert.strictEqual(isValidExitCode({ type: 'exit', code: 0 }), true);
+  assert.strictEqual(isValidExitCode({ type: 'exit', code: 137 }), true);
+  assert.strictEqual(isValidExitCode({ type: 'exit', code: null }), true);
+});
+
+test('isValidExitCode: a missing or non-numeric code is rejected', () => {
+  assert.strictEqual(isValidExitCode({ type: 'exit' }), false);
+  assert.strictEqual(isValidExitCode({ type: 'exit', code: '0' }), false);
+  assert.strictEqual(isValidExitCode({ type: 'exit', code: { evil: true } }), false);
+  assert.strictEqual(isValidExitCode({ type: 'exit', code: undefined }), false);
 });

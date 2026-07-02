@@ -48,7 +48,7 @@ Pre-extraction, `handleCreate` checked `if (creatingRef.current) return;` before
 
 **N1. `load` exposed on the public `Sessions` interface with no doc comment or current consumer** — `client/src/core/useSessions.ts:9` · confidence 40
 
-**Status:** ✅ Resolved in <N1 gate SHA>.
+**Status:** ✅ Resolved in ef71a50.
 **Resolution:** Accepted; resolved by documenting rather than dropping. `load` stays on the surface deliberately — the extraction exists to serve second consumers (desktop shell sidebar, mobile pull-to-refresh), and a manual refresh is a foreseeable first ask. The interface member now carries a doc comment stating it's safe to call externally (re-enters the same sequence guard and kill-suppression filter as the poll, so it can't stomp a newer result) and that the poll effect is its only current caller. Closure check: the comment on the interface member is the deliverable; no behavior changed, suite 18/18, typecheck clean.
 
 ---
@@ -60,6 +60,12 @@ Pre-extraction, `handleCreate` checked `if (creatingRef.current) return;` before
 *Fix:* either drop `load` from the returned/public `Sessions` shape if it's not meant to be called externally, or add a one-line comment on the interface member documenting that it's safe to call for a manual refresh and re-enters the same poll guards.
 
 **N2. Exit frame's `code` field uses an unchecked type assertion, unlike its sibling `data` field** — `client/src/core/useSessionWS.ts:462` · confidence 35
+
+**Status:** ✅ Resolved in <N2 gate SHA>.
+**Resolution:** Accepted; the reviewer's proposed fix applied with one deliberate semantic: `isValidExitCode(msg): msg is { code: number | null }` now guards the field in `wsFrame.ts` (mirroring `isValidDataPayload`), but unlike the data path — where an invalid frame is dropped — an exit frame still always ends the session, with an invalid code *normalized to null* rather than the frame ignored. Gating the whole exit handling on the predicate would strand the client reconnecting to a dead line; only the value is validated before it reaches the render sink. This slightly changes output for a malformed frame ("code null" instead of "code undefined") — accepted as the point of the fix. Closure check: red→green — `isValidExitCode` tests in `wsFrame.test.ts` (numeric/null accepted; missing/string/object rejected) fail without the new predicate and pass with it; suite 20/20.
+
+---
+
 `onmessage` validates the `data` frame's payload via the runtime predicate `isValidDataPayload` before trusting it (`client/src/core/wsFrame.ts`), but the `exit` frame's `code` field gets only `as number | null` — a compile-time assertion, not a runtime check — applied to a value taken straight from `parseFrame`'s `Record<string, unknown>` envelope. `wsFrame.ts` exists specifically to stop an unvalidated field from reaching a rendering sink unchecked; `code` is the one field in the vocabulary that skips that pattern. Currently benign because `server/src/ws.js:49` only ever forwards a real Node child-process exit code (always `number | null`), and the diff's own comment ("cast, not coerce... the envelope guard doesn't validate per-type fields") makes this an acknowledged decision rather than an oversight. Risk is forward-looking: a later change that does more than string-interpolate `code` (arithmetic, indexing, a `switch`) would trust the assertion instead of validating.
 
 *Verdict basis:* PLAUSIBLE — raised solo by the Security Auditor persona.
@@ -83,10 +89,12 @@ The extraction itself is clean — every hook/component move traced line-by-line
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| W1 | WARNING | 60 | free-port.js: shared try/catch lets a tcpv6 failure erase tcp results too | (open) |
-| W2 | WARNING | 55 | setCreateError('') now runs ahead of the re-entrancy guard it used to follow | (open) |
-| N1 | NOTE | 40 | `load` on `Sessions` interface undocumented, no consumer | (open) |
-| N2 | NOTE | 35 | exit frame `code` trusted via type assertion, not runtime predicate | (open) |
+| ~~W1~~ | WARNING | 60 | free-port.js: shared try/catch lets a tcpv6 failure erase tcp results too | ✅ Resolved in 8dda607 |
+| ~~W2~~ | WARNING | 55 | setCreateError('') now runs ahead of the re-entrancy guard it used to follow | ✅ Resolved in f282b59 (comment) |
+| ~~N1~~ | NOTE | 40 | `load` on `Sessions` interface undocumented, no consumer | ✅ Resolved in ef71a50 (comment) |
+| ~~N2~~ | NOTE | 35 | exit frame `code` trusted via type assertion, not runtime predicate | ✅ Resolved (SHA in Status block) |
+
+**What's left:** 4 resolved, 0 deferred, 0 rejected, 0 open.
 
 ## Review methodology
 
