@@ -21,12 +21,12 @@ function serve(sessions) {
   return app;
 }
 
-function request(app, method, path) {
+function request(app, method, path, { contentType = 'application/json' } = {}) {
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const { port } = server.address();
       const sendBody = method === 'POST';
-      const headers = sendBody ? { 'content-type': 'application/json' } : {};
+      const headers = sendBody ? { 'content-type': contentType } : {};
       const req = http.request({ port, method, path, headers }, res => {
         let body = '';
         res.on('data', c => (body += c));
@@ -44,6 +44,12 @@ test('POST /sessions -> 503 when spawn() throws BoardUnreachableError', async ()
   const app = serve({ spawn: async () => { throw new BoardUnreachableError(); } });
   const { status } = await request(app, 'POST', '/api/sessions');
   assert.strictEqual(status, 503);
+});
+
+test('POST /sessions -> 415 on a non-JSON content type (a "simple" cross-site POST skips CORS preflight)', async () => {
+  const app = serve({ spawn: async () => { throw new Error('spawn must not be reached'); } });
+  const { status } = await request(app, 'POST', '/api/sessions', { contentType: 'text/plain' });
+  assert.strictEqual(status, 415);
 });
 
 test('DELETE /sessions/:id -> 503 when kill() throws BoardUnreachableError (new-W1)', async () => {

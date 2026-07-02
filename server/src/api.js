@@ -33,6 +33,11 @@ function createAPI(sessions) {
 
   r.post('/sessions', async (req, res, next) => {
     try {
+      // Require a JSON content type. A cross-site page can fire a "simple"
+      // text/plain POST that skips the CORS preflight entirely; express.json()
+      // would leave req.body empty and this handler would spawn a default
+      // shell as a side effect. 415 closes that channel even under AR_NO_AUTH=1.
+      if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
       const body = req.body ?? {};
       const invalid = validateSpawnBody(body);
       if (invalid) return res.status(400).json({ error: invalid });

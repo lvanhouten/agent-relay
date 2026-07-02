@@ -121,7 +121,7 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
             value={token}
             onChange={(e) => setToken(e.target.value)}
             onKeyDown={onKey}
-            placeholder="optional"
+            placeholder="printed in the server console at startup"
           />
           {error && (
             <p style={{

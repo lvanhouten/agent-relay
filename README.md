@@ -68,7 +68,8 @@ npm run kill                # free :3017 and :5173 (stop orphaned dev processes)
 ```
 
 A `predev` guard frees the port before `server`/`client` start, so a restart can't
-collide with an orphaned process.
+collide with an orphaned process. Without `AR_TOKEN` set, the server prints a
+generated access token at startup — paste it into the login screen.
 
 ```sh
 npm test --workspace=server   # board kernel, MCP server, API/session layer
@@ -104,14 +105,18 @@ WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
 ```
 
-Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS. Set
-`AR_CORS_ORIGIN` (comma-separated) to restrict cross-origin requests to an
-allowlist — unset reflects any origin. Note that listening on localhost is not
-a security boundary by itself: any web page the operator's browser visits can
-reach `localhost:3017`, so with `AR_TOKEN` unset and CORS open, a drive-by page
-can spawn sessions (i.e. run commands) and attach to the WS. Treat token-less
-operation as dev-only; set `AR_TOKEN` whenever the relay runs alongside normal
-browsing, tunneled or not.
+Auth is **on by default**: REST requires `Authorization: Bearer <token>`, the WS
+a `?token=`. `AR_TOKEN` pins the token; unset, the server generates one per run
+and prints it at startup — paste it into the login screen. `AR_NO_AUTH=1`
+disables auth (dev only: listening on localhost is not a boundary by itself —
+any page the operator's browser visits can reach `localhost:3017`).
+
+Cross-origin requests are denied by default except from loopback origins (the
+Vite dev client) and same-origin pages; set `AR_CORS_ORIGIN` (comma-separated
+full origins) to extend the allowlist. The WS upgrade enforces the same origin
+policy (CORS never applied to WebSockets), and `POST /api/sessions` requires an
+`application/json` content type so a preflight-exempt "simple" cross-site POST
+can't spawn a session.
 
 ## Roadmap
 
@@ -122,6 +127,6 @@ browsing, tunneled or not.
 - [x] Themes: light / dark terminal
 - [x] Frontend: PWA manifest + service worker (installable on mobile)
 - [x] Auth: opt-in bearer-token auth (`AR_TOKEN`)
-- [ ] Auth: secure defaults — token required (auto-generated), WS `Origin` check, CORS allowlist
+- [x] Auth: secure defaults — token required (auto-generated), WS `Origin` check, CORS allowlist
 - [ ] Frontend: mobile polish
 - [ ] Notifications: push alerts when a session needs input
