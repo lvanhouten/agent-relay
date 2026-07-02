@@ -67,3 +67,24 @@ In production the client is served statically by Express (not yet wired up), so 
 | Issue | File |
 |---|---|
 | Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | `_docs/issues/2026-07-01-session-card-live-preview.md` |
+| Windows secret-file ACL is unverified — `mode` bits are inert on NTFS; the real boundary is the inherited profile ACL (deferred W1) | `_docs/issues/2026-07-01-secret-file-acl-verification.md` |
+
+## Feature backlog (proposed, not started)
+
+One doc per idea under `_docs/issues/`, each with motivation, outline, risks, and the signals that should trigger picking it up. Rough dependency order: tunnel/QR unlocks push, push unlocks notification actions; exit metadata unlocks the `exited` attention state and gives persistence its tombstones.
+
+| Idea | File |
+|---|---|
+| Hook-driven Web Push when a session needs attention | `_docs/issues/2026-07-02-hook-driven-push-notifications.md` |
+| Approve/deny prompts from notification action buttons | `_docs/issues/2026-07-02-notification-action-buttons.md` |
+| Attention states (running / idle / exited) on session cards | `_docs/issues/2026-07-02-session-attention-states.md` |
+| Mobile answer mode: composer bar + canned key chips | `_docs/issues/2026-07-02-mobile-answer-mode.md` |
+| Claude-native lines: structured session state from transcripts/hooks | `_docs/issues/2026-07-02-claude-native-lines.md` |
+| One-tap spawn templates | `_docs/issues/2026-07-02-fleet-spawn-templates.md` |
+| Built-in tunnel + QR pairing | `_docs/issues/2026-07-02-tunnel-qr-pairing.md` |
+| Scoped tokens (read-only / per-session input) | `_docs/issues/2026-07-02-scoped-tokens.md` |
+| Scrollback persistence: transcripts survive line exit / board restart | `_docs/issues/2026-07-02-scrollback-persistence.md` |
+| Session exit metadata: tombstones instead of silent disappearance | `_docs/issues/2026-07-02-session-exit-metadata.md` |
+| Terminal QoL: search, transcript download, scroll-to-bottom pill | `_docs/issues/2026-07-02-terminal-qol.md` |
+| Desktop workspace shell: two shells over one core, spectator attach, panes, palette | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |
+| Extract the client core (`useSessionWS`, `useSessions`, `TerminalView`) in TypeScript — prerequisite for the shells | `_docs/issues/2026-07-02-extract-client-core.md` |
