@@ -1,39 +1,21 @@
 # Root and board autostart PowerShell scripts are near-identical duplicates
 
-**Source:** Came up auditing the repo's Windows autostart scripts. Two `autostart.ps1` files — one at the repo root (agent-relay server) and one under the vendored board kernel (switchboard board) — are structurally near-identical, differing only in the task name and the target launcher script.
-**Status:** ✅ Resolved — 2026-07-02 (Option A: keep the vendored copy pristine, cross-reference only).
+**Source:** Came up auditing the repo's Windows autostart scripts. Two `autostart.ps1` files — one at the repo root (agent-relay server) and one under the board kernel (switchboard board) — are structurally near-identical, differing only in the task name and the target launcher script.
+**Status:** ✅ Resolved — 2026-07-02 (deduplicated into a shared script).
 **Kind:** Tech-debt
-**Modules:** scripts, board (vendored)
+**Modules:** scripts, board
 **Severity:** Low
 
-## Resolution — Option A (keep vendored pristine)
+## Resolution — dedup into a shared script
 
-Chose **not** to deduplicate. The board copy is vendored from the switchboard kernel; extracting a shared parameterized script would force an edit to the vendored file and permanently fork it from upstream, turning every future re-vendor into a manual merge — a recurring cost to save ~40 lines of frozen register/unregister-a-task logic. The two scripts also belong to genuinely different products (the agent-relay server vs the switchboard board daemon); they share a shape, not an owner.
+Deduplicated. The original deferral weighed this against "diverging the vendored board copy from upstream," but that concern doesn't apply: switchboard is the user's own code, fully absorbed into this repo — `server/board/` is its only home, there's no separate switchboard repo synced in. So there is no upstream to diverge from, and the duplication is pure maintenance cost with nothing on the other side of the scale.
 
-Instead: added a maintainer cross-reference note to the **root** `autostart.ps1` (agent-relay's own, non-vendored) pointing at `server/board/autostart.ps1`, explaining they're intentionally separate and that board-side changes go upstream + re-vendor rather than a hand-edit. The note lives only in the non-vendored file **on purpose** — adding a comment to the vendored script would itself diverge it from upstream, defeating the whole rationale. `server/board/autostart.ps1` is left byte-identical to upstream.
+- New `autostart-task.ps1` (repo root) holds the register/unregister/status logic, parameterized by `-TaskName`, `-Vbs`, `-Description`, and `-RunningNote` (the how-to-stop-a-running-instance hint in the uninstall message).
+- `autostart.ps1` (root) and `server/board/autostart.ps1` are now thin wrappers: each keeps its own header/usage and `param($Action)`, resolves its own launcher `.vbs` via `$PSScriptRoot`, and calls the shared script with its product's arguments. The board wrapper reaches the shared script at `..\..\autostart-task.ps1`.
+- A fix to the task-registration logic now lives in one place.
 
-This addresses the "maintainer forgets the sibling" trigger (a pointer sits in the file a maintainer would edit) without any vendoring divergence.
+Verified: running `status` through both wrappers correctly reports each task (`agent-relay` / `switchboard`) via the shared script — confirming the delegation and the board wrapper's relative-path resolution work. The register/unregister logic is unchanged from the originals, only parameterized.
 
-## What remains
+## Original finding (retained)
 
-`autostart.ps1` (repo root) and `server/board/autostart.ps1` share the same install/uninstall/status structure against a Windows Scheduled Task, differing only by `$TaskName` (`agent-relay` vs `switchboard`) and the launcher `.vbs` (`start-relay.vbs` vs `start-board.vbs`). A fix to one (e.g. the `CimException` handling, or a change to the registration principal) has no reason to remind a maintainer the sibling needs the same edit.
-
-## What remains to decide
-
-The board copy is **vendored** — it's part of the switchboard kernel copied into this repo. Deduplicating into a shared parameterized script would diverge the vendored copy from its upstream, complicating future re-vendoring. So the call isn't purely "dedup for cleanliness"; it trades duplication against keeping the vendored tree pristine. That trade-off is the user's to make.
-
-## Fix outline
-
-- Option A (keep vendored copy pristine): leave the board script alone; accept the duplication as the cost of vendoring. Possibly add a one-line comment in each noting the sibling exists.
-- Option B (dedup): extract a shared `autostart-task.ps1` taking `-TaskName` and `-Vbs` params, and have both entry points call it — but this modifies the vendored file, diverging from upstream.
-- Cost: small either way; the risk is entirely in the vendoring divergence, not the code.
-
-## Trigger signals to reopen
-
-- A bug is fixed in one autostart script and the sibling is found to still have it.
-- The board kernel is re-vendored and the divergence causes a merge conflict.
-- The two scripts' logic is about to grow materially (more than the current task register/unregister).
-
-## Repro
-
-Diff `autostart.ps1` against `server/board/autostart.ps1`: the bodies are the same modulo `$TaskName` and the `.vbs` filename.
+The bodies of `autostart.ps1` (repo root) and `server/board/autostart.ps1` shared the same install/uninstall/status structure against a Windows Scheduled Task, differing only by `$TaskName` (`agent-relay` vs `switchboard`) and the launcher `.vbs` (`start-relay.vbs` vs `start-board.vbs`). A fix to one had no reason to remind a maintainer the sibling needed the same edit.
