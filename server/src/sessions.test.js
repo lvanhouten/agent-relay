@@ -6,6 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { BoardSessions, BoardUnreachableError } = require('./sessions');
+const { DEFAULT_IDLE_MS } = require('../board/wait');
 
 const down = () => { const e = new Error('board rpc timed out'); return Promise.reject(e); };
 
@@ -81,7 +82,7 @@ test('list(): tombstones map to status exited with their exit metadata', async (
     }),
   });
   const list = await s.list();
-  assert.deepStrictEqual(list.map(x => x.status), ['online', 'exited', 'exited'],
+  assert.deepStrictEqual(list.map(x => x.status), ['running', 'exited', 'exited'],
     'live lines first, then tombstones');
   const [, ran, anon] = list;
   assert.strictEqual(ran.exitCode, 3);
@@ -98,7 +99,39 @@ test('list(): an older board reply without `ended` still lists live lines', asyn
   });
   const list = await s.list();
   assert.strictEqual(list.length, 1);
-  assert.strictEqual(list[0].status, 'online');
+  assert.strictEqual(list[0].status, 'running');
+});
+
+// --- attention states: status derives from idleMs against wait.js's threshold ---
+
+test('list(): idleMs at/beyond the shared threshold is idle, below is running, absent is running', async () => {
+  const line = (id, idleMs) => ({ id, name: id, shell: 'bash', cwd: '/', pid: 1, idleMs });
+  const s = new BoardSessions({
+    rpc: async () => ({
+      ok: true,
+      lines: [
+        line('fresh', 0),
+        line('almost', DEFAULT_IDLE_MS - 1),
+        line('quiet', DEFAULT_IDLE_MS),
+        { id: 'old-board', name: 'old-board', shell: 'bash', cwd: '/', pid: 1 }, // no idleMs field
+      ],
+    }),
+  });
+  const byId = Object.fromEntries((await s.list()).map(x => [x.id, x.status]));
+  assert.deepStrictEqual(byId, {
+    fresh: 'running',
+    almost: 'running',
+    quiet: 'idle',
+    'old-board': 'running',
+  });
+});
+
+test('spawn(): a just-created session reports running', async () => {
+  const s = new BoardSessions({
+    rpc: async () => ({ ok: true, id: '5', name: 'x', shell: 'bash', cwd: '/', pid: 9 }),
+  });
+  const dto = await s.spawn({ name: 'x' });
+  assert.strictEqual(dto.status, 'running');
 });
 
 test('get(): finds a tombstone by id (so the WS hub can refuse it as exited)', async () => {

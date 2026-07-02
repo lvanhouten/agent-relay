@@ -11,9 +11,12 @@ export interface Session {
   shell: string;
   cwd: string;
   pid: number | null;
-  // 'online' (live line) or 'exited' (a recently-ended tombstone from the
-  // board's capped ring). The attention-states proposal widens this further;
-  // keep it string until then.
+  // Attention state. Live lines are 'running' (output within the board's
+  // shared idle threshold) or 'idle' (quiet beyond it — which may mean
+  // thinking, blocked on a prompt, or finished; PTY bytes can't tell).
+  // 'exited' is a recently-ended tombstone from the board's capped ring.
+  // Kept string (not a union) so an older/newer server can't type-error the
+  // client; render unknown values as-is.
   status: string;
   lastActive: string;
   // Present only on status 'exited' (sessions.js endedToDto): the process's

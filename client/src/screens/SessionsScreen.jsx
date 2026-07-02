@@ -85,8 +85,19 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
 // `list` reply and threading it into toDto(). Deferred as a feature, not a bug —
 // see _docs/issues/2026-07-01-session-card-live-preview.md.
 
+// DTO attention state -> StatusDot color + card label. 'quiet' rather than
+// 'idle'/'done' on purpose: a silent agent may be thinking (LLM latency
+// produces legitimate 30s+ silences) or waiting on a prompt — the label claims
+// only "no output lately". Unknown states (newer server) fall back to a plain
+// offline dot showing the raw status string.
+const ATTENTION = {
+  running: { dot: 'online', label: 'running' },
+  idle: { dot: 'idle', label: 'quiet' },
+};
+
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
+  const attention = ATTENTION[session.status] ?? { dot: 'offline', label: session.status };
   return (
     <Card interactive padding="md" onClick={() => onAttach(session)}
       style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -97,7 +108,7 @@ function SessionCard({ session, onAttach, onKill }) {
             fontFamily: 'var(--font-display)', fontWeight: 600,
             fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
           }}>
-            <StatusDot status={session.status} size="sm" showLabel={false} />
+            <StatusDot status={attention.dot} size="sm" showLabel={false} />
             {session.name}
           </span>
           <span style={{
@@ -118,12 +129,17 @@ function SessionCard({ session, onAttach, onKill }) {
           <Badge variant="accent">{shellLabel}</Badge>
           <Badge variant="neutral">pid {session.pid}</Badge>
         </div>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-          color: 'var(--text-faint)', flexShrink: 0,
-        }}>
-          <Clock size={11} /> {session.lastActive}
+        {/* State word + relative time read as one clause ("quiet · 43s ago") —
+            the state is literally derived from that same idle clock server-side. */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <StatusDot status={attention.dot} pulse={false} size="sm" label={attention.label} />
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
+            color: 'var(--text-faint)',
+          }}>
+            <Clock size={11} /> {session.lastActive}
+          </span>
         </span>
       </div>
     </Card>
