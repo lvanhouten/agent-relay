@@ -8,6 +8,12 @@
 ### Warnings
 
 **W1. IPv6 netstat fix can silently disable IPv4 port detection too** — `scripts/free-port.js:20-45` · confidence 60
+
+**Status:** ✅ Resolved in ec1c8d5 (SHA recorded post-commit).
+**Resolution:** Accepted as framed — the reviewer's proposed fix applied verbatim: each protocol's `execSync` now catches independently inside the `.map` callback, returning `''` for a failed stack, so a `tcpv6` failure can no longer erase the `tcp` results (and vice versa). The comment above the query names the guarded failure mode. Closure check: live smoke test — an IPv4-only listener on `127.0.0.1:3017` and an IPv6-only listener on `[::1]:5173` spawned, `node scripts/free-port.js 3017 5173` killed both and the ports verified free; the per-proto catch is the named guarded path for the can't-force-netstat-to-fail half.
+
+---
+
 The Windows branch now queries both `tcp` and `tcpv6` via `['tcp','tcpv6'].map(proto => execSync(...)).join('\n')`, all inside one try/catch. `Array.prototype.map` evaluates eagerly, so if the `tcpv6` call throws (IPv6 disabled/unsupported on the box, `netstat` syntax variance, etc.), the already-successful `tcp` output is discarded along with it and the function returns `[]` — no pids, no error surfaced. Before this change a `tcp`-only failure mode was the only one that existed; now a second, independent command can take down detection for both stacks. Worst case: `predev` silently stops killing even plain IPv4 orphans, reintroducing the `EADDRINUSE` this guard exists to prevent.
 
 *Evidence:* `scripts/free-port.js:20` opens the try; lines 25-27 build `out` by mapping `execSync` over `['tcp', 'tcpv6']` and joining; line 43 is the single catch (`return [];`) covering both calls. No per-protocol isolation exists.
