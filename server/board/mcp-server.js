@@ -95,6 +95,26 @@ async function refreshBoot() {
   return { boot, confirmed: false };
 }
 
+// Distinguish a failed attach from a legitimately-empty read (W3). connectPipe()
+// resolves as soon as the pipe connects and the secret is fired-and-forgotten; it
+// never waits for the board to accept or reject it. So if the board tears the
+// socket down at (or before) the handshake — a rejected secret (e.g. the C2
+// desync), a board restart mid-connect, a line that vanished — the read used to
+// resolve with the empty text that happened to arrive, indistinguishable from
+// "the line is just quiet". That false-quiet silently compounds C2: every read
+// during a secret-desync lockout would return nothing instead of an error.
+//
+// The tell: the pipe CLOSED (pipeClosed) with ZERO bytes ever received.
+//  - A genuinely-quiet but healthy line keeps its socket OPEN; the read ends via
+//    our own quiet/hardStop timer with pipeClosed=false — never this branch.
+//  - A normal line exit reaches an AUTHED client, which always receives the
+//    farewell sentinel before close, so text is non-empty — never this branch.
+// Only a connection killed before we ever authed lands here, so treat it as a
+// read failure (surfaced as an error) rather than a clean empty success.
+function readClosedBeforeOutput(text, pipeClosed) {
+  return pipeClosed && text.length === 0;
+}
+
 const DEFAULT_TAIL_CHARS = 4000;
 
 async function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TAIL_CHARS, full = false } = {}) {
@@ -121,6 +141,16 @@ async function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFA
         clearTimeout(hardStop);
         if (quiet) clearTimeout(quiet);
         try { sock.end(); } catch { /* already closed */ }
+        // A pipe that closed before a single byte arrived means the attach itself
+        // failed (auth rejected / board restart mid-connect / line gone), not a
+        // quiet line. Surface it as an error so it can't masquerade as an empty
+        // read (W3). Leave the cursor untouched — the line may still be alive.
+        if (readClosedBeforeOutput(text, pipeClosed)) {
+          const err = new Error('read failed: the board closed the connection before any output (line missing, or the access secret was rejected)');
+          err.code = 'EREADCLOSED';
+          reject(err);
+          return;
+        }
         const already = advanceCursor(seen, key, text.length, pipeClosed);
         const delta = text.slice(already);
         if (full || delta.length <= tailChars) { resolve(delta); return; }
@@ -338,6 +368,7 @@ if (require.main === module) {
 module.exports = {
   seen,
   advanceCursor,
+  readClosedBeforeOutput,
   refreshBoot,
   observeBoot,
   forgetLine,
