@@ -7,7 +7,7 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
-import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon } from 'lucide-react';
+import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown } from 'lucide-react';
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
@@ -117,6 +117,59 @@ function SessionCard({ session, onAttach, onKill }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Badge variant="accent">{shellLabel}</Badge>
           <Badge variant="neutral">pid {session.pid}</Badge>
+        </div>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
+          color: 'var(--text-faint)', flexShrink: 0,
+        }}>
+          <Clock size={11} /> {session.lastActive}
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+// A tombstone card: the board keeps a capped ring of recently-ended lines so an
+// unattended exit doesn't just vanish from the poll. Not attachable (the data
+// pipe is gone) — the only action is dismiss, which drops the tombstone via the
+// same DELETE the kill button uses (the server falls through to `forget`).
+function ExitedSessionCard({ session, onDismiss }) {
+  const shellLabel = session.shell.split(/[/\\]/).pop();
+  const killed = session.reason === 'killed';
+  const label = killed ? 'killed' : `exit ${session.exitCode ?? '?'}`;
+  // A kill is expected and a clean exit is fine — only a non-zero exit code
+  // (crash / failure) earns the error color.
+  const dotStatus = !killed && session.exitCode !== 0 ? 'error' : 'offline';
+  return (
+    <Card padding="md" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', opacity: 0.75 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            fontFamily: 'var(--font-display)', fontWeight: 600,
+            fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
+          }}>
+            <StatusDot status={dotStatus} pulse={false} size="sm" showLabel={false} />
+            {session.name}
+          </span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+            color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            <Folder size={12} /> {session.cwd}
+          </span>
+        </div>
+        <IconButton label="Dismiss" size="sm" onClick={() => onDismiss(session.id)}>
+          <X size={14} />
+        </IconButton>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Badge variant="neutral">{shellLabel}</Badge>
+          <Badge variant={!killed && session.exitCode !== 0 ? 'danger' : 'neutral'}>{label}</Badge>
         </div>
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -279,10 +332,17 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
   };
 
   const openDialog = () => { setCreateError(''); setDialog(true); };
+  const [showEnded, setShowEnded] = React.useState(false);
 
   const filtered = sessions.filter((s) =>
     `${s.name} ${s.cwd}`.toLowerCase().includes(query.toLowerCase())
   );
+  // The list carries live sessions and recently-ended tombstones in one array
+  // (both come from GET /sessions); the tombstones render in their own
+  // collapsed section, and the header count stays live-only.
+  const live = filtered.filter((s) => s.status !== 'exited');
+  const ended = filtered.filter((s) => s.status === 'exited');
+  const liveCount = sessions.filter((s) => s.status !== 'exited').length;
 
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
@@ -326,7 +386,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
               Active sessions
             </span>
             <h1 style={{ fontSize: 'var(--text-3xl)', margin: '6px 0 0', color: 'var(--text-strong)' }}>
-              {sessions.length} session{sessions.length === 1 ? '' : 's'} on{' '}
+              {liveCount} session{liveCount === 1 ? '' : 's'} on{' '}
               <span style={{ color: 'var(--text-accent)' }}>main</span>
             </h1>
           </div>
@@ -345,11 +405,11 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {live.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 'var(--space-20) 0', color: 'var(--text-muted)' }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
-              {sessions.length === 0
-                ? 'No sessions yet. Start one to get going.'
+              {liveCount === 0
+                ? 'No active sessions. Start one to get going.'
                 : `No sessions match "${query}".`}
             </div>
           </div>
@@ -359,10 +419,36 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
             gap: 'var(--space-4)',
           }}>
-            {filtered.map((s) => (
+            {live.map((s) => (
               <SessionCard key={s.id} session={s} onAttach={onAttach} onKill={kill} />
             ))}
           </div>
+        )}
+
+        {ended.length > 0 && (
+          <section style={{ marginTop: 'var(--space-8)' }}>
+            <button onClick={() => setShowEnded((v) => !v)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+              textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-muted)',
+            }}>
+              {showEnded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              Recently exited ({ended.length})
+            </button>
+            {showEnded && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: 'var(--space-4)',
+                marginTop: 'var(--space-4)',
+              }}>
+                {ended.map((s) => (
+                  <ExitedSessionCard key={s.id} session={s} onDismiss={kill} />
+                ))}
+              </div>
+            )}
+          </section>
         )}
       </main>
 

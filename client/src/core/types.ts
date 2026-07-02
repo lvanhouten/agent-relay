@@ -11,10 +11,16 @@ export interface Session {
   shell: string;
   cwd: string;
   pid: number | null;
-  // 'online' is the only value toDto() emits today (the board only lists live
-  // lines). The attention-states proposal widens this; keep it string until then.
+  // 'online' (live line) or 'exited' (a recently-ended tombstone from the
+  // board's capped ring). The attention-states proposal widens this further;
+  // keep it string until then.
   status: string;
   lastActive: string;
+  // Present only on status 'exited' (sessions.js endedToDto): the process's
+  // exit code (null if unknown) and whether it was killed via the board's
+  // `end` command ('killed') or exited on its own ('exited').
+  exitCode?: number | null;
+  reason?: string;
 }
 
 export type ConnStatus = 'connecting' | 'reconnecting' | 'online' | 'offline';

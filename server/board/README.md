@@ -26,6 +26,7 @@ tmux, kitty, and Windows Terminal are auto-detected; anything else works via
 | new | start a new line |
 | join | attach a pane (or the web server) to a line — raw I/O relay |
 | end | end one line |
+| forget | dismiss one ended line's tombstone (see `list`'s `ended` array) |
 
 ## Install
 
@@ -123,8 +124,14 @@ headless (no pane), then `sb join`-ing them when you open a terminal.
 Two planes over Windows named pipes:
 
 - **Control plane** — `\\.\pipe\agent-relay`, newline-delimited JSON
-  (`new` / `list` / `join` / `end` / `resize` / `shutdown`). This is the
-  "request a line from the board" channel.
+  (`new` / `list` / `join` / `end` / `forget` / `resize` / `shutdown`). This is
+  the "request a line from the board" channel. `list` replies carry the live
+  `lines` plus an `ended` array — a capped in-memory ring (last 20) of
+  tombstones `{ id, name, shell, cwd, exitCode, endedAt, reason }` for
+  recently-ended lines, so a poller can tell "exited (and how)" from "never
+  existed". `reason` is `killed` (the `end` command) or `exited` (the process
+  ended on its own); `forget` dismisses one tombstone. A board restart clears
+  the ring — which is also the id-reuse hygiene, since line ids restart per boot.
 - **Data plane** — `\\.\pipe\agent-relay.<id>`, one per line. A *dumb raw byte
   pump*, broadcast to every joined client, with a bounded scrollback buffer
   (last ~2000 chunks) replayed when a client attaches. Keeping it dumb is what

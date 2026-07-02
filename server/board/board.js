@@ -110,6 +110,30 @@ const BOOT = `${process.pid}-${Date.now()}`;
 const sessions = new Map(); // id -> { pty, clients:Set<socket>, buf:[], sizes, server, name, shell, cwd, startedAt, lastActivity }
 let seq = 0;
 
+// Tombstones for recently-ended lines. Without these, a line's exit code is
+// shown only to clients attached at the instant of death (the data-pipe
+// farewell) — anyone polling `list` sees the line silently disappear, with no
+// way to tell "finished cleanly" from "crashed". A capped ring keeps the memory
+// bounded; `forget` lets a client dismiss one. In-memory only, so a board
+// restart clears it — which is also the id-reuse hygiene: ids restart per boot,
+// and a persisted tombstone for id "1" could otherwise sit next to a new boot's
+// live line "1" as a stale corpse. Within one boot, `seq` never reuses an id.
+const ENDED_MAX = 20;
+function makeEndedRegistry(cap = ENDED_MAX) {
+  const items = [];
+  return {
+    record(t) { items.push(t); if (items.length > cap) items.shift(); },
+    forget(id) {
+      const i = items.findIndex(t => t.id === id);
+      if (i < 0) return false;
+      items.splice(i, 1);
+      return true;
+    },
+    list: () => items.slice(),
+  };
+}
+const endedLines = makeEndedRegistry();
+
 // The per-boot access secret every connection must present as its first line
 // (see lib.js). Assigned once in the daemon-entry block below, before either
 // server starts listening — so it's always set by the time a connection arrives.
@@ -173,6 +197,13 @@ function createLine(o = {}) {
     // nor the cleanup below.
     notifyClientsClosed(s.clients, lineClosedFarewell(id, exitCode));
     try { server.close(); } catch { /* ignore */ }
+    // Leave a tombstone so pollers can distinguish "ended" (and how) from
+    // "never existed". `reason` separates an operator kill (the `end` command
+    // sets endReason before the signal) from the process exiting on its own.
+    endedLines.record({
+      id, name: s.name, shell, cwd, exitCode,
+      endedAt: Date.now(), reason: s.endReason || 'exited',
+    });
     sessions.delete(id);
     log('line', id, 'closed, exit', exitCode);
   });
@@ -291,7 +322,8 @@ function handle(m, sock) {
         uptimeMs: Date.now() - s.startedAt,
         idleMs: Date.now() - s.lastActivity,
       }));
-      sock.write(JSON.stringify({ ok: true, boot: BOOT, lines }) + '\n');
+      // `ended` rides alongside `lines` (additive — sb/mcp read r.lines only).
+      sock.write(JSON.stringify({ ok: true, boot: BOOT, lines, ended: endedLines.list() }) + '\n');
       break;
     }
     case 'join': {
@@ -304,8 +336,16 @@ function handle(m, sock) {
     }
     case 'end': {
       const s = sessions.get(m.id);
-      if (s) s.pty.kill();
+      // Mark BEFORE the signal: onExit fires async and reads endReason to write
+      // the tombstone, so the mark must already be there.
+      if (s) { s.endReason = 'killed'; s.pty.kill(); }
       sock.write(JSON.stringify({ ok: !!s }) + '\n');
+      break;
+    }
+    case 'forget': {
+      // Dismiss one tombstone. ok:false = no such tombstone (already dismissed,
+      // never existed, or cleared by a board restart).
+      sock.write(JSON.stringify({ ok: endedLines.forget(m.id) }) + '\n');
       break;
     }
     case 'resize': {
@@ -409,4 +449,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines };
