@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
-const { CTRL, dataPipe, lineClosedFarewell } = require('./lib');
+const { CTRL, dataPipe, lineClosedFarewell, writeBootSecret, secretEqual, AUTH_TIMEOUT_MS } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -39,6 +39,12 @@ const BOOT = `${process.pid}-${Date.now()}`;
 const sessions = new Map(); // id -> { pty, clients:Set<socket>, buf:[], sizes, server, name, shell, cwd, startedAt, lastActivity }
 let seq = 0;
 
+// The per-boot access secret every connection must present as its first line
+// (see lib.js). Assigned once in the daemon-entry block below, before either
+// server starts listening — so it's always set by the time a connection arrives.
+// Left null when board.js is merely require()d by a test (no listeners bound).
+let SECRET = null;
+
 function createLine(o = {}) {
   const id = String(++seq);
   const shell = o.shell || DEFAULT_SHELL;
@@ -54,13 +60,31 @@ function createLine(o = {}) {
   const s = { pty: p, clients: new Set(), buf: [], sizes: new Map(), name: o.name || '', shell, cwd, startedAt: now, lastActivity: now };
   sessions.set(id, s);
 
-  // Data plane: a dumb raw byte pump, broadcast to every patched-in pane.
+  // Data plane: a dumb raw byte pump, broadcast to every patched-in pane — but
+  // gated on the access secret first (see lib.js). Until a client sends
+  // `<secret>\n`, it is added to nothing and receives no scrollback, so a foreign
+  // reader that can open the pipe (the OS default DACL allows read) still sees
+  // nothing. Bytes after the secret line on the same connection are PTY input.
   const server = net.createServer(sock => {
-    s.clients.add(sock);
-    for (const chunk of s.buf) sock.write(chunk);   // replay scrollback on attach
-    sock.on('data', d => p.write(d.toString('utf8')));
-    sock.on('close', () => s.clients.delete(sock));
-    sock.on('error', () => s.clients.delete(sock));
+    let authed = false, authBuf = '';
+    const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
+    const drop = () => { clearTimeout(authTimer); s.clients.delete(sock); };
+    sock.on('data', d => {
+      if (authed) { p.write(d.toString('utf8')); return; }
+      authBuf += d.toString('utf8');
+      const i = authBuf.indexOf('\n');
+      if (i < 0) { if (authBuf.length > 4096) sock.destroy(); return; }  // cap pre-auth buffer
+      const provided = authBuf.slice(0, i).replace(/\r$/, '');
+      const rest = authBuf.slice(i + 1);
+      if (!secretEqual(provided, SECRET)) { sock.destroy(); return; }
+      authed = true;
+      clearTimeout(authTimer);
+      s.clients.add(sock);
+      for (const chunk of s.buf) sock.write(chunk);   // replay scrollback, post-auth
+      if (rest) p.write(rest);  // input bytes bundled in the same chunk as the secret line
+    });
+    sock.on('close', drop);
+    sock.on('error', drop);
   });
   server.on('error', e => log('data pipe error on line', id, e.message));
   server.listen(dataPipe(id));
@@ -234,15 +258,27 @@ function handle(m, sock) {
   }
 }
 
-// Control plane: newline-delimited JSON request/response.
+// Control plane: newline-delimited JSON request/response. The first line on each
+// connection must be the access secret (see lib.js); a connection that presents
+// the wrong secret — or none within AUTH_TIMEOUT_MS — is dropped before any
+// command is dispatched, so a foreign process that can open the control pipe
+// still can't list, spawn, resize, or shut down lines.
 const board = net.createServer(sock => {
   let buf = '';
+  let authed = false;
+  const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
   sock.on('data', chunk => {
     buf += chunk;
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i);
       buf = buf.slice(i + 1);
+      if (!authed) {
+        if (!secretEqual(line.replace(/\r$/, ''), SECRET)) { sock.destroy(); return; }
+        authed = true;
+        clearTimeout(authTimer);
+        continue;
+      }
       if (!line.trim()) continue;
       let m;
       try { m = JSON.parse(line); } catch { continue; }
@@ -257,6 +293,7 @@ const board = net.createServer(sock => {
   // A pane's control socket lives for the pane's lifetime; when it drops, forget
   // that pane's size so the PTY can grow back to the remaining panes' min.
   sock.on('close', () => {
+    clearTimeout(authTimer);
     for (const s of sessions.values()) if (s.sizes.delete(sock)) applyMin(s);
   });
 });
@@ -270,6 +307,10 @@ board.on('error', e => {
 // Only bind the control pipe when run as the daemon (`node board.js`); when
 // required by a test, just expose the pure helpers below.
 if (require.main === module) {
+  // Generate + persist the access secret BEFORE listening, so it exists by the
+  // time any client can connect (autostart included). Every data pipe created
+  // later reads the same module-level SECRET.
+  SECRET = writeBootSecret();
   board.listen(CTRL, () => log('switchboard online:', CTRL));
 }
 

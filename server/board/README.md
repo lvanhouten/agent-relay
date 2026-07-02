@@ -128,6 +128,14 @@ Two planes over Windows named pipes:
   (last ~2000 chunks) replayed when a client attaches. Keeping it dumb is what
   makes `patch.js` ~40 lines and lets multiple clients share a line.
 
+Both planes are gated by a **per-boot access secret**: a client must send
+`<secret>\n` as the first line on the pipe before the board dispatches a command
+or streams any output. The secret is generated at board startup and written to
+an owner-only file (`%LOCALAPPDATA%\agent-relay\board.<pipe-base>.secret`); every
+client reads it transparently via `lib.js`, so this is invisible in normal use.
+It exists because the OS default pipe DACL grants any local user *read* access —
+see Security below.
+
 Pane resize is the one thing that isn't a raw byte, so it rides the control
 channel keyed by line id; everything else is verbatim PTY bytes. When a line is
 joined from clients of different sizes, the board clamps the PTY to the
@@ -240,10 +248,18 @@ if whatever's waiting can itself be run in the background:
 
 ## Security
 
-The control and data pipes are unauthenticated: anyone who can open the named pipe
-can drive your shells. That's fine for a local single-user box, but don't expose
-the pipes across a session boundary or trust them in a multi-user context.
-Network exposure + auth is the agent-relay web server's job, not the board's.
+The OS default DACL on a Windows named pipe grants `Everyone` and
+`ANONYMOUS LOGON` **read** access (verified 2026-07-01). Write is default-denied,
+so another local user can't inject commands or keystrokes — but on a multi-user
+box they *could* open a line's data pipe and read its PTY output (which can carry
+secrets). Node's `net.Server.listen` exposes no way to set a restrictive pipe
+security descriptor, so the board instead gates both planes on a per-boot access
+secret (see *How it works*): a connection that doesn't present `<secret>\n` first
+is dropped before any output streams or any command runs. The secret file is
+owner-only and lives inside the user profile, which other non-admin users can't
+read. (An admin can — but an admin already has full pipe access, so no boundary
+is lost.) Network exposure + auth for remote clients remains the agent-relay web
+server's job, not the board's.
 
 ## License
 

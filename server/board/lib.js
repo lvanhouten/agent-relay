@@ -1,7 +1,11 @@
 'use strict';
-// Shared bits: pipe names, board auto-start, and pipe-connect-with-retry.
+// Shared bits: pipe names, board auto-start, pipe-connect-with-retry, and the
+// per-boot access secret that gates every pipe connection.
 const net = require('net');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 // Own pipe namespace so the agent-relay board is independent of any standalone
@@ -11,6 +15,57 @@ const { spawn } = require('child_process');
 const PIPE_BASE = process.env.AGENT_RELAY_PIPE || 'agent-relay';
 const CTRL = `\\\\.\\pipe\\${PIPE_BASE}`;
 const dataPipe = id => `\\\\.\\pipe\\${PIPE_BASE}.${id}`;
+
+// --- board access secret -------------------------------------------------
+// The OS default DACL on a named pipe grants Everyone + ANONYMOUS LOGON *read*
+// (verified 2026-07-01), so any local user can connect to a line's data pipe and
+// read its PTY output. (Write — hence command injection — is already default-
+// denied.) Node's net.Server.listen exposes no pipe security-descriptor option,
+// so instead the board gates every connection on a per-boot secret: a client
+// must send `<secret>\n` as the first bytes on the pipe before the board streams
+// scrollback or accepts a command; a connection that doesn't is dropped.
+//
+// The secret lives in a file only the creating user can read. On Windows that's
+// under %LOCALAPPDATA%, which sits inside the user profile — NTFS already denies
+// other non-admin users traversal into another profile, so the file location
+// alone is the boundary (an admin can read it, but an admin already has full
+// access to the pipe itself, so nothing is lost). On POSIX the dir/file are
+// created 0700/0600. Namespaced by PIPE_BASE so an isolated board has its own.
+const SECRET_DIR = process.platform === 'win32'
+  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'agent-relay')
+  : path.join(os.homedir(), '.agent-relay');
+const secretPath = () => path.join(SECRET_DIR, `board.${PIPE_BASE}.secret`);
+
+// Generate a fresh secret and persist it (owner-only). Called once by the board
+// daemon at startup, before it starts listening, so the file exists by the time
+// any client can successfully connect. `file` is injectable for tests.
+function writeBootSecret(file = secretPath()) {
+  const secret = crypto.randomBytes(32).toString('base64url');
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(file, secret, { mode: 0o600 });
+  return secret;
+}
+
+// Read the current board's secret. Read fresh on every connect (not cached at
+// module load) so a client reconnecting after a board restart picks up the new
+// secret instead of presenting a stale one. Returns null if the file is absent.
+function readSecret(file = secretPath()) {
+  try { return fs.readFileSync(file, 'utf8').trim(); }
+  catch { return null; }
+}
+
+// Constant-time secret compare (mirrors src/auth.js): length-gate then
+// timingSafeEqual so a wrong secret can't be recovered byte-by-byte from timing.
+function secretEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ab = Buffer.from(a), bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+// A connection that opens but never presents the secret is dropped after this
+// long, so a foreign process can't hold a pre-auth socket open indefinitely.
+const AUTH_TIMEOUT_MS = 5000;
 
 // The line's data-pipe farewell sentinel — the single source shared by the
 // producer (board.js, which writes it on line exit) and the consumers (wait.js /
@@ -32,6 +87,16 @@ function startBoard() {
 
 const TRANSIENT = ['ENOENT', 'ECONNREFUSED', 'EBUSY'];
 
+// Present the board secret as the first line on a freshly-connected socket. Every
+// client connection (control or data) does this before the board will talk to it.
+// The socket stays paused (no 'data' listener added here) so any server output —
+// e.g. a data pipe's scrollback replay — is buffered until the caller starts
+// reading, never dropped in the gap.
+function sendSecret(sock) {
+  const secret = readSecret();
+  try { sock.write((secret || '') + '\n'); } catch { /* socket already closed */ }
+}
+
 // Connect to an arbitrary named pipe, retrying through transient errors
 // (server not up yet / all instances momentarily busy).
 function connectPipe(pipePath, { retries = 30, delay = 100 } = {}) {
@@ -41,6 +106,7 @@ function connectPipe(pipePath, { retries = 30, delay = 100 } = {}) {
       sock.once('connect', () => {
         sock.removeAllListeners('error');
         sock.on('error', () => {});
+        sendSecret(sock);
         resolve(sock);
       });
       sock.once('error', err => {
@@ -61,6 +127,7 @@ function connectControl({ autostart = true, retries = 30, delay = 100 } = {}) {
       sock.once('connect', () => {
         sock.removeAllListeners('error');
         sock.on('error', () => {});
+        sendSecret(sock);
         resolve(sock);
       });
       sock.once('error', err => {
@@ -116,4 +183,8 @@ function rpc(msg, { autostart = true, retries, delay, timeout = RPC_TIMEOUT_MS }
   });
 }
 
-module.exports = { CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS, lineClosedFarewell, EXIT_RE };
+module.exports = {
+  CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS,
+  lineClosedFarewell, EXIT_RE,
+  writeBootSecret, readSecret, secretEqual, secretPath, AUTH_TIMEOUT_MS,
+};
