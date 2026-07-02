@@ -4,7 +4,7 @@
 // just logged. Uses the pure helpers so no pty/process is launched.
 const test = require('node:test');
 const assert = require('node:assert');
-const { paneSpawnDecision, openPane, handle, notifyClientsClosed } = require('./board');
+const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder } = require('./board');
 
 test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   const d = paneSpawnDecision({ file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'] });
@@ -55,4 +55,95 @@ test('notifyClientsClosed (N10): a throwing client does not abort the others or 
   const clients = new Set([good('a:'), bad, good('b:')]);
   assert.doesNotThrow(() => notifyClientsClosed(clients, 'BYE'));
   assert.deepStrictEqual(notified, ['a:BYE', 'b:BYE'], 'both healthy clients still notified');
+});
+
+// --- makeRunFeeder: initial-command feed debounce + confirm-and-retry ---
+// A fake clock + scheduler so the timing logic is exercised deterministically
+// without a real pty or wall-clock waits. advance(ms) fires due timers (including
+// ones scheduled by a firing callback) in due order.
+function feederHarness(run, opts = {}) {
+  let t = 0, seq = 0, scheduleCount = 0, alive = true;
+  const timers = new Map();
+  const writes = [];
+  const feeder = makeRunFeeder(run, {
+    write: d => writes.push(d),
+    isAlive: () => alive,
+    schedule: (fn, ms) => { scheduleCount++; const id = ++seq; timers.set(id, { due: t + ms, fn }); return id; },
+    cancel: id => { if (id != null) timers.delete(id); },
+    now: () => t,
+    debounceMs: 120, confirmMs: 500, maxSends: 2, ...opts,
+  });
+  return {
+    feeder, writes,
+    scheduleCount: () => scheduleCount,
+    kill: () => { alive = false; },
+    advance(ms) {
+      const target = t + ms;
+      for (;;) {
+        let next = null;
+        for (const [id, tm] of timers) if (tm.due <= target && (!next || tm.due < next.tm.due)) next = { id, tm };
+        if (!next) break;
+        t = next.tm.due; timers.delete(next.id); next.tm.fn();
+      }
+      t = target;
+    },
+  };
+}
+
+test('makeRunFeeder: sends once after the debounce, then settles when the shell echoes', () => {
+  const h = feederHarness('claude');
+  h.feeder.onData();            // prompt appears
+  h.advance(120);               // debounce elapses -> send
+  assert.deepStrictEqual(h.writes, ['claude\r']);
+  h.feeder.onData();            // the shell echoes our keystrokes -> reacted
+  h.advance(1000);              // confirm window passes: no retry, we settled
+  assert.deepStrictEqual(h.writes, ['claude\r'], 'exactly one send once the shell reacted');
+});
+
+test('makeRunFeeder: retries once on total post-send silence (dropped feed), capped', () => {
+  const h = feederHarness('claude');
+  h.feeder.onData();
+  h.advance(120);               // send #1
+  assert.strictEqual(h.writes.length, 1);
+  h.advance(500);               // no reaction within the confirm window -> retry
+  assert.strictEqual(h.writes.length, 2, 're-sent once when the shell never reacted');
+  h.advance(500);               // still silent, but maxSends reached
+  assert.strictEqual(h.writes.length, 2, 'capped at maxSends — never runs a third time');
+});
+
+test('makeRunFeeder: a reaction after the first send prevents any retry (double-run safety)', () => {
+  const h = feederHarness('claude');
+  h.feeder.onData();
+  h.advance(120);               // send #1
+  h.advance(300);               // partway into the confirm window
+  h.feeder.onData();            // the shell reacts (echo/output) -> delivered
+  h.advance(1000);
+  assert.strictEqual(h.writes.length, 1, 'no re-send — output after the send means it landed');
+});
+
+test('makeRunFeeder: a silent-on-start shell is fed via the fallback, then confirmed', () => {
+  const h = feederHarness('claude');
+  h.feeder.onFallback();        // no output ever -> hard backstop fires the send
+  assert.strictEqual(h.writes.length, 1);
+  h.advance(500);               // still silent -> one retry
+  assert.strictEqual(h.writes.length, 2);
+});
+
+test('makeRunFeeder: bursty startup uses a single debounce timer, not one per burst', () => {
+  const h = feederHarness('claude');
+  h.feeder.onData();            // schedules debounce (due 120)
+  h.advance(50);
+  h.feeder.onData();            // cancels + reschedules (due 170) — not a 2nd live timer
+  h.advance(100);               // t=150: the original 120 timer was cancelled, so no send yet
+  assert.strictEqual(h.writes.length, 0, 'the first debounce timer was cancelled, not left to fire');
+  h.advance(50);                // t=200: the rescheduled timer fires
+  assert.deepStrictEqual(h.writes, ['claude\r'], 'exactly one send, after the last burst went quiet');
+});
+
+test('makeRunFeeder: never writes once the line is gone', () => {
+  const h = feederHarness('claude');
+  h.feeder.onData();
+  h.kill();
+  h.advance(120);               // debounce fires but the line is dead
+  assert.strictEqual(h.writes.length, 0);
 });

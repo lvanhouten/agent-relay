@@ -25,9 +25,79 @@ const SCROLLBACK = 2000; // chunks of output replayed to a freshly-patched pane
 // fed before the shell's input reader is ready, so we wait for the shell's first
 // output (prompt up) — debounced by FEED_DEBOUNCE_MS after each output burst —
 // before injecting, with FEED_FALLBACK_MS as a hard backstop for a shell that
-// emits nothing on start. Both feed the same one-shot send (`sent` guard).
+// emits nothing on start. After a send, FEED_CONFIRM_MS of total silence is read
+// as "the shell never reacted, so ConPTY ate the keystrokes" and the feed is
+// retried, up to FEED_MAX_SENDS times total. (See makeRunFeeder.)
 const FEED_DEBOUNCE_MS = 120;
 const FEED_FALLBACK_MS = 1500;
+const FEED_CONFIRM_MS = 500;
+const FEED_MAX_SENDS = 2;
+
+// State machine for the initial-command feed. Factored out of createLine, with
+// its clock/timer/write/liveness injected, so the debounce + retry logic is
+// unit-testable without spawning a pty. Drive it with onData() on every PTY
+// output burst and onFallback() once after FEED_FALLBACK_MS.
+//
+// Two problems it fixes over the old inline feed:
+//  1. Redundant timers — the old code scheduled a fresh setTimeout on every
+//     startup output burst (harmless via a `sent` guard, but wasteful). Here the
+//     pre-send debounce is a SINGLE timer, cancelled and rescheduled per burst.
+//  2. No delivery confirmation — the old feed wrote once and assumed it landed;
+//     a shell whose input reader wasn't ready silently ate the command. Here,
+//     after a send we watch for ANY output the shell produces in reaction (a
+//     command typed at a live prompt always echoes, before it even runs). Output
+//     after a send => delivered, stop. Total silence for FEED_CONFIRM_MS => the
+//     send was almost certainly dropped => re-send, capped at FEED_MAX_SENDS.
+//
+// Double-run safety: a re-send happens ONLY on total post-send silence. The one
+// false-positive direction — continued prompt output mistaken for a reaction —
+// leans toward "assume delivered" (skip the retry), never toward re-sending. The
+// residual double-run risk is a fresh prompt with echo OFF and a command that
+// emits nothing, which is rare and bounded to one extra send by FEED_MAX_SENDS.
+function makeRunFeeder(run, io) {
+  const { write, isAlive, schedule, cancel, now,
+    debounceMs = FEED_DEBOUNCE_MS, confirmMs = FEED_CONFIRM_MS, maxSends = FEED_MAX_SENDS } = io;
+  let sends = 0;
+  let lastSendAt = 0;
+  let settled = false;       // saw output after a send => the shell reacted, done
+  let debounceTimer = null;
+  let confirmTimer = null;
+
+  function send() {
+    if (settled || sends >= maxSends || !isAlive()) return;
+    sends += 1;
+    lastSendAt = now();
+    try { write(run + '\r'); } catch { /* line closed */ }
+    cancel(confirmTimer);
+    confirmTimer = schedule(onConfirm, confirmMs);   // silence after this => retry
+  }
+
+  function onConfirm() {
+    if (settled || !isAlive()) return;
+    send();   // no reaction observed since lastSendAt -> re-send (capped)
+  }
+
+  return {
+    // Every PTY output burst.
+    onData() {
+      if (settled) return;
+      if (sends === 0) {
+        // Pre-send: debounce the first feed until the startup output goes quiet.
+        cancel(debounceTimer);
+        debounceTimer = schedule(send, debounceMs);
+      } else if (now() >= lastSendAt) {
+        // Output after our send: the shell reacted -> delivered. Stop retrying.
+        settled = true;
+        cancel(debounceTimer);
+        cancel(confirmTimer);
+      }
+    },
+    // Backstop for a shell that emits nothing at all on startup.
+    onFallback() { if (sends === 0) send(); },
+    // Test seam.
+    _state: () => ({ sends, settled }),
+  };
+}
 
 // Per-process boot nonce. Line ids come from `seq`, which resets to 0 on every
 // board restart (a designed, autostart-triggered event), so an id like "1" is
@@ -110,19 +180,20 @@ function createLine(o = {}) {
 
   // Optional initial command: type it into the live shell, which stays interactive
   // afterwards. Wait for the shell's first output (prompt up) before sending —
-  // ConPTY drops keystrokes fed before the shell's input reader is ready — with a
-  // timer fallback in case the shell is silent on start. Fires at most once.
-  // (Timing rationale + constants: see FEED_DEBOUNCE_MS / FEED_FALLBACK_MS above.)
+  // ConPTY drops keystrokes fed before the shell's input reader is ready — then
+  // confirm the shell reacted and retry if it didn't, with a hard fallback for a
+  // shell that's silent on start. (Logic + timing: see makeRunFeeder above.)
   const run = typeof o.run === 'string' ? o.run.trim() : '';
   if (run) {
-    let sent = false;
-    const feed = () => {
-      if (sent || !sessions.has(id)) return;
-      sent = true;
-      try { p.write(run + '\r'); } catch { /* line closed */ }
-    };
-    p.onData(() => setTimeout(feed, FEED_DEBOUNCE_MS));
-    setTimeout(feed, FEED_FALLBACK_MS);
+    const feeder = makeRunFeeder(run, {
+      write: d => p.write(d),
+      isAlive: () => sessions.has(id),
+      schedule: (fn, ms) => setTimeout(fn, ms),
+      cancel: t => clearTimeout(t),
+      now: () => Date.now(),
+    });
+    p.onData(() => feeder.onData());
+    setTimeout(() => feeder.onFallback(), FEED_FALLBACK_MS);
     // Log only that a run command exists and its length, not its text — the
     // command can embed a credential as an argv (e.g. --api-key=...) and
     // switchboard.log is persistent and unrotated.
@@ -314,4 +385,4 @@ if (require.main === module) {
   board.listen(CTRL, () => log('switchboard online:', CTRL));
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder };
