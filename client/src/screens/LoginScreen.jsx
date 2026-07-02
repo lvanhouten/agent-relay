@@ -2,8 +2,11 @@ import React from 'react';
 import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
 import { Sun, Moon } from 'lucide-react';
+import { headers } from '../api.js';
+import { normalizeHost, isLocalhost } from '../hostTrust.js';
 
 const HOST_KEY = 'ar-host';
+const TRUSTED_HOST_KEY = 'ar-host-trusted'; // last host a probe actually succeeded against
 
 export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [host, setHost] = React.useState(
@@ -12,19 +15,52 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
   const [token, setToken] = React.useState('');
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  // When set, the user has been warned the host is untrusted and must click
+  // Connect again to actually send the token to it.
+  const [pendingHost, setPendingHost] = React.useState(null);
 
   const connect = async () => {
-    const h = host.trim();
-    if (!h) { setError('Enter a relay host.'); return; }
+    const raw = host.trim();
+    if (!raw) { setError('Enter a relay host.'); return; }
+    // Normalize a scheme-less `host:port` shorthand to an absolute http:// URL
+    // BEFORE any validation/trust/fetch, so `localhost:3017` isn't misparsed
+    // (empty hostname -> looks remote) or slipped past the malformed-host guard.
+    const h = normalizeHost(raw);
+    // Catch a malformed host up front with a distinct message. (The post-fetch
+    // catch below can't reliably tell DNS failure from CORS from network-down —
+    // browser fetch collapses them into one opaque TypeError — but an unparseable
+    // URL is distinguishable here, before the request.)
+    try { new URL(h); } catch { setError('That doesn\'t look like a valid host URL (e.g. http://localhost:3017).'); return; }
+
+    // The token is sent to `h` as a Bearer header on the very first request.
+    // Before doing that, refuse to hand it to a host we haven't successfully
+    // connected to before, unless it's localhost — `ar-host` is only ever a
+    // convenience seed and can be pre-set by a hostile actor (crafted link,
+    // shared machine), so a stored value is NOT proof of trust. Require an
+    // explicit second click that acknowledges the untrusted host.
+    // Cleartext warning: a token sent to a non-localhost host over plain http://
+    // travels unencrypted. Fold it into the same confirm-with-a-second-click gate.
+    const cleartext = token && !isLocalhost(h) && /^http:\/\//i.test(h);
+    const trusted = localStorage.getItem(TRUSTED_HOST_KEY);
+    const untrusted = token && !isLocalhost(h) && h !== trusted;
+    if ((untrusted || cleartext) && pendingHost !== h) {
+      setPendingHost(h);
+      setError(
+        cleartext
+          ? `${h} is not https:// — your access token would be sent to a remote host in cleartext. Click Connect again to send it anyway, or switch to https://.`
+          : `This will send your access token to ${h}, which you haven't connected to before. Click Connect again to confirm you trust this host.`
+      );
+      return;
+    }
+    setPendingHost(null);
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${h}/api/sessions`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`${h}/api/sessions`, { headers: headers(token) });
       if (res.status === 401) { setError('Invalid access token.'); return; }
       if (!res.ok) throw new Error();
       localStorage.setItem(HOST_KEY, h);
+      localStorage.setItem(TRUSTED_HOST_KEY, h); // this host proved reachable — trust it next time
       onConnect(h, token);
     } catch {
       setError('Could not reach relay. Check the host and try again.');

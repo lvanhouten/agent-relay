@@ -9,37 +9,107 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
-const { connectControl, connectPipe, dataPipe } = require('./lib');
+const { connectPipe, dataPipe, rpc } = require('./lib');
 const { waitForIdleOrExit } = require('./wait');
-
-function rpc(msg, opts) {
-  return new Promise((resolve, reject) => {
-    connectControl(opts).then(sock => {
-      let buf = '';
-      sock.on('data', d => {
-        buf += d;
-        const i = buf.indexOf('\n');
-        if (i >= 0) { sock.end(); resolve(JSON.parse(buf.slice(0, i))); }
-      });
-      sock.on('error', reject);
-      sock.write(JSON.stringify(msg) + '\n');
-    }, reject);
-  });
-}
+// rpc() (one control request -> one response, with a timeout) is shared from
+// lib.js so its framing can't drift from sb.js / board-client.js.
 
 // The board always replays its full scrollback to a fresh attach. We track how
 // much of that stream each line has already handed back so repeat reads return
 // only the new tail instead of the whole buffer every time.
-const seen = new Map(); // id -> chars already returned
+//
+// Lifecycle hazards this cache has to survive (all three are real — see below):
+//  1. Board restart reuses line ids (board.js `seq` resets to 0), so the cursor
+//     must be namespaced by the board's per-process boot nonce; a stale entry
+//     from a previous board must never apply to a freshly-reused id.
+//  2. A line that exits should drop its cursor, or the entry leaks forever in a
+//     process explicitly designed to outlive Claude Code session restarts.
+//  3. Concurrent reads of the same line share one cursor entry; the update must
+//     be monotonic (never roll the cursor backward and re-deliver, never jump it
+//     forward past output no reader ever saw).
+const seen = new Map(); // "<boot>:<id>" -> chars already returned
+let boot = null;        // the board's current boot nonce; re-probed on a TTL
+let bootTs = 0;         // when `boot` was last confirmed against a live board
+const BOOT_TTL_MS = 3000; // re-probe the nonce at most this often (N2: hot-path latency)
+
+// Every board RPC this module makes, injectable so the cursor logic (and the
+// end_line leak path) can be unit-tested without a live board. Defaults to the
+// shared lib.rpc(); tests swap it via __setRpc(). Was probe-only (refreshBoot's
+// dedicated re-probe); broadened to the new_line/list_lines/end_line call sites
+// too so their RPC failures are exercisable in tests, not just refreshBoot's.
+let boardRpc = (msg, opts) => rpc(msg, opts);
+
+// Fold a freshly-observed boot nonce into the cache's understanding of the
+// board's identity — the same effect as refreshBoot()'s own probe, but sourced
+// from a reply this process already received for another reason (a `new` or
+// `list` RPC always carries the board's CURRENT nonce), so it costs zero extra
+// round-trips. Called eagerly wherever the board hands one back, so a restart
+// is detected at the earliest possible moment — specifically, before any read
+// can reach a line id the restart caused to be reused. refreshBoot()'s TTL fast
+// path can't tell a live board from one that restarted inside the TTL window,
+// but the *only* way a client learns of an id that got reused post-restart is
+// via a `new` or `list` reply — so observing the nonce there closes that
+// specific collision window without paying a round-trip on every read.
+function observeBoot(freshBoot) {
+  if (!freshBoot) return;
+  if (freshBoot !== boot) seen.clear();
+  boot = freshBoot;
+  bootTs = Date.now();
+}
+
+// Pure cursor-advance decision, factored out of readOutput's finish() so it can
+// be tested in isolation. Given the current cache, a cache key (or null when the
+// board identity is unconfirmed — see refreshBoot), the total chars observed this
+// read, and whether the pipe actually closed, it returns how many chars were
+// already delivered (so the caller can compute the new-only delta) and mutates
+// `cache` for the next read:
+//  - monotonic advance (never roll the cursor back and re-deliver),
+//  - drop the entry only when the pipe closed (the line ended) — NOT on
+//    content-sniffing for the farewell substring, which a live program echoing
+//    "closed (exit N)" would trip (W2),
+//  - never read from or write to the cache under a null key (unconfirmed nonce),
+//    so a stale nonce can't collide with an orphaned entry (C1 sub-defect 3).
+function advanceCursor(cache, key, textLen, pipeClosed) {
+  if (!key) return 0;
+  const already = cache.get(key) || 0;
+  cache.set(key, Math.max(already, textLen));
+  if (pipeClosed) cache.delete(key);
+  return already;
+}
+
+// Learn the board's boot nonce. When it changes (a restart happened), every
+// cached cursor is from a dead board process and reused ids would inherit stale
+// values, so drop the whole cache.
+//
+// Returns { boot, confirmed }. `confirmed` is true only when this call (or a
+// recent one inside the TTL) actually reached the board and read its nonce. A
+// failed probe returns confirmed:false with whatever stale `boot` we last had —
+// the caller MUST NOT key the cursor cache off an unconfirmed nonce, because a
+// board restart we couldn't observe + a reused id + a leaked pre-restart entry
+// would collide and silently truncate (C1 sub-defect 3, the re-corruption
+// window). N2: skip the round-trip entirely while a confirmed nonce is fresh.
+async function refreshBoot() {
+  if (boot && Date.now() - bootTs < BOOT_TTL_MS) return { boot, confirmed: true };
+  const r = await boardRpc({ cmd: 'list' }, { autostart: false }).catch(() => null);
+  if (r && r.boot) { observeBoot(r.boot); return { boot, confirmed: true }; }
+  return { boot, confirmed: false };
+}
 
 const DEFAULT_TAIL_CHARS = 4000;
 
-function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TAIL_CHARS, full = false } = {}) {
+async function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TAIL_CHARS, full = false } = {}) {
+  const { boot: b, confirmed } = await refreshBoot();
+  // Only use the cursor cache when the board's identity is confirmed. If the
+  // probe failed we can't tell a restart from a hiccup, so keying off a possibly
+  // stale nonce risks colliding with an orphaned entry (silent truncation). In
+  // that case read without a cursor: return the fresh tail, never touch `seen`.
+  const key = confirmed ? `${b}:${id}` : null;
   return new Promise((resolve, reject) => {
     connectPipe(dataPipe(id), { retries: 3, delay: 50 }).then(sock => {
       let text = '';
       let quiet = null;
       let finished = false;
+      let pipeClosed = false; // set by close/error — the line actually ended
       const hardStop = setTimeout(finish, maxWaitMs);
       function arm() {
         if (quiet) clearTimeout(quiet);
@@ -51,19 +121,40 @@ function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFAULT_TA
         clearTimeout(hardStop);
         if (quiet) clearTimeout(quiet);
         try { sock.end(); } catch { /* already closed */ }
-        const already = seen.get(id) || 0;
-        seen.set(id, text.length); // advance the cursor even if we only hand back the tail below
+        const already = advanceCursor(seen, key, text.length, pipeClosed);
         const delta = text.slice(already);
         if (full || delta.length <= tailChars) { resolve(delta); return; }
         const dropped = delta.length - tailChars;
         resolve(`[switchboard: showing last ${tailChars} of ${delta.length} new chars — ${dropped} earlier chars dropped; pass full:true to switchboard_read_output to see everything]\n` + delta.slice(-tailChars));
       }
       sock.on('data', d => { text += d.toString('utf8'); arm(); });
-      sock.on('error', finish);
-      sock.on('close', finish);
+      sock.on('error', () => { pipeClosed = true; finish(); });
+      sock.on('close', () => { pipeClosed = true; finish(); });
       arm();
     }, reject);
   });
+}
+
+// Drop every cursor for a line id across all boot nonces. Called when a line is
+// ended via switchboard_end_line, so its entry doesn't leak (C1 sub-defect 1:
+// end_line without a following readOutput used to orphan the cursor until the
+// next observed board restart). Nonce-agnostic on purpose — the caller ending a
+// line may not have a confirmed nonce, and stale entries under a dead nonce are
+// exactly what we want gone too.
+function forgetLine(id) {
+  for (const key of seen.keys()) if (key.endsWith(`:${id}`)) seen.delete(key);
+}
+
+// End a line and drop its read cursor regardless of whether the RPC itself
+// succeeded — a failed/racy end must not leave a stale entry for a reused id
+// (the end_line leak: forgetLine used to run only after a successful rpc(),
+// so a rejected call — a timeout, a wedged board — skipped it entirely).
+async function endLine(id) {
+  try {
+    return await boardRpc({ cmd: 'end', id });
+  } finally {
+    forgetLine(id);
+  }
 }
 
 function sendInput(id, text, submit) {
@@ -93,7 +184,8 @@ server.registerTool('switchboard_new_line', {
     name: z.string().optional().describe('Optional label shown in switchboard_list_lines'),
   },
 }, async ({ shell, cwd, run, name }) => {
-  const r = await rpc({ cmd: 'new', open: false, shell, cwd, run, name });
+  const r = await boardRpc({ cmd: 'new', open: false, shell, cwd, run, name });
+  observeBoot(r.boot);
   return { content: [{ type: 'text', text: JSON.stringify(r) }] };
 });
 
@@ -106,7 +198,8 @@ server.registerTool('switchboard_list_lines', {
     'idle time. Always mention the name when reporting on a line, not just its id.',
   inputSchema: {},
 }, async () => {
-  const r = await rpc({ cmd: 'list' }, { autostart: false }).catch(() => ({ lines: [] }));
+  const r = await boardRpc({ cmd: 'list' }, { autostart: false }).catch(() => ({ lines: [] }));
+  observeBoot(r.boot);
   const lines = (r.lines || []).map(l => ({ ...l, name: l.name || null }));
   return { content: [{ type: 'text', text: JSON.stringify(lines) }] };
 });
@@ -192,7 +285,7 @@ server.registerTool('switchboard_end_line', {
     id: z.string().describe('Line id'),
   },
 }, async ({ id }) => {
-  const r = await rpc({ cmd: 'end', id });
+  const r = await endLine(id);
   return { content: [{ type: 'text', text: JSON.stringify(r) }] };
 });
 
@@ -201,4 +294,21 @@ async function main() {
   await server.connect(transport);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+// Only stand up the stdio server when run directly (`node mcp-server.js`); when
+// required by a test, just expose the internals below.
+if (require.main === module) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}
+
+module.exports = {
+  seen,
+  advanceCursor,
+  refreshBoot,
+  observeBoot,
+  forgetLine,
+  endLine,
+  BOOT_TTL_MS,
+  // test seams
+  __setRpc: fn => { boardRpc = fn; },
+  __resetBoot: () => { boot = null; bootTs = 0; seen.clear(); },
+};

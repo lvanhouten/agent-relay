@@ -5,15 +5,32 @@ const { BoardSessions } = require('./src/sessions');
 const { createAPI } = require('./src/api');
 const { createWSHub } = require('./src/ws');
 const { authMiddleware } = require('./src/auth');
+const { errorHandler } = require('./src/errorHandler');
 
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
 const app = express();
-app.use(cors());
+// CORS. By default (unset) we reflect any origin. That is NOT safe on its own:
+// the operator's browser bridges every page they visit to localhost, so with
+// AR_TOKEN unset a drive-by page can POST /api/sessions (i.e. run a command) —
+// and reflecting its origin here is exactly what lets that preflight through.
+// Set AR_CORS_ORIGIN (comma-separated allowlist) and/or AR_TOKEN; token-less
+// with open CORS is a dev-only posture.
+const CORS_ORIGIN = process.env.AR_CORS_ORIGIN;
+app.use(cors(CORS_ORIGIN
+  ? { origin: CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean) }
+  : undefined));
 app.use(express.json());
 
 const sessions = new BoardSessions();
 app.use('/api', authMiddleware, createAPI(sessions));
+
+// Final error handler. Without it, Express's default handler leaks the full stack
+// trace in the response body whenever NODE_ENV isn't 'production' (the default
+// here). Log server-side, return a generic body — a board-unreachable failure is
+// a transient 503, anything else a generic 500 with no internal detail. Shared
+// with api.test.js (./src/errorHandler.js) so the two can't drift.
+app.use(errorHandler);
 
 const server = createServer(app);
 createWSHub(server, sessions);

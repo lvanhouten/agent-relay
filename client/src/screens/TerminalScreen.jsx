@@ -7,6 +7,7 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import { ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Sun, Moon } from 'lucide-react';
+import { parseFrame, isValidDataPayload } from '../wsFrame.js';
 
 const XTERM_THEMES = {
   dark: {
@@ -68,8 +69,17 @@ function useSessionWS(sessionId, token, { onData, onExit, onReady }) {
       };
 
       ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'data') onData(msg.payload);
+        // A throw here (e.g. a malformed frame that isn't valid JSON) does NOT
+        // close the socket or fire onerror/onclose — the connection would look
+        // "online" but silently stop processing output, and the reconnect logic
+        // would never engage. Swallow a bad frame instead of freezing the terminal.
+        // parseFrame returns null for unparseable JSON AND for valid-but-non-object
+        // frames (`null`, a bare number, a string) — a naive JSON.parse().type on
+        // those would throw *outside* the parse try, reproducing the "online but
+        // silently stops receiving" freeze this handler exists to prevent.
+        const msg = parseFrame(e.data);
+        if (!msg) return;
+        if (msg.type === 'data' && isValidDataPayload(msg)) onData(msg.payload);
         if (msg.type === 'exit') { ended = true; setConnStatus('offline'); onExit(msg.code); }
       };
 
@@ -117,6 +127,12 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
   const termRef = React.useRef(null);
   const fitRef = React.useRef(null);
 
+  // These four refs exist to bridge the useSessionWS socket effect, which
+  // intentionally excludes its callbacks from its dependency array (so a callback
+  // identity change doesn't tear down and reconnect the WS). The stable callbacks
+  // passed to the hook read through these refs; the xterm mount effect below fills
+  // them in. Without the refs the hook would either reconnect on every render or
+  // capture stale closures. See useSessionWS's exhaustive-deps opt-out above.
   const onDataRef = React.useRef(null);
   const onExitRef = React.useRef(null);
   const refitRef = React.useRef(null);

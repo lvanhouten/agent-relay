@@ -10,25 +10,13 @@ import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon } fr
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
-function TerminalPreview({ lines = [] }) {
-  return (
-    <div style={{
-      background: 'var(--terminal-bg)', borderRadius: 'var(--radius-md)',
-      border: '1px solid var(--border-subtle)', padding: '10px 12px',
-      fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', lineHeight: 1.65,
-      height: 72, overflow: 'hidden', color: 'var(--terminal-fg)',
-    }}>
-      {lines.length === 0
-        ? <span style={{ color: 'var(--terminal-dim)', opacity: 0.6 }}>no output yet</span>
-        : lines.slice(-4).map((line, i) => (
-          <div key={i} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {line}
-          </div>
-        ))
-      }
-    </div>
-  );
-}
+// NOTE: the per-card scrollback preview was removed here — the server DTO never
+// carried a `preview` field (neither toDto() nor spawn() in server/src/sessions.js
+// populate one), so the widget rendered a permanent "no output yet" placeholder.
+// The data does exist one layer down (the board keeps a 2000-chunk scrollback per
+// line), so this can be revived by exposing a scrollback tail through the board's
+// `list` reply and threading it into toDto(). Deferred as a feature, not a bug —
+// see _docs/issues/2026-07-01-session-card-live-preview.md.
 
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
@@ -58,8 +46,6 @@ function SessionCard({ session, onAttach, onKill }) {
         </IconButton>
       </div>
 
-      <TerminalPreview lines={session.preview} />
-
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Badge variant="accent">{shellLabel}</Badge>
@@ -77,7 +63,7 @@ function SessionCard({ session, onAttach, onKill }) {
   );
 }
 
-function NewSessionDialog({ onClose, onCreate }) {
+function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const [name, setName] = React.useState('');
   const [cwd, setCwd] = React.useState('~/');
   const [command, setCommand] = React.useState('claude');
@@ -157,9 +143,18 @@ function NewSessionDialog({ onClose, onCreate }) {
           </span>
         </div>
 
+        {error && (
+          <p style={{
+            color: 'var(--danger)', fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--text-sm)', margin: 0,
+          }}>
+            {error}
+          </p>
+        )}
+
         <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button fullWidth leadingIcon={<Terminal size={15} />} onClick={handleCreate}>
+          <Button fullWidth loading={busy} leadingIcon={<Terminal size={15} />} onClick={handleCreate}>
             Create &amp; attach
           </Button>
         </div>
@@ -172,9 +167,27 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
   const [sessions, setSessions] = React.useState([]);
   const [query, setQuery] = React.useState('');
   const [dialog, setDialog] = React.useState(false);
+  const [createError, setCreateError] = React.useState('');
+  const [creating, setCreating] = React.useState(false);
+
+  // Sequence guard so overlapping load()s (a slow poll interleaving with a fresh
+  // one) can't let an older response stomp a newer one, and a set of ids killed
+  // locally but possibly still present in an in-flight poll's stale list, so a
+  // just-killed session can't flicker back for a poll cycle. Refs, not state — we
+  // never render off them and don't want them to retrigger the effect.
+  const loadSeq = React.useRef(0);
+  const latestApplied = React.useRef(0);
+  const killed = React.useRef(new Set());
 
   const load = React.useCallback(async () => {
-    try { setSessions(await listSessions(token)); } catch { /* offline — keep stale list */ }
+    const seq = ++loadSeq.current;
+    try {
+      const list = await listSessions(token);
+      // Drop a stale response: a newer load() already applied its result.
+      if (seq < latestApplied.current) return;
+      latestApplied.current = seq;
+      setSessions(list.filter((s) => !killed.current.has(s.id)));
+    } catch { /* offline — keep stale list */ }
   }, [token]);
 
   React.useEffect(() => {
@@ -183,15 +196,55 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
     return () => clearInterval(id);
   }, [load]);
 
+  const creatingRef = React.useRef(false);
   const handleCreate = async (opts) => {
-    setDialog(false);
-    const session = await createSession(opts, token);
-    onAttach(session);
+    // Synchronous re-entrancy guard: the Button's `disabled` attribute only takes
+    // effect after React commits the `creating` state, so a fast double-click
+    // before that re-render would otherwise fire two concurrent createSession
+    // calls (W4). A ref flips immediately, closing that window.
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    // Keep the dialog open until the create actually succeeds — createSession
+    // throws on any non-ok response (expired token, 500, network drop); closing
+    // first would drop that failure into an unhandled rejection with no feedback.
+    setCreateError('');
+    setCreating(true);
+    try {
+      const session = await createSession(opts, token);
+      setDialog(false);
+      onAttach(session);
+    } catch {
+      setCreateError('Could not create the session. Check the server and try again.');
+    } finally {
+      setCreating(false);
+      creatingRef.current = false;
+    }
   };
 
+  const openDialog = () => { setCreateError(''); setDialog(true); };
+
+  // Per-id re-entrancy guard (W2): a fast double-click on the same Terminate
+  // button before React commits any state fires two concurrent killSession
+  // calls otherwise. A Set (not a single ref) because killing two *different*
+  // sessions concurrently is fine — only a repeat click on the same id blocks.
+  const killingRef = React.useRef(new Set());
   const handleKill = async (id) => {
-    await killSession(id, token);
+    if (killingRef.current.has(id)) return;
+    killingRef.current.add(id);
+    // Mark before the request so any poll response that resolves during the kill
+    // (and still lists this id from a stale board snapshot) is filtered out — no
+    // flicker-back. Remove the mark once we've confirmed it's gone from a fresh
+    // list, so a future reused id isn't permanently hidden.
+    killed.current.add(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await killSession(id, token);
+    } finally {
+      // Reconcile against a fresh list, then stop suppressing the id.
+      await load();
+      killed.current.delete(id);
+      killingRef.current.delete(id);
+    }
   };
 
   const filtered = sessions.filter((s) =>
@@ -253,7 +306,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <Button leadingIcon={<Plus size={15} />} onClick={() => setDialog(true)}>
+            <Button leadingIcon={<Plus size={15} />} onClick={openDialog}>
               New session
             </Button>
           </div>
@@ -284,6 +337,8 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
         <NewSessionDialog
           onClose={() => setDialog(false)}
           onCreate={handleCreate}
+          error={createError}
+          busy={creating}
         />
       )}
     </div>

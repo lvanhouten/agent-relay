@@ -41,6 +41,7 @@ Browser (any device)          Relay server :3017            Board kernel (daemon
 - **Multi-client** — multiple browsers (and terminal panes) can observe the same session simultaneously
 - **Crash-safe** — sessions live in the board daemon, so the web server can restart without losing them
 - **Model agnostic** — works with any CLI-based agent (Claude Code, Codex CLI, Gemini CLI, custom scripts)
+- **Login safety** — warns before sending your token to a host you haven't successfully connected to before, or over a non-HTTPS connection to a non-localhost host
 
 ## Stack
 
@@ -68,6 +69,11 @@ npm run kill                # free :3017 and :5173 (stop orphaned dev processes)
 
 A `predev` guard frees the port before `server`/`client` start, so a restart can't
 collide with an orphaned process.
+
+```sh
+npm test --workspace=server   # board kernel, MCP server, API/session layer
+npm test --workspace=client   # pure logic modules (host trust, WS-frame guards)
+```
 
 The board kernel auto-starts on the server's first request and outlives it. For
 terminal access to the same sessions, use the bundled `sb` CLI — e.g.
@@ -98,7 +104,14 @@ WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
 ```
 
-Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS.
+Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS. Set
+`AR_CORS_ORIGIN` (comma-separated) to restrict cross-origin requests to an
+allowlist — unset reflects any origin. Note that listening on localhost is not
+a security boundary by itself: any web page the operator's browser visits can
+reach `localhost:3017`, so with `AR_TOKEN` unset and CORS open, a drive-by page
+can spawn sessions (i.e. run commands) and attach to the WS. Treat token-less
+operation as dev-only; set `AR_TOKEN` whenever the relay runs alongside normal
+browsing, tunneled or not.
 
 ## Roadmap
 
@@ -107,6 +120,8 @@ Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS.
 - [x] Frontend: session list UI
 - [x] Frontend: xterm.js terminal view
 - [x] Themes: light / dark terminal
-- [ ] Frontend: PWA manifest + mobile polish
-- [ ] Auth: enforce token-based auth on the relay endpoint
+- [x] Frontend: PWA manifest + service worker (installable on mobile)
+- [x] Auth: opt-in bearer-token auth (`AR_TOKEN`)
+- [ ] Auth: secure defaults — token required (auto-generated), WS `Origin` check, CORS allowlist
+- [ ] Frontend: mobile polish
 - [ ] Notifications: push alerts when a session needs input

@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
-const { CTRL, dataPipe } = require('./lib');
+const { CTRL, dataPipe, lineClosedFarewell } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -20,6 +20,21 @@ const DEFAULT_SHELL = process.platform === 'win32'
   : (process.env.SHELL || 'bash');
 
 const SCROLLBACK = 2000; // chunks of output replayed to a freshly-patched pane
+
+// Initial-command ("run" field) keystroke-feed timing. ConPTY drops keystrokes
+// fed before the shell's input reader is ready, so we wait for the shell's first
+// output (prompt up) — debounced by FEED_DEBOUNCE_MS after each output burst —
+// before injecting, with FEED_FALLBACK_MS as a hard backstop for a shell that
+// emits nothing on start. Both feed the same one-shot send (`sent` guard).
+const FEED_DEBOUNCE_MS = 120;
+const FEED_FALLBACK_MS = 1500;
+
+// Per-process boot nonce. Line ids come from `seq`, which resets to 0 on every
+// board restart (a designed, autostart-triggered event), so an id like "1" is
+// reused across restarts. Clients that cache per-line state (e.g. mcp-server's
+// read cursor) must namespace it by this nonce so a reused id can't inherit a
+// stale entry from a previous board process.
+const BOOT = `${process.pid}-${Date.now()}`;
 
 const sessions = new Map(); // id -> { pty, clients:Set<socket>, buf:[], sizes, server, name, shell, cwd, startedAt, lastActivity }
 let seq = 0;
@@ -58,7 +73,12 @@ function createLine(o = {}) {
     for (const c of s.clients) c.write(d);
   });
   p.onExit(({ exitCode }) => {
-    for (const c of s.clients) c.end(`\r\n[switchboard: line ${id} closed (exit ${exitCode})]\r\n`);
+    // This runs in an async pty callback OUTSIDE the control-plane dispatch's
+    // try/catch — an uncaught throw here would take down the whole daemon (and
+    // every other live line) on one line's exit (N10). notifyClientsClosed guards
+    // each client .end() so one wedged pane can't abort the farewell to the rest,
+    // nor the cleanup below.
+    notifyClientsClosed(s.clients, lineClosedFarewell(id, exitCode));
     try { server.close(); } catch { /* ignore */ }
     sessions.delete(id);
     log('line', id, 'closed, exit', exitCode);
@@ -68,6 +88,7 @@ function createLine(o = {}) {
   // afterwards. Wait for the shell's first output (prompt up) before sending —
   // ConPTY drops keystrokes fed before the shell's input reader is ready — with a
   // timer fallback in case the shell is silent on start. Fires at most once.
+  // (Timing rationale + constants: see FEED_DEBOUNCE_MS / FEED_FALLBACK_MS above.)
   const run = typeof o.run === 'string' ? o.run.trim() : '';
   if (run) {
     let sent = false;
@@ -76,14 +97,29 @@ function createLine(o = {}) {
       sent = true;
       try { p.write(run + '\r'); } catch { /* line closed */ }
     };
-    p.onData(() => setTimeout(feed, 120));
-    setTimeout(feed, 1500);
-    log('line', id, 'will run:', run);
+    p.onData(() => setTimeout(feed, FEED_DEBOUNCE_MS));
+    setTimeout(feed, FEED_FALLBACK_MS);
+    // Log only that a run command exists and its length, not its text — the
+    // command can embed a credential as an argv (e.g. --api-key=...) and
+    // switchboard.log is persistent and unrotated.
+    log('line', id, 'will run a command', `(${run.length} chars)`);
   }
 
   log('line', id, 'placed:', shell, 'in', cwd);
   return id;
 }
+
+// Send the farewell to every patched-in client, guarding each write so one
+// socket in a bad state can't throw and abort the loop (leaving other panes
+// un-notified) or the caller's post-loop cleanup. Factored out of p.onExit so the
+// per-client isolation (N10) is unit-testable without spawning a pty.
+function notifyClientsClosed(clients, farewell) {
+  for (const c of clients) { try { c.end(farewell); } catch { /* pane already gone */ } }
+}
+
+// A valid terminal dimension: a finite positive integer. Guards the resize path
+// so garbage can't poison a line's size via NaN (see the 'resize' handler).
+const isDim = n => Number.isInteger(n) && n > 0;
 
 // Clamp a line's PTY to its smallest patched pane (tmux-style) so no pane renders
 // garbled. Each pane reports its size over its long-lived control socket; we key
@@ -100,9 +136,33 @@ function applyMin(s) {
 // WezTerm when the recipe is absent (older client / undetectable caller).
 const DEFAULT_RECIPE = { file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'], env: {} };
 
-function openPane(id, recipe) {
+// Decide whether a launch recipe can spawn a working pane. The {cmd} token is
+// only substituted when it's its OWN argv element. If a recipe embeds it inside a
+// larger string (e.g. SWITCHBOARD_TERM="sh -c '{cmd}'" splits to
+// ["sh","-c","'{cmd}'"]), no element equals '{cmd}', so it would silently spawn
+// with the literal token and the pane never patches in. Factored out so the
+// refusal logic is unit-testable without launching a process.
+function paneSpawnDecision(recipe) {
   const r = recipe && recipe.file ? recipe : DEFAULT_RECIPE;
+  const standalone = r.args.some(a => a === '{cmd}');
+  const embedded = r.args.some(a => a !== '{cmd}' && a.includes('{cmd}'));
+  return { recipe: r, standalone, embedded };
+}
+
+// Returns true if a pane process was spawned, false if the recipe was refused
+// (no standalone {cmd} arg). The caller threads this into the RPC reply so a
+// misconfigured SWITCHBOARD_TERM surfaces as paneOpened:false instead of a silent
+// ok:true with no window (N7's residual / new-N1). Note this reports the spawn
+// *attempt*, not the pane's eventual liveness — a spawn that later errors is
+// reported asynchronously via the child 'error' log, which openPane can't await.
+function openPane(id, recipe) {
+  const { recipe: r, standalone, embedded } = paneSpawnDecision(recipe);
   const cmd = [process.execPath, path.join(__dirname, 'patch.js'), id];
+  if (!standalone) {
+    log('pane spawn skipped for line', id, '- recipe has no standalone {cmd} arg',
+      embedded ? '({cmd} is embedded in a larger string — it must be its own argument; join the line manually with `sb join ' + id + '`)' : '');
+    return false;
+  }
   const args = r.args.flatMap(a => (a === '{cmd}' ? cmd : [a]));
   const child = spawn(r.file, args, {
     stdio: 'ignore',
@@ -111,15 +171,19 @@ function openPane(id, recipe) {
   });
   child.on('error', e => log('pane spawn failed for line', id, 'via', r.file, '-', e.message));
   child.unref();
+  return true;
 }
 
 function handle(m, sock) {
   switch (m.cmd) {
     case 'new': {
       const id = createLine(m);
-      if (m.open !== false) openPane(id, m.spawn);
+      // paneOpened: true/false when a pane was requested (so a caller learns a
+      // refused recipe didn't produce a window — N7/new-N1); null when no pane was
+      // requested at all (open:false — the web/MCP case, the browser is the pane).
+      const paneOpened = m.open !== false ? openPane(id, m.spawn) : null;
       const s = sessions.get(id);
-      sock.write(JSON.stringify({ ok: true, id, pid: s.pty.pid, shell: s.shell, name: s.name, dataPipe: dataPipe(id) }) + '\n');
+      sock.write(JSON.stringify({ ok: true, boot: BOOT, id, pid: s.pty.pid, shell: s.shell, name: s.name, cwd: s.cwd, dataPipe: dataPipe(id), paneOpened }) + '\n');
       break;
     }
     case 'list': {
@@ -133,13 +197,15 @@ function handle(m, sock) {
         uptimeMs: Date.now() - s.startedAt,
         idleMs: Date.now() - s.lastActivity,
       }));
-      sock.write(JSON.stringify({ ok: true, lines }) + '\n');
+      sock.write(JSON.stringify({ ok: true, boot: BOOT, lines }) + '\n');
       break;
     }
     case 'join': {
       const s = sessions.get(m.id);
-      if (s) openPane(m.id, m.spawn);
-      sock.write(JSON.stringify({ ok: !!s, id: m.id, dataPipe: s ? dataPipe(m.id) : null }) + '\n');
+      // paneOpened: the result of the join's whole point (opening a pane), or null
+      // when the line doesn't exist so no pane was even attempted (N7/new-N1).
+      const paneOpened = s ? openPane(m.id, m.spawn) : null;
+      sock.write(JSON.stringify({ ok: !!s, id: m.id, dataPipe: s ? dataPipe(m.id) : null, paneOpened }) + '\n');
       break;
     }
     case 'end': {
@@ -150,7 +216,10 @@ function handle(m, sock) {
     }
     case 'resize': {
       const s = sessions.get(m.id);
-      if (s) { s.sizes.set(sock, { cols: m.cols, rows: m.rows }); applyMin(s); }
+      // Only store finite positive-integer sizes. A non-numeric value would
+      // propagate NaN through every subsequent applyMin (Math.min) for the line
+      // and wedge every pane's resize until the poisoned client disconnects.
+      if (s && isDim(m.cols) && isDim(m.rows)) { s.sizes.set(sock, { cols: m.cols, rows: m.rows }); applyMin(s); }
       break;
     }
     case 'shutdown': {
@@ -177,7 +246,11 @@ const board = net.createServer(sock => {
       if (!line.trim()) continue;
       let m;
       try { m = JSON.parse(line); } catch { continue; }
-      handle(m, sock);
+      // Guard the whole command dispatch: a field that doesn't match the assumed
+      // shape (e.g. `args` as a non-array) must not throw uncaught here and take
+      // down the daemon — and every live line with it — for one bad request.
+      try { handle(m, sock); }
+      catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
   });
   sock.on('error', () => {});
@@ -193,4 +266,11 @@ board.on('error', e => {
   log('board error:', e.message);
   throw e;
 });
-board.listen(CTRL, () => log('switchboard online:', CTRL));
+
+// Only bind the control pipe when run as the daemon (`node board.js`); when
+// required by a test, just expose the pure helpers below.
+if (require.main === module) {
+  board.listen(CTRL, () => log('switchboard online:', CTRL));
+}
+
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed };

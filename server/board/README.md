@@ -180,6 +180,17 @@ tells the agent to always read the tail first and only re-read with
 reaching for `full: true` on its very first read of a line (e.g. because the
 user said "show me the output") is working against the tool, not with it.
 
+The cursor cache is namespaced by the board's boot nonce (`"<boot>:<id>"`), not
+just the line id — a board restart resets its line-id counter, so a bare id
+alone would let a freshly-recreated line inherit a stale cursor from the
+previous board process. `observeBoot()` refreshes the cached nonce (and clears
+the cache on a change) both on a dedicated TTL'd probe and opportunistically
+from every `switchboard_new_line`/`switchboard_list_lines` reply, which already
+carries the board's current nonce at no extra round-trip cost. `endLine()`
+drops a line's cursor entries unconditionally (`try`/`finally`), including when
+the underlying `end` RPC itself fails, so a leftover entry can't wait around
+for a future id collision.
+
 ## Waiting on a line
 
 `wait.js` holds `waitForIdleOrExit` — one implementation, two entry points:
@@ -216,7 +227,7 @@ if whatever's waiting can itself be run in the background:
 | `mcp-server.js`   | MCP server — programmatic (non-pane) access to lines for agents |
 | `wait.js`         | shared idle/exit detection, used by both `sb wait` and `switchboard_wait_for_idle` |
 | `spawners.js`     | per-terminal pane-launch recipes + client-side detection |
-| `lib.js`          | pipe names, detached auto-start, connect-with-retry |
+| `lib.js`          | pipe names, detached auto-start, connect-with-retry, the shared timed `rpc()` used by `sb.js`/`mcp-server.js`/`src/board-client.js`, the exit-code sentinel `EXIT_RE` |
 | `start-board.vbs` | launches the board hidden (no console) for autostart |
 | `autostart.ps1`   | register / unregister the at-logon autostart task |
 
