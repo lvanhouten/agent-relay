@@ -6,9 +6,76 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
+import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
 import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon } from 'lucide-react';
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
+
+// Suggestions, not validation: the command field stays the escape hatch for any
+// model/effort name these chips don't know — the CLI is the validator, and a
+// hardcoded list must never refuse what the CLI would accept (see
+// _docs/issues/2026-07-02-claude-model-effort-selection.md).
+const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+// Operator-wide defaults for Claude sessions: last-used values persist on a
+// successful spawn (no separate settings UI) and prefill the next claude
+// command. localStorage for now; migrates into the server-side store when
+// spawn-templates phase 2 lands so the two share one persistence story.
+function withClaudeDefaults(cmd) {
+  const model = localStorage.getItem('ar-claude-model');
+  const effort = localStorage.getItem('ar-claude-effort');
+  let out = cmd;
+  if (model) out = setFlag(out, 'model', model);
+  if (effort) out = setFlag(out, 'effort', effort);
+  return out;
+}
+
+function rememberClaudeDefaults(command) {
+  // Only a claude spawn updates the defaults — launching bash must not clear
+  // them. A claude spawn with a flag omitted *does* clear that default: the
+  // operator chose the CLI default, so remember the choice.
+  if (!isClaudeCommand(command)) return;
+  const model = getFlag(command, 'model');
+  const effort = getFlag(command, 'effort');
+  if (model) localStorage.setItem('ar-claude-model', model);
+  else localStorage.removeItem('ar-claude-model');
+  if (effort) localStorage.setItem('ar-claude-effort', effort);
+  else localStorage.removeItem('ar-claude-effort');
+}
+
+// One row of flag chips — a structured editor over the command string. A chip
+// click splices only its own flag (setFlag), so hand-typed text elsewhere in
+// the command survives; "default" removes the flag (CLI config decides).
+function FlagChipRow({ label, flag, options, command, onCommand }) {
+  const current = getFlag(command, flag);
+  const chips = [{ value: null, text: 'default' }, ...options.map((o) => ({ value: o, text: o }))];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{
+        fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
+        color: 'var(--text-muted)', width: 46, flexShrink: 0,
+      }}>
+        {label}
+      </span>
+      {chips.map(({ value, text }) => {
+        const selected = current === value;
+        return (
+          <button key={text} onClick={() => onCommand(setFlag(command, flag, value))} style={{
+            flex: 1, height: 26, cursor: 'pointer', minWidth: 0,
+            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
+            borderRadius: 'var(--radius-md)',
+            border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-default)'}`,
+            background: selected ? 'var(--accent-soft)' : 'var(--surface-card)',
+            color: selected ? 'var(--text-accent)' : 'var(--text-body)',
+          }}>
+            {text}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // NOTE: the per-card scrollback preview was removed here — the server DTO never
 // carried a `preview` field (neither toDto() nor spawn() in server/src/sessions.js
@@ -66,7 +133,7 @@ function SessionCard({ session, onAttach, onKill }) {
 function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const [name, setName] = React.useState('');
   const [cwd, setCwd] = React.useState('~/');
-  const [command, setCommand] = React.useState('claude');
+  const [command, setCommand] = React.useState(() => withClaudeDefaults('claude'));
 
   const handleCreate = () => {
     onCreate({
@@ -117,19 +184,37 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
             Initial command
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {QUICK_COMMANDS.map((c) => (
-              <button key={c} onClick={() => setCommand(c)} style={{
-                flex: 1, height: 36, cursor: 'pointer',
-                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-                borderRadius: 'var(--radius-md)',
-                border: `1px solid ${command === c ? 'var(--border-accent)' : 'var(--border-default)'}`,
-                background: command === c ? 'var(--accent-soft)' : 'var(--surface-card)',
-                color: command === c ? 'var(--text-accent)' : 'var(--text-body)',
-              }}>
-                {c}
-              </button>
-            ))}
+            {QUICK_COMMANDS.map((c) => {
+              // The claude chip stays lit while flags ride the command — the
+              // model/effort chips below edit the same string. Re-clicking it
+              // while lit is a no-op: a hand-built claude command (flags, a
+              // quoted prompt) must not be wiped by a "make sure it's
+              // selected" click on an already-selected control.
+              const selected = c === 'claude' ? isClaudeCommand(command) : command === c;
+              const pick = () => {
+                if (selected) return;
+                setCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
+              };
+              return (
+                <button key={c} onClick={pick} style={{
+                  flex: 1, height: 36, cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-default)'}`,
+                  background: selected ? 'var(--accent-soft)' : 'var(--surface-card)',
+                  color: selected ? 'var(--text-accent)' : 'var(--text-body)',
+                }}>
+                  {c}
+                </button>
+              );
+            })}
           </div>
+          {isClaudeCommand(command) && (
+            <>
+              <FlagChipRow label="model" flag="model" options={CLAUDE_MODELS} command={command} onCommand={setCommand} />
+              <FlagChipRow label="effort" flag="effort" options={CLAUDE_EFFORTS} command={command} onCommand={setCommand} />
+            </>
+          )}
           <Input
             mono
             value={command}
@@ -185,6 +270,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
     try {
       const session = await create(opts);
       if (!session) return; // dropped by the re-entrancy guard — the first click is still in flight
+      rememberClaudeDefaults(opts.command ?? '');
       setDialog(false);
       onAttach(session);
     } catch {

@@ -236,7 +236,12 @@ server.registerTool('switchboard_new_line', {
   inputSchema: {
     shell: z.string().optional().describe('Shell to launch (default: pwsh.exe on Windows, $SHELL elsewhere)'),
     cwd: z.string().optional().describe('Working directory (default: the user profile dir)'),
-    run: z.string().optional().describe('Initial command to type into the shell once it comes up'),
+    run: z.string().optional().describe('Initial command to type into the shell once it comes up. ' +
+      'When this starts a `claude` session, always pass an explicit `--model` and `--effort` sized to the ' +
+      'job — e.g. `claude --model haiku --effort low "watch the build"` for a cheap watcher, ' +
+      '`--model opus --effort high` for a heavy worker. (Current aliases and effort levels are the CLI\'s ' +
+      'to define — see its reference; any value it accepts is fine here.) Omitting them silently inherits ' +
+      'whatever the operator\'s CLI config defaults to, which is rarely the right size for a fleet line.'),
     name: z.string().optional().describe('Optional label shown in switchboard_list_lines'),
   },
 }, async ({ shell, cwd, run, name }) => {

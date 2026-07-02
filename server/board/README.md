@@ -38,7 +38,9 @@ on PATH (see [Terminals](#terminals)).
 
 ```
 sb up             bring the board online (auto-starts on first use anyway)
-sb new [shell]    start a new line + join a tab to it   (e.g. sb new bash)
+sb new [shell] [--run <cmd>]
+                  start a new line + join a tab to it, optionally typing an
+                  initial command into the shell (e.g. sb new --run claude)
 sb list           list active lines  (ID  PID  SHELL  JOINED  UPTIME)
 sb join <id>      join another tab to an existing line
 sb end <id>       end one line
@@ -159,8 +161,9 @@ browser WebSocket in place of a terminal pane.
 
 `mcp-server.js` exposes the board to Claude Code (or any MCP client) as tools —
 `switchboard_new_line`, `switchboard_list_lines`, `switchboard_read_output`,
-`switchboard_send_input`, `switchboard_end_line`. This is the same control +
-data pipes `sb` uses, but for an agent instead of a human: `sb join` opens a
+`switchboard_wait_for_idle`, `switchboard_send_input`, `switchboard_end_line`.
+This is the same control + data pipes `sb` uses, but for an agent instead of a
+human: `sb join` opens a
 terminal tab, which is useless to an agent that can't see it, so this attaches
 to a line's raw byte stream directly and hands output back as tool-call text —
 no pane required. Lines it creates aren't tied to the calling session; a human
@@ -174,6 +177,13 @@ project directory:
 ```sh
 claude mcp add --scope user switchboard -- node "<repo>\server\board\mcp-server.js"
 ```
+
+`switchboard_new_line`'s `run` descriptor carries one piece of agent guidance:
+when the initial command starts a `claude` session, pass an explicit `--model`
+and `--effort` sized to the job (a cheap watcher doesn't need a heavy worker's
+model) instead of silently inheriting the operator's CLI default. The current
+aliases and effort levels are deliberately not enumerated there — they're the
+CLI's to define, and a frozen list in tool prose goes stale on every release.
 
 `switchboard_read_output` tracks how much of each line it's already returned
 (in-memory, per MCP server process) so repeat reads get only the new output

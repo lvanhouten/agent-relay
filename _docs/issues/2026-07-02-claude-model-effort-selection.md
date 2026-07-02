@@ -1,7 +1,7 @@
 # Spawning a Claude session always rides the CLI's own defaults — no per-spawn model/effort choice, no relay-level defaults
 
 **Source:** Backlog conversation, 2026-07-02 — while closing out the client-core extraction: "should we have a way to specify a Claude Model / Effort and also have default ones that are used?"
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** ✅ Implemented (phase 1) — 2026-07-02, branch `claude-model-effort-selection`. Model/effort chip rows in the create dialog splice flags in place via `client/src/core/claudeFlags.ts` (pure, tested — add/replace/remove one flag without touching the rest of the command); last-used values persist to `localStorage` on a successful claude spawn and prefill the next one. Addendum implemented alongside: `switchboard_new_line`'s `run` param descriptor now advises agents to pass explicit `--model`/`--effort` sized to the job on every claude line. Verified in the running app: chips splice into a hand-edited command without clobbering it, the compiled command launches claude on the board, defaults survive dialog reopen. Phase 2 (server-side defaults store) still rides spawn-templates phase 2.
 **Kind:** Enhancement
 **Modules:** client/SessionsScreen (create dialog); later the same store as `2026-07-02-fleet-spawn-templates.md` phase 2
 **Severity:** Low — pure convenience today (the command field already accepts flags); grows with fleet usage, where model choice per line is deliberate (cheap watchers vs. a heavy worker).
