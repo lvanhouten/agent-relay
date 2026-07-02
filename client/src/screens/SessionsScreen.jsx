@@ -5,7 +5,7 @@ import { Badge } from '@ds/Badge.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
-import { listSessions, createSession, killSession } from '../api.js';
+import { useSessions } from '../core/useSessions.ts';
 import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon } from 'lucide-react';
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
@@ -164,88 +164,35 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
 }
 
 export default function SessionsScreen({ host, token, theme, onToggleTheme, onAttach }) {
-  const [sessions, setSessions] = React.useState([]);
+  // Data layer — list + poll + create/kill with their concurrency guards —
+  // lives in core/useSessions. This screen owns only presentation state.
+  const { sessions, create, kill, creating } = useSessions(token);
   const [query, setQuery] = React.useState('');
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');
-  const [creating, setCreating] = React.useState(false);
 
-  // Sequence guard so overlapping load()s (a slow poll interleaving with a fresh
-  // one) can't let an older response stomp a newer one, and a set of ids killed
-  // locally but possibly still present in an in-flight poll's stale list, so a
-  // just-killed session can't flicker back for a poll cycle. Refs, not state — we
-  // never render off them and don't want them to retrigger the effect.
-  const loadSeq = React.useRef(0);
-  const latestApplied = React.useRef(0);
-  const killed = React.useRef(new Set());
-
-  const load = React.useCallback(async () => {
-    const seq = ++loadSeq.current;
-    try {
-      const list = await listSessions(token);
-      // Drop a stale response: a newer load() already applied its result.
-      if (seq < latestApplied.current) return;
-      latestApplied.current = seq;
-      setSessions(list.filter((s) => !killed.current.has(s.id)));
-    } catch { /* offline — keep stale list */ }
-  }, [token]);
-
-  React.useEffect(() => {
-    load();
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, [load]);
-
-  const creatingRef = React.useRef(false);
   const handleCreate = async (opts) => {
-    // Synchronous re-entrancy guard: the Button's `disabled` attribute only takes
-    // effect after React commits the `creating` state, so a fast double-click
-    // before that re-render would otherwise fire two concurrent createSession
-    // calls (W4). A ref flips immediately, closing that window.
-    if (creatingRef.current) return;
-    creatingRef.current = true;
-    // Keep the dialog open until the create actually succeeds — createSession
-    // throws on any non-ok response (expired token, 500, network drop); closing
+    // Keep the dialog open until the create actually succeeds — create()
+    // rejects on any non-ok response (expired token, 500, network drop); closing
     // first would drop that failure into an unhandled rejection with no feedback.
+    //
+    // create()'s re-entrancy guard (W4) lives inside the hook, so a double-click's
+    // second call no-ops *after* this line: anything placed before the
+    // `if (!session)` check below runs on dropped calls too. Today that's only
+    // this error clear (harmless — the first click just cleared it); keep any
+    // future side effect (analytics, optimistic mutation) below the null check.
     setCreateError('');
-    setCreating(true);
     try {
-      const session = await createSession(opts, token);
+      const session = await create(opts);
+      if (!session) return; // dropped by the re-entrancy guard — the first click is still in flight
       setDialog(false);
       onAttach(session);
     } catch {
       setCreateError('Could not create the session. Check the server and try again.');
-    } finally {
-      setCreating(false);
-      creatingRef.current = false;
     }
   };
 
   const openDialog = () => { setCreateError(''); setDialog(true); };
-
-  // Per-id re-entrancy guard (W2): a fast double-click on the same Terminate
-  // button before React commits any state fires two concurrent killSession
-  // calls otherwise. A Set (not a single ref) because killing two *different*
-  // sessions concurrently is fine — only a repeat click on the same id blocks.
-  const killingRef = React.useRef(new Set());
-  const handleKill = async (id) => {
-    if (killingRef.current.has(id)) return;
-    killingRef.current.add(id);
-    // Mark before the request so any poll response that resolves during the kill
-    // (and still lists this id from a stale board snapshot) is filtered out — no
-    // flicker-back. Remove the mark once we've confirmed it's gone from a fresh
-    // list, so a future reused id isn't permanently hidden.
-    killed.current.add(id);
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    try {
-      await killSession(id, token);
-    } finally {
-      // Reconcile against a fresh list, then stop suppressing the id.
-      await load();
-      killed.current.delete(id);
-      killingRef.current.delete(id);
-    }
-  };
 
   const filtered = sessions.filter((s) =>
     `${s.name} ${s.cwd}`.toLowerCase().includes(query.toLowerCase())
@@ -327,7 +274,7 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
             gap: 'var(--space-4)',
           }}>
             {filtered.map((s) => (
-              <SessionCard key={s.id} session={s} onAttach={onAttach} onKill={handleKill} />
+              <SessionCard key={s.id} session={s} onAttach={onAttach} onKill={kill} />
             ))}
           </div>
         )}

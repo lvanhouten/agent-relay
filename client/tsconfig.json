@@ -1,0 +1,23 @@
+{
+  // Type-checking for src/core/ only — the screens stay JSX and are not checked
+  // (no allowJs; files convert to TS as they move into core/). Vite/esbuild does
+  // the actual compilation; this config exists for `npm run typecheck` and editors.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // Imports carry explicit .ts/.tsx extensions so Node's type stripping can run
+    // the .test.ts files directly (node --test); Vite resolves them the same way.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/core"]
+}

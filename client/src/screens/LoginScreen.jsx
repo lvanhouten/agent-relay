@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
 import { Sun, Moon, Lock } from 'lucide-react';
-import { headers } from '../api.js';
+import { headers } from '../core/api.ts';
 import { isLocalhost } from '../hostTrust.js';
 
 // The app is served BY the relay (or the Vite dev proxy), so every request —

@@ -1,7 +1,7 @@
 # The client's hard-won logic is embedded in screen components — extract a shared core (in TypeScript) before a second consumer forks it
 
 **Source:** Shell-split tradeoff discussion, 2026-07-02 — the reuse inventory for the desktop workspace shell (`2026-07-02-desktop-workspace-shell.md`) found the expensive logic is all extractable, and none of it is extracted.
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** ✅ Implemented — 2026-07-02, branch `extract-client-core`. Everything below landed as proposed (core is `client/src/core/`: `types.ts`, `api.ts`, `wsFrame.ts`, `sessionGuards.ts`, `useSessionWS.ts`, `useSessions.ts`, `xtermThemes.ts`, `TerminalView.tsx`); `api.js` also moved/converted since core consumes it ("files convert as they move"). Verified end-to-end in the running app: login → list poll → create/attach → scrollback replay → input roundtrip → exit tombstone → Ctrl+D detach → double-click kill with no flicker-back.
 **Kind:** Refactor (pure — no behavior change)
 **Modules:** client
 **Severity:** Medium — prerequisite for the desktop shell, the mobile composer bar, and terminal QoL; valuable even if none of those ship.

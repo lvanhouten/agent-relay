@@ -19,7 +19,18 @@ const isWin = process.platform === 'win32';
 function pidsForPort(port) {
   try {
     if (isWin) {
-      const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
+      // `-p tcp` lists IPv4 listeners only. Vite (and anything else that binds
+      // the IPv6 loopback, e.g. [::1]:5173) shows up only under tcpv6 — query
+      // both stacks or IPv6-only orphans survive the guard. Each query catches
+      // independently: one stack failing (IPv6 disabled, netstat variance) must
+      // not erase the other's results — a shared catch would return [] and
+      // silently disable the guard for both.
+      const out = ['tcp', 'tcpv6']
+        .map((proto) => {
+          try { return execSync(`netstat -ano -p ${proto}`, { encoding: 'utf8' }); }
+          catch { return ''; }
+        })
+        .join('\n');
       const pids = new Set();
       for (const line of out.split(/\r?\n/)) {
         if (!/\bLISTENING\b/.test(line)) continue;

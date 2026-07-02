@@ -20,6 +20,7 @@
 ## Risks / open questions
 
 - Expiry: HMAC tokens are irrevocable individually. Include an `exp` claim in the signed scope (hours for `input:` tokens, longer for `read`) so a leaked scoped token ages out; wholesale revocation remains "rotate the main token".
+  - But rotation is currently invisible to a revoked client (observed 2026-07-02): the sessions poll 401s into `useSessions`' keep-stale-list `catch` — the same branch as "server offline" — so the list keeps rendering stale data, and an attached terminal drops to a permanent OFFLINE via the 1008 close. No re-login affordance exists short of a page reload. If rotation is the revocation story, the client side of this feature should distinguish 401 from unreachable in the poll path and route back to the login screen — otherwise "revoked" and "broken" look identical to the person holding the stale token.
 - Don't grow a JWT dependency for this — one HMAC + a two-field scope string is the whole need; a parser for someone else's token format is more surface than it saves.
 - Read-only still replays the 2000-chunk scrollback — "read" is full observation of everything that session has shown, which can include secrets in output. The share button's copy should say so.
 
