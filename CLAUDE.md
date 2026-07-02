@@ -86,3 +86,4 @@ One doc per idea under `_docs/issues/`, each with motivation, outline, risks, an
 | Scrollback persistence: transcripts survive line exit / board restart | `_docs/issues/2026-07-02-scrollback-persistence.md` |
 | Session exit metadata: tombstones instead of silent disappearance | `_docs/issues/2026-07-02-session-exit-metadata.md` |
 | Terminal QoL: search, transcript download, scroll-to-bottom pill | `_docs/issues/2026-07-02-terminal-qol.md` |
+| Desktop workspace shell: two shells over one core, spectator attach, panes, palette | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |

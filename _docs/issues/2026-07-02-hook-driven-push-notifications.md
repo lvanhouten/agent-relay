@@ -14,6 +14,7 @@ The clean trigger is **not** output-scraping. Claude Code has first-class `Notif
 
 ## Proposal outline
 
+- Phase 0 (no push stack at all): while a desktop tab is open, fire `new Notification(...)` from the page off the attention-state substrate — no VAPID, no SW plumbing, no secure-origin requirement beyond localhost. Covers the local use case months before the remote stack exists; see `2026-07-02-desktop-workspace-shell.md`. (small, after attention states)
 - Generate and persist a VAPID keypair next to the board secret (`%LOCALAPPDATA%\agent-relay\`), same owner-only-file posture. (small)
 - Add `web-push` to the server; store push subscriptions (in-memory + JSON file survive web-tier restarts) behind `authMiddleware`: `POST /api/push/subscribe`, `DELETE /api/push/subscribe`. (medium)
 - Add `POST /api/notify` (authed): accepts `{ sessionId, title, body }`, fans out to all subscriptions. Deliberately dumb — the relay doesn't decide *when* to notify, callers do. (small)
