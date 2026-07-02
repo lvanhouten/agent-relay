@@ -46,8 +46,8 @@ This is an npm workspaces monorepo (`server/`, `client/`). The two packages are 
 
 **Client** (`client/`) — Vite + React, no router
 - Navigation is manual screen state in `App.jsx`: `login` → `sessions` → `terminal`.
-- `client/src/api.js` — thin fetch wrappers for the REST API. Paths are relative (`/api/...`) so they hit Vite's dev proxy in dev and the same origin in production.
-- `client/src/hostTrust.js` — pure host-normalization/trust helpers (`normalizeHost`, `isLocalhost`) used by `LoginScreen` before the token is ever sent: prepends `http://` to a scheme-less `host:port`, warns before sending the token to a host that isn't localhost and hasn't been connected to successfully before.
+- `client/src/api.js` — thin fetch wrappers for the REST API. Paths are relative (`/api/...`) so they hit Vite's dev proxy in dev and the same origin in production. **Same-origin is the model**: the SPA is served by the relay (or the dev proxy), so every request — the login probe, session CRUD, the WS stream — targets the page's own origin. You reach a relay by loading this page from it (directly or through a tunnel), not by typing a host.
+- `client/src/hostTrust.js` — pure host helpers (`normalizeHost`, `isLocalhost`). `isLocalhost` backs `LoginScreen`'s cleartext gate — the one credential check left in the same-origin model: if the page was loaded over `http://` from a non-localhost host, sending the token means cleartext, so it's gated behind a confirm-and-retry.
 - `client/src/wsFrame.js` — pure WS-frame guards used by `TerminalScreen`: `parseFrame` rejects unparseable/non-object frames (a bad frame must never throw inside `onmessage` — that would freeze the terminal with no reconnect), `isValidDataPayload` additionally checks a `'data'` frame's payload is a string before it reaches `term.write()`.
 - `TerminalScreen.jsx` — `useSessionWS` hook manages the WS lifecycle with auto-reconnect (exponential backoff; stops on intentional detach / session `exit` / `1008`; resets and repaints the terminal on reconnect so the scrollback replay doesn't duplicate). Renders a real terminal via xterm.js (fit addon, theming, Ctrl+D to detach).
 - `SessionsScreen.jsx` — polls `/api/sessions` every 5 s. `handleCreate`/`handleKill` each guard against a fast double-click firing two concurrent requests (a synchronous ref check before the first `await`, not just the button's `disabled` prop, which only takes effect after React re-renders).
@@ -67,7 +67,6 @@ In production the client is served statically by Express (not yet wired up), so 
 | Issue | File |
 |---|---|
 | Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | `_docs/issues/2026-07-01-session-card-live-preview.md` |
-| "Relay host" field only governs the initial login probe — all other traffic is same-origin | `_docs/issues/2026-07-01-relay-host-only-governs-login.md` |
 | Root and vendored-board `autostart.ps1` scripts are near-identical duplicates | `_docs/issues/2026-07-01-duplicated-autostart-scripts.md` |
 | `switchboard_send_input` has no bracketed-paste framing — a multi-line value auto-submits each line | `_docs/issues/2026-07-01-send-input-bracketed-paste.md` |
 | Initial `run`-command feed has no delivery confirmation (a slow-starting shell can silently eat it) | `_docs/issues/2026-07-01-run-feed-delivery-confirmation.md` |

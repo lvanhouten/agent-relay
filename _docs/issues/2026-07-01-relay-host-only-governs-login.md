@@ -1,10 +1,21 @@
 # The "Relay host" field only governs the login probe — all real traffic is same-origin
 
 **Source:** Came up auditing the client's host/token flow. The login screen lets the operator type a "Relay host", and the initial connection probe fetches from it — but every request after that (session CRUD, the WebSocket PTY stream) targets the browser's own origin, not the typed host.
-**Status:** ⏸ Deferred — 2026-07-01.
+**Status:** ✅ Resolved — 2026-07-02 (chose same-origin; relabeled the login screen).
 **Kind:** Tech-debt
 **Modules:** client (api, LoginScreen, TerminalScreen)
 **Severity:** Low
+
+## Resolution — same-origin, relabel
+
+Direction chosen: **same-origin only** (over honoring an arbitrary typed host). Rationale: the shipped deployment serves the SPA *from* the relay (or the Vite dev proxy) and tunnels it as one origin, so all traffic is already same-origin; the app uses no cookies (bearer token + `?token=` on the WS), so the "cross-origin cookie" concern in the original fix outline was moot; and honoring a remote host would turn every request cross-origin, fighting the deny-cross-origin-by-default CORS/WS-origin posture added in the secure-defaults change. Honoring the host remains a clean future feature if a static-SPA + separate-backend topology is ever wanted (see triggers below).
+
+Changes:
+- `LoginScreen.jsx` — removed the free-text "Relay host" input (and the `ar-host`/`ar-host-trusted` localStorage + untrusted-host gate that went with it). The login probe now fetches the relative `/api/sessions` (same origin, like all other traffic), and the screen shows a read-only "connecting to `<origin>`" indicator. The one credential check kept is the **cleartext gate**: if the page was loaded over `http://` from a non-localhost host, sending the token is gated behind a confirm-and-retry.
+- `onConnect` now passes `window.location.origin` up, so the terminal footer's host label reflects the actual (and only) connection target.
+- `hostTrust.js` — `isLocalhost`/`normalizeHost` retained (now backing the cleartext gate); comments updated.
+
+Verified end-to-end against a faithful same-origin harness (built SPA + `/api` proxy on one origin): the login screen renders token-only with no host field and an honest "connecting to `<origin>`" line; entering the token and connecting authenticates via the relative probe and lands on the sessions list; no console errors. Client build + 12 client tests pass.
 
 ## What's already been closed
 

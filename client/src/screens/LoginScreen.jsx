@@ -1,69 +1,54 @@
 import React from 'react';
 import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Lock } from 'lucide-react';
 import { headers } from '../api.js';
-import { normalizeHost, isLocalhost } from '../hostTrust.js';
+import { isLocalhost } from '../hostTrust.js';
 
-const HOST_KEY = 'ar-host';
-const TRUSTED_HOST_KEY = 'ar-host-trusted'; // last host a probe actually succeeded against
+// The app is served BY the relay (or the Vite dev proxy), so every request —
+// the login probe, session CRUD, the WS PTY stream — targets the page's own
+// origin. There is no separate "relay host" to type: you reach a relay by
+// loading this page from it (directly or through a tunnel). So the login screen
+// collects only the access token and reports the origin it will talk to, rather
+// than a free-text host field that (mis)implied it retargeted all traffic.
 
 export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
-  const [host, setHost] = React.useState(
-    () => localStorage.getItem(HOST_KEY) ?? 'http://localhost:3017'
-  );
   const [token, setToken] = React.useState('');
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
-  // When set, the user has been warned the host is untrusted and must click
-  // Connect again to actually send the token to it.
-  const [pendingHost, setPendingHost] = React.useState(null);
+  // When set, the user has been warned the token would travel in cleartext and
+  // must click Connect again to send it anyway.
+  const [pendingCleartext, setPendingCleartext] = React.useState(false);
+
+  const origin = window.location.origin;
+  const hostLabel = window.location.host;
 
   const connect = async () => {
-    const raw = host.trim();
-    if (!raw) { setError('Enter a relay host.'); return; }
-    // Normalize a scheme-less `host:port` shorthand to an absolute http:// URL
-    // BEFORE any validation/trust/fetch, so `localhost:3017` isn't misparsed
-    // (empty hostname -> looks remote) or slipped past the malformed-host guard.
-    const h = normalizeHost(raw);
-    // Catch a malformed host up front with a distinct message. (The post-fetch
-    // catch below can't reliably tell DNS failure from CORS from network-down —
-    // browser fetch collapses them into one opaque TypeError — but an unparseable
-    // URL is distinguishable here, before the request.)
-    try { new URL(h); } catch { setError('That doesn\'t look like a valid host URL (e.g. http://localhost:3017).'); return; }
-
-    // The token is sent to `h` as a Bearer header on the very first request.
-    // Before doing that, refuse to hand it to a host we haven't successfully
-    // connected to before, unless it's localhost — `ar-host` is only ever a
-    // convenience seed and can be pre-set by a hostile actor (crafted link,
-    // shared machine), so a stored value is NOT proof of trust. Require an
-    // explicit second click that acknowledges the untrusted host.
-    // Cleartext warning: a token sent to a non-localhost host over plain http://
-    // travels unencrypted. Fold it into the same confirm-with-a-second-click gate.
-    const cleartext = token && !isLocalhost(h) && /^http:\/\//i.test(h);
-    const trusted = localStorage.getItem(TRUSTED_HOST_KEY);
-    const untrusted = token && !isLocalhost(h) && h !== trusted;
-    if ((untrusted || cleartext) && pendingHost !== h) {
-      setPendingHost(h);
+    // The only credential-safety concern left in the same-origin model: if this
+    // page was itself loaded over http:// from a non-localhost host, the token
+    // (Authorization header) travels unencrypted. Gate that behind a second
+    // click, the same acknowledge-then-proceed pattern the typed-host flow used.
+    const cleartext = token && window.location.protocol === 'http:' && !isLocalhost(origin);
+    if (cleartext && !pendingCleartext) {
+      setPendingCleartext(true);
       setError(
-        cleartext
-          ? `${h} is not https:// — your access token would be sent to a remote host in cleartext. Click Connect again to send it anyway, or switch to https://.`
-          : `This will send your access token to ${h}, which you haven't connected to before. Click Connect again to confirm you trust this host.`
+        `${hostLabel} is served over http:// — your access token would be sent in cleartext. ` +
+        `Click Connect again to send it anyway, or load this page over https://.`
       );
       return;
     }
-    setPendingHost(null);
+    setPendingCleartext(false);
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${h}/api/sessions`, { headers: headers(token) });
+      // Relative path -> same origin (or the Vite dev proxy). This is the whole
+      // point of the fix: the probe hits the same place all later traffic does.
+      const res = await fetch('/api/sessions', { headers: headers(token) });
       if (res.status === 401) { setError('Invalid access token.'); return; }
       if (!res.ok) throw new Error();
-      localStorage.setItem(HOST_KEY, h);
-      localStorage.setItem(TRUSTED_HOST_KEY, h); // this host proved reachable — trust it next time
-      onConnect(h, token);
+      onConnect(origin, token);
     } catch {
-      setError('Could not reach relay. Check the host and try again.');
+      setError('Could not reach the relay. Is the server running?');
     } finally {
       setLoading(false);
     }
@@ -108,20 +93,13 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <Input
-            label="Relay host"
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            onKeyDown={onKey}
-            placeholder="http://localhost:3017"
-            mono
-          />
-          <Input
             label="Access token"
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             onKeyDown={onKey}
             placeholder="printed in the server console at startup"
+            autoFocus
           />
           {error && (
             <p style={{
@@ -139,6 +117,12 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
           >
             Connect to relay
           </Button>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-faint)',
+          }}>
+            <Lock size={11} /> connecting to {hostLabel}
+          </div>
         </div>
       </div>
     </div>
