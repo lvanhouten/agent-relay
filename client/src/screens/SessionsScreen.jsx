@@ -175,6 +175,12 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
     // Keep the dialog open until the create actually succeeds — create()
     // rejects on any non-ok response (expired token, 500, network drop); closing
     // first would drop that failure into an unhandled rejection with no feedback.
+    //
+    // create()'s re-entrancy guard (W4) lives inside the hook, so a double-click's
+    // second call no-ops *after* this line: anything placed before the
+    // `if (!session)` check below runs on dropped calls too. Today that's only
+    // this error clear (harmless — the first click just cleared it); keep any
+    // future side effect (analytics, optimistic mutation) below the null check.
     setCreateError('');
     try {
       const session = await create(opts);

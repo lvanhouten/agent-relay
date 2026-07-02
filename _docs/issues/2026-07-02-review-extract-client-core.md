@@ -9,7 +9,7 @@
 
 **W1. IPv6 netstat fix can silently disable IPv4 port detection too** — `scripts/free-port.js:20-45` · confidence 60
 
-**Status:** ✅ Resolved in ec1c8d5 (SHA recorded post-commit).
+**Status:** ✅ Resolved in 8dda607.
 **Resolution:** Accepted as framed — the reviewer's proposed fix applied verbatim: each protocol's `execSync` now catches independently inside the `.map` callback, returning `''` for a failed stack, so a `tcpv6` failure can no longer erase the `tcp` results (and vice versa). The comment above the query names the guarded failure mode. Closure check: live smoke test — an IPv4-only listener on `127.0.0.1:3017` and an IPv6-only listener on `[::1]:5173` spawned, `node scripts/free-port.js 3017 5173` killed both and the ports verified free; the per-proto catch is the named guarded path for the can't-force-netstat-to-fail half.
 
 ---
@@ -30,6 +30,11 @@ const out = ['tcp', 'tcpv6']
 
 **W2. Extracting the create() re-entrancy guard moved `setCreateError('')` ahead of it — not byte-identical** — `client/src/screens/SessionsScreen.jsx:178` (guard now in `client/src/core/useSessions.ts:54-64`) · confidence 55
 *(Promoted from NOTE to WARNING — the Maintainer and Saboteur lenses converged on this independently, from different angles: hidden-coupling risk vs. behavioral-parity gap.)*
+
+**Status:** ✅ Resolved in <see next gate SHA below>.
+**Resolution:** Accepted; resolved via the reviewer's second offered fix (the comment, not the reorder). The parity gap is real but its only observable effect today is re-clearing an already-cleared error string, and the reorder alternative would complicate `create()`'s return contract (a discriminated "dropped vs attempted" result) to protect against a hypothetical. Instead `handleCreate` now carries a comment stating the fact both personas flagged: the re-entrancy guard lives inside the hook, code above the `if (!session)` check runs on dropped calls too, and future side effects must go below it. Closure check: the named guarded path — the comment sits directly on the hazard line in `SessionsScreen.jsx`; no behavior changed, suite stays 18/18. The extraction issue doc's byte-identical claim was already softened by this review; the deviation is now documented at the seam itself.
+
+---
 
 Pre-extraction, `handleCreate` checked `if (creatingRef.current) return;` before touching any state, so a guard-dropped double-click was a true no-op. After the move, `SessionsScreen.jsx` unconditionally calls `setCreateError('')` before `await create(opts)`, and the re-entrancy check now lives inside the hook's `create()`. A dropped call today still clears `createError` — currently unobservable (it's already blank from the first click's own clear), but the guard's position is no longer visible to a reader of `handleCreate`, and a future addition placed before the `if (!session) return` line (analytics, an optimistic list mutation) would silently fire on every dropped click too, not just the genuine attempt.
 
