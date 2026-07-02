@@ -1,14 +1,22 @@
 # Multi-line input sent to a line auto-submits each line instead of pasting a block
 
 **Source:** Came up auditing the MCP `switchboard_send_input` tool. When the caller sends a `text` value with embedded newlines, every `\n`/`\r` is delivered to the shell as a separate Enter keystroke, so each line auto-submits independently rather than being pasted as one block.
-**Status:** ⏸ Deferred — 2026-07-01.
+**Status:** ✅ Resolved — 2026-07-02 (opt-in `paste` param; per-line submit kept as default).
 **Kind:** Enhancement
 **Modules:** board (mcp-server)
 **Severity:** Low
 
-## What's already been closed
+## Resolution — opt-in bracketed paste
 
-Nothing — this is an unstarted enhancement whose correct behavior is a product decision, not a clear bug.
+Behavior decision: **keep per-line submit as the default** (a multi-line `text` still runs line-by-line, the command-sequence use case existing callers rely on) and add an opt-in `paste` parameter for block entry — so no existing caller is silently changed.
+
+- `switchboard_send_input` gains `paste?: boolean` (default false). When true, the payload is wrapped in bracketed-paste markers (`\e[200~` … `\e[201~`) so a paste-aware program treats embedded newlines as literal content instead of executing each line; the trailing Enter (when `submit`) then commits the whole block.
+- The framing is factored into a pure `framePayload(text, { submit, paste })` in `mcp-server.js` and unit-tested (`mcp-server.test.js`): verbatim + Enter by default, marker-wrapped under `paste`, and any stray paste markers already in `text` are stripped so the framing can't be broken by the payload.
+- The tool description states the caveat: `paste` only helps if the receiving program supports bracketed paste (modern shells/TUIs do); it's off by default.
+
+### Verification note (Windows/ConPTY)
+
+Unit tests are authoritative for the byte framing. An end-to-end run against an isolated board (a line whose process was a raw `node` stdin echo) confirmed input traverses the real data pipe to the child, but also showed that a **non-VT / cooked** reader receives ConPTY-processed input — the `\e[200~` markers are *stripped* and embedded `\n` normalized before they reach such a program. Programs that support bracketed paste enable VT-input mode, to which ConPTY forwards the VT markers, so the feature reaches exactly the programs that can use it. On POSIX ptys the markers pass through verbatim. Net: the fix is byte-correct and safe (an unsupporting Windows program gets the markers stripped rather than left as literal noise), with the effect being target-dependent by the nature of bracketed paste.
 
 ## What remains
 

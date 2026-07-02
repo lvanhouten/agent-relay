@@ -157,10 +157,36 @@ async function endLine(id) {
   }
 }
 
-function sendInput(id, text, submit) {
+// Bracketed-paste control sequences. A paste-aware program (readline/PSReadLine,
+// most modern TUIs and REPLs) treats everything between these markers as literal
+// pasted content — so embedded newlines are inserted, not run — instead of
+// executing each line the moment its \r arrives.
+const PASTE_START = '\x1b[200~';
+const PASTE_END = '\x1b[201~';
+
+// Build the exact byte string written to the line for a send-input call. Pure so
+// the framing is unit-testable without a pipe.
+//  - Default (paste:false): the text verbatim, plus Enter when submit — today's
+//    behavior, kept so a multi-line value still runs line-by-line (a command
+//    sequence) for callers that rely on it.
+//  - paste:true: wrap the text in bracketed-paste markers so a paste-aware
+//    program keeps a multi-line value as one editable block; the trailing Enter
+//    (when submit) then commits/runs the whole block. Any stray paste markers in
+//    text are stripped first so the framing can't be broken by the payload.
+// Caveat by design: a program that does NOT honor bracketed paste will see the
+// literal \e[200~ markers, so paste is opt-in and per-line submit is the default.
+function framePayload(text, { submit = true, paste = false } = {}) {
+  const enter = submit ? '\r' : '';
+  if (!paste) return text + enter;
+  const clean = text.replace(/\x1b\[20[01]~/g, '');
+  return PASTE_START + clean + PASTE_END + enter;
+}
+
+function sendInput(id, text, opts) {
+  const payload = framePayload(text, opts);
   return new Promise((resolve, reject) => {
     connectPipe(dataPipe(id), { retries: 3, delay: 50 }).then(sock => {
-      sock.write(text + (submit ? '\r' : ''), err => {
+      sock.write(payload, err => {
         try { sock.end(); } catch { /* already closed */ }
         if (err) reject(err); else resolve();
       });
@@ -263,15 +289,24 @@ server.registerTool('switchboard_wait_for_idle', {
 
 server.registerTool('switchboard_send_input', {
   title: 'Type into a switchboard line',
-  description: 'Send input to a switchboard line, as if typed into its shell.',
+  description: 'Send input to a switchboard line, as if typed into its shell. By ' +
+    'default a multi-line text runs line by line (each newline submits), which is ' +
+    'what you want for a sequence of commands. To enter a multi-line value as one ' +
+    'block instead — a heredoc body, a code snippet into a REPL, a command you ' +
+    'want to review before it runs — set paste:true, which wraps it in ' +
+    'bracketed-paste markers so the receiving program keeps the newlines literal. ' +
+    'paste only works if that program supports bracketed paste (modern shells and ' +
+    'TUIs do); a program that does not will show literal \\e[200~ markers, so ' +
+    'leave paste off unless you specifically need block entry.',
   inputSchema: {
     id: z.string().describe('Line id'),
     text: z.string().describe('Text to send'),
     submit: z.boolean().optional().describe('Append Enter after the text (default true)'),
+    paste: z.boolean().optional().describe('Wrap the text in bracketed-paste markers so a multi-line value arrives as one block instead of running line by line (default false)'),
   },
-}, async ({ id, text, submit }) => {
+}, async ({ id, text, submit, paste }) => {
   try {
-    await sendInput(id, text, submit !== false);
+    await sendInput(id, text, { submit: submit !== false, paste: paste === true });
     return { content: [{ type: 'text', text: 'ok' }] };
   } catch (e) {
     return { content: [{ type: 'text', text: `no such line, or it has ended (${e.code || e.message})` }], isError: true };
@@ -307,6 +342,7 @@ module.exports = {
   observeBoot,
   forgetLine,
   endLine,
+  framePayload,
   BOOT_TTL_MS,
   // test seams
   __setRpc: fn => { boardRpc = fn; },

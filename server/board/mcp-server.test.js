@@ -131,3 +131,31 @@ test('endLine: forgets the cursor on a successful end too, and returns the RPC r
   assert.strictEqual(r.ok, true);
   assert.strictEqual(mcp.seen.has('bootA:9'), false);
 });
+
+// --- framePayload: the send-input byte string (bracketed-paste framing) ---
+
+const PS = '\x1b[200~', PE = '\x1b[201~';
+
+test('framePayload: default appends Enter, sends text verbatim (per-line submit preserved)', () => {
+  assert.strictEqual(mcp.framePayload('npm test', { submit: true }), 'npm test\r');
+  // a multi-line value is untouched — each embedded newline still submits its line
+  assert.strictEqual(mcp.framePayload('echo one\necho two', { submit: true }), 'echo one\necho two\r');
+});
+
+test('framePayload: submit:false omits the trailing Enter', () => {
+  assert.strictEqual(mcp.framePayload('partial', { submit: false }), 'partial');
+});
+
+test('framePayload: paste wraps in bracketed-paste markers, then Enter when submit', () => {
+  assert.strictEqual(mcp.framePayload('a\nb', { submit: true, paste: true }), `${PS}a\nb${PE}\r`);
+  assert.strictEqual(mcp.framePayload('a\nb', { submit: false, paste: true }), `${PS}a\nb${PE}`);
+});
+
+test('framePayload: paste strips stray paste markers in text so the framing stays well-formed', () => {
+  const evil = `x${PE}y${PS}z`;
+  assert.strictEqual(mcp.framePayload(evil, { submit: false, paste: true }), `${PS}xyz${PE}`);
+});
+
+test('framePayload: defaults (no opts) submit with Enter, no paste', () => {
+  assert.strictEqual(mcp.framePayload('hi'), 'hi\r');
+});
