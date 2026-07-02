@@ -89,6 +89,7 @@ One doc per idea under `_docs/issues/`, each with motivation, outline, risks, an
 | Mobile answer mode: composer bar + canned key chips | `_docs/issues/2026-07-02-mobile-answer-mode.md` |
 | Claude-native lines: structured session state from transcripts/hooks | `_docs/issues/2026-07-02-claude-native-lines.md` |
 | One-tap spawn templates | `_docs/issues/2026-07-02-fleet-spawn-templates.md` |
+| Claude model/effort selection on spawn + relay-level defaults | `_docs/issues/2026-07-02-claude-model-effort-selection.md` |
 | Built-in tunnel + QR pairing | `_docs/issues/2026-07-02-tunnel-qr-pairing.md` |
 | Scoped tokens (read-only / per-session input) | `_docs/issues/2026-07-02-scoped-tokens.md` |
 | Scrollback persistence: transcripts survive line exit / board restart | `_docs/issues/2026-07-02-scrollback-persistence.md` |
