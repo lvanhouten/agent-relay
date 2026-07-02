@@ -31,7 +31,7 @@ const out = ['tcp', 'tcpv6']
 **W2. Extracting the create() re-entrancy guard moved `setCreateError('')` ahead of it — not byte-identical** — `client/src/screens/SessionsScreen.jsx:178` (guard now in `client/src/core/useSessions.ts:54-64`) · confidence 55
 *(Promoted from NOTE to WARNING — the Maintainer and Saboteur lenses converged on this independently, from different angles: hidden-coupling risk vs. behavioral-parity gap.)*
 
-**Status:** ✅ Resolved in <see next gate SHA below>.
+**Status:** ✅ Resolved in f282b59.
 **Resolution:** Accepted; resolved via the reviewer's second offered fix (the comment, not the reorder). The parity gap is real but its only observable effect today is re-clearing an already-cleared error string, and the reorder alternative would complicate `create()`'s return contract (a discriminated "dropped vs attempted" result) to protect against a hypothetical. Instead `handleCreate` now carries a comment stating the fact both personas flagged: the re-entrancy guard lives inside the hook, code above the `if (!session)` check runs on dropped calls too, and future side effects must go below it. Closure check: the named guarded path — the comment sits directly on the hazard line in `SessionsScreen.jsx`; no behavior changed, suite stays 18/18. The extraction issue doc's byte-identical claim was already softened by this review; the deviation is now documented at the seam itself.
 
 ---
@@ -47,6 +47,12 @@ Pre-extraction, `handleCreate` checked `if (creatingRef.current) return;` before
 ### Notes
 
 **N1. `load` exposed on the public `Sessions` interface with no doc comment or current consumer** — `client/src/core/useSessions.ts:9` · confidence 40
+
+**Status:** ✅ Resolved in <N1 gate SHA>.
+**Resolution:** Accepted; resolved by documenting rather than dropping. `load` stays on the surface deliberately — the extraction exists to serve second consumers (desktop shell sidebar, mobile pull-to-refresh), and a manual refresh is a foreseeable first ask. The interface member now carries a doc comment stating it's safe to call externally (re-enters the same sequence guard and kill-suppression filter as the poll, so it can't stomp a newer result) and that the poll effect is its only current caller. Closure check: the comment on the interface member is the deliverable; no behavior changed, suite 18/18, typecheck clean.
+
+---
+
 `create` and `kill` both document their resolution/rejection semantics on the `Sessions` interface; `load` (line 9) has no comment, and its only consumer, `SessionsScreen.jsx`, destructures `{ sessions, create, kill, creating }` and never calls it — it's wired internally to the 5s poll interval only. A future maintainer looking at the public hook surface has no signal for whether `load()` is meant to be called for a manual "refresh" affordance (it re-enters the same `pollSeq`/`filterKilled` guards, so it's probably safe) or is only exposed as an implementation leak that happens to satisfy TypeScript.
 
 *Verdict basis:* PLAUSIBLE — raised solo by the Maintainer persona.

@@ -6,6 +6,10 @@ import type { Session } from './types.ts';
 
 export interface Sessions {
   sessions: Session[];
+  // Manual refresh. Safe to call from a consumer (a pull-to-refresh, a focus
+  // handler): it re-enters the same sequence guard and kill-suppression filter
+  // as the 5s poll, so an out-of-band call can't stomp a newer poll's result.
+  // No current consumer — the poll effect below is its only caller today.
   load: () => Promise<void>;
   // Resolves to the created session, or null if the call was dropped by the
   // re-entrancy guard (a second click while a create is in flight). Rejects on
