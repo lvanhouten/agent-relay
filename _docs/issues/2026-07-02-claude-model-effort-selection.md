@@ -23,9 +23,9 @@ this is a UI + defaults problem, not a protocol change.
 
 - Phase 1, client-only: when the `claude` chip is active, the dialog grows model
   and effort selectors (blank = "CLI default", surfaced as such, not as a guess).
-  Selections compile into the command string (`claude --model opus …`) shown in
-  the existing editable command field — prefill-and-edit, same posture as
-  templates, so the compiled flags are visible and fixable before spawn. (small)
+  Selections compile into the command string (`claude --model opus --effort high`)
+  shown in the existing editable command field — prefill-and-edit, same posture
+  as templates, so the compiled flags are visible and fixable before spawn. (small)
 - Defaults: a "default model / effort for Claude sessions" setting, applied
   whenever the chip is selected; `localStorage` first, migrating into the
   server-side store when templates phase 2 lands so defaults and templates share
@@ -40,12 +40,18 @@ this is a UI + defaults problem, not a protocol change.
 
 ## Risks / open questions
 
-- **Confirm the CLI surface before building.** `claude --model <name>` is
-  established; the effort knob's exact spelling (flag vs. `settings.json` vs.
-  env var) varies by CLI version and model tier and must be verified, not
-  guessed. Compiling to an editable command string keeps this survivable — a
-  changed flag is fixed by typing, not by a client redeploy — but the seeded
-  suggestions should track whatever the operator's CLI actually accepts.
+- ~~Confirm the CLI surface before building.~~ **Resolved 2026-07-02** against
+  the [CLI reference](https://code.claude.com/docs/en/cli-reference.md): both
+  knobs are session-scoped flags. `--model` takes an alias (`sonnet`, `opus`,
+  `haiku`, `fable`) or a full model name and overrides the `model` setting and
+  `ANTHROPIC_MODEL`; `--effort` takes `low` / `medium` / `high` / `xhigh` /
+  `max` ("available levels depend on the model"), overrides the `effortLevel`
+  setting, and does not persist — exactly the right semantics for a per-spawn
+  choice (nothing leaks into the operator's CLI config). Residual caution:
+  effort levels being model-dependent means the effort selector shouldn't
+  pretend to know which combinations are valid — compile whatever was chosen
+  and let the CLI be the validator; a bad pairing surfaces in the terminal at
+  launch. Alias lists still rot, so free-text-with-suggestions stands.
 - Flag composition: the user may have typed their own `--model` into the command
   field already. Last-writer-wins ambiguity is real; simplest rule is the
   selectors only *prefill* the field and never rewrite text the user has edited
