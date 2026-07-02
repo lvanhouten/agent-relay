@@ -6,7 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
-const { CTRL, dataPipe, lineClosedFarewell, writeBootSecret, secretEqual, AUTH_TIMEOUT_MS } = require('./lib');
+const { CTRL, dataPipe, lineClosedFarewell, writeBootSecret,
+  makeHandshake, AUTH_TIMEOUT_MS, MAX_CMD_BYTES } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -136,22 +137,20 @@ function createLine(o = {}) {
   // reader that can open the pipe (the OS default DACL allows read) still sees
   // nothing. Bytes after the secret line on the same connection are PTY input.
   const server = net.createServer(sock => {
-    let authed = false, authBuf = '';
+    let authed = false;
+    const gate = makeHandshake(SECRET);   // shared pre-auth handshake (cap + compare)
     const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
     const drop = () => { clearTimeout(authTimer); s.clients.delete(sock); };
     sock.on('data', d => {
       if (authed) { p.write(d.toString('utf8')); return; }
-      authBuf += d.toString('utf8');
-      const i = authBuf.indexOf('\n');
-      if (i < 0) { if (authBuf.length > 4096) sock.destroy(); return; }  // cap pre-auth buffer
-      const provided = authBuf.slice(0, i).replace(/\r$/, '');
-      const rest = authBuf.slice(i + 1);
-      if (!secretEqual(provided, SECRET)) { sock.destroy(); return; }
+      const r = gate.feed(d);
+      if (r.type === 'pending') return;
+      if (r.type === 'overflow' || r.type === 'reject') { sock.destroy(); return; }
       authed = true;
       clearTimeout(authTimer);
       s.clients.add(sock);
       for (const chunk of s.buf) sock.write(chunk);   // replay scrollback, post-auth
-      if (rest) p.write(rest);  // input bytes bundled in the same chunk as the secret line
+      if (r.rest) p.write(r.rest);  // input bytes bundled in the same chunk as the secret line
     });
     sock.on('close', drop);
     sock.on('error', drop);
@@ -335,21 +334,25 @@ function handle(m, sock) {
 // command is dispatched, so a foreign process that can open the control pipe
 // still can't list, spawn, resize, or shut down lines.
 const board = net.createServer(sock => {
-  let buf = '';
   let authed = false;
+  let cmdBuf = '';                       // post-auth JSON-command accumulator
+  const gate = makeHandshake(SECRET);    // shared pre-auth handshake (cap + compare)
   const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
   sock.on('data', chunk => {
-    buf += chunk;
+    if (!authed) {
+      const r = gate.feed(chunk);
+      if (r.type === 'pending') return;
+      if (r.type === 'overflow' || r.type === 'reject') { sock.destroy(); return; }
+      authed = true;
+      clearTimeout(authTimer);
+      cmdBuf = r.rest;                   // bytes after the secret line begin the command stream
+    } else {
+      cmdBuf += chunk.toString('utf8');
+    }
     let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i);
-      buf = buf.slice(i + 1);
-      if (!authed) {
-        if (!secretEqual(line.replace(/\r$/, ''), SECRET)) { sock.destroy(); return; }
-        authed = true;
-        clearTimeout(authTimer);
-        continue;
-      }
+    while ((i = cmdBuf.indexOf('\n')) >= 0) {
+      const line = cmdBuf.slice(0, i);
+      cmdBuf = cmdBuf.slice(i + 1);
       if (!line.trim()) continue;
       let m;
       try { m = JSON.parse(line); } catch { continue; }
@@ -359,6 +362,10 @@ const board = net.createServer(sock => {
       try { handle(m, sock); }
       catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
+    // Post-auth cap: an oversized newline-less command would otherwise grow cmdBuf
+    // unbounded until V8's RangeError crashes the daemon (C1), with no auth-timeout
+    // backstop once authed. A legitimate command is far under MAX_CMD_BYTES.
+    if (cmdBuf.length > MAX_CMD_BYTES) { sock.destroy(); return; }
   });
   sock.on('error', () => {});
   // A pane's control socket lives for the pane's lifetime; when it drops, forget

@@ -18,6 +18,12 @@ const { token: TOKEN, generated: TOKEN_GENERATED } = resolveToken(process.env);
 // byte from response-time differences. Length is compared first (unavoidably
 // non-constant on length, which leaks only the token's length, not its bytes);
 // the byte comparison itself is constant-time via timingSafeEqual.
+//
+// Deliberately a twin of board/lib.js's secretEqual, not a shared import: this is
+// the web tier's HTTP-token compare, that one is the board kernel's pipe-secret
+// compare, and the board kernel is an independent package that runs standalone
+// (sb / mcp-server) with no dependency on server/src. Keep the two in sync by
+// hand — if you change the algorithm here, change it there too.
 function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const ab = Buffer.from(a);
