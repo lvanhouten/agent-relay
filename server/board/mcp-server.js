@@ -284,7 +284,12 @@ server.registerTool('switchboard_read_output', {
     const text = await readOutput(id, { waitMs, maxWaitMs, tailChars, full });
     return { content: [{ type: 'text', text }] };
   } catch (e) {
-    return { content: [{ type: 'text', text: `no such line, or it has ended (${e.code || e.message})` }], isError: true };
+    // EREADCLOSED carries a descriptive message (the socket closed before any
+    // output — line missing, or the access secret was rejected) that is the whole
+    // point of W3's fix; the generic `e.code || e.message` below would surface only
+    // "EREADCLOSED", indistinguishable from a plain not-found. Prefer its message.
+    const detail = e.code === 'EREADCLOSED' ? e.message : `no such line, or it has ended (${e.code || e.message})`;
+    return { content: [{ type: 'text', text: detail }], isError: true };
   }
 });
 

@@ -7,7 +7,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const pty = require('node-pty');
 const { CTRL, dataPipe, lineClosedFarewell, generateSecret, persistSecret,
-  makeHandshake, AUTH_TIMEOUT_MS, MAX_CMD_BYTES } = require('./lib');
+  makeHandshake, makeCommandBuffer, AUTH_TIMEOUT_MS } = require('./lib');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -335,24 +335,23 @@ function handle(m, sock) {
 // still can't list, spawn, resize, or shut down lines.
 const board = net.createServer(sock => {
   let authed = false;
-  let cmdBuf = '';                       // post-auth JSON-command accumulator
+  let cmd = null;                        // post-auth command accumulator (makeCommandBuffer)
   const gate = makeHandshake(SECRET);    // shared pre-auth handshake (cap + compare)
   const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
   sock.on('data', chunk => {
+    let res;
     if (!authed) {
       const r = gate.feed(chunk);
       if (r.type === 'pending') return;
       if (r.type === 'overflow' || r.type === 'reject') { sock.destroy(); return; }
       authed = true;
       clearTimeout(authTimer);
-      cmdBuf = r.rest;                   // bytes after the secret line begin the command stream
+      cmd = makeCommandBuffer(r.rest);   // bytes after the secret line begin the command stream
+      res = cmd.feed('');                // drain any command bundled in the secret-line chunk
     } else {
-      cmdBuf += chunk.toString('utf8');
+      res = cmd.feed(chunk.toString('utf8'));
     }
-    let i;
-    while ((i = cmdBuf.indexOf('\n')) >= 0) {
-      const line = cmdBuf.slice(0, i);
-      cmdBuf = cmdBuf.slice(i + 1);
+    for (const line of res.lines) {
       if (!line.trim()) continue;
       let m;
       try { m = JSON.parse(line); } catch { continue; }
@@ -362,10 +361,10 @@ const board = net.createServer(sock => {
       try { handle(m, sock); }
       catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
-    // Post-auth cap: an oversized newline-less command would otherwise grow cmdBuf
-    // unbounded until V8's RangeError crashes the daemon (C1), with no auth-timeout
-    // backstop once authed. A legitimate command is far under MAX_CMD_BYTES.
-    if (cmdBuf.length > MAX_CMD_BYTES) { sock.destroy(); return; }
+    // Post-auth cap (the other half of C1): an oversized newline-less command would
+    // otherwise grow unbounded until V8's RangeError crashes the daemon, with no
+    // auth-timeout backstop once authed. makeCommandBuffer flags it; we destroy.
+    if (res.overflow) { sock.destroy(); return; }
   });
   sock.on('error', () => {});
   // A pane's control socket lives for the pane's lifetime; when it drops, forget

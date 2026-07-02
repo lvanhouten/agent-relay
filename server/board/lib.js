@@ -133,6 +133,28 @@ function makeHandshake(secret, { cap = MAX_PREAUTH_BYTES } = {}) {
 // straight to the pty without accumulating.
 const MAX_CMD_BYTES = 1024 * 1024;
 
+// Post-auth control-plane command accumulator, with the MAX_CMD_BYTES cap. Mirrors
+// makeHandshake (pure, no socket) so the cap is unit-testable rather than buried in
+// the control server's inline data handler. Seed with the post-handshake leftover
+// bytes, then feed() each chunk (already utf8-decoded): it returns the complete
+// newline-terminated command lines and flags `overflow` when the un-terminated
+// tail — an oversized newline-less command — blows the cap, exactly as the inline
+// code did (split first, then cap the remainder). On overflow the caller destroys
+// the socket. Call feed('') once right after seeding to drain any commands that
+// arrived bundled in the same chunk as the secret line.
+function makeCommandBuffer(rest = '', { cap = MAX_CMD_BYTES } = {}) {
+  let buf = rest;
+  return {
+    feed(chunk) {
+      buf += chunk;
+      const lines = [];
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) { lines.push(buf.slice(0, i)); buf = buf.slice(i + 1); }
+      return { lines, overflow: buf.length > cap };
+    },
+  };
+}
+
 // The line's data-pipe farewell sentinel — the single source shared by the
 // producer (board.js, which writes it on line exit) and the consumers (wait.js /
 // board-client.js, which parse the exit code out of it). Keeping the format and
@@ -253,5 +275,5 @@ module.exports = {
   CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS,
   lineClosedFarewell, EXIT_RE,
   generateSecret, persistSecret, writeBootSecret, readSecret, secretEqual, secretPath,
-  AUTH_TIMEOUT_MS, MAX_PREAUTH_BYTES, MAX_CMD_BYTES, makeHandshake,
+  AUTH_TIMEOUT_MS, MAX_PREAUTH_BYTES, MAX_CMD_BYTES, makeHandshake, makeCommandBuffer,
 };
