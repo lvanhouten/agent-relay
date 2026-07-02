@@ -11,9 +11,13 @@
 // a shell parser and must never validate values — the CLI is the validator.
 
 // Does the model/effort axis apply? True for a command that invokes `claude`
-// (optionally after whitespace), not for `claudette` or a path prefix.
+// (optionally after whitespace), including Windows-style qualified and cased
+// forms — `claude.cmd`, `claude.exe`, `CLAUDE` — but not `claudette` or a
+// path prefix: the optional `.ext` suffix and the case-insensitive flag widen
+// the binary name only; the (\s|$) boundary still requires the name to end
+// there.
 export function isClaudeCommand(command: string): boolean {
-  return /^\s*claude(\s|$)/.test(command);
+  return /^\s*claude(\.\w+)?(\s|$)/i.test(command);
 }
 
 // `--name value`, `--name=value`, or `--name "quoted value"`. The (?:=|\s+)

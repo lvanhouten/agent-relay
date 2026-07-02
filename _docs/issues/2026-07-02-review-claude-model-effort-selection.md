@@ -62,6 +62,11 @@ The alias/effort lists now live in the client chips (`CLAUDE_MODELS`/`CLAUDE_EFF
 
 **N4. `isClaudeCommand` misses `claude.exe`/`claude.cmd` and any case variation — the model/effort chips silently vanish for a Windows-style invocation** — `client/src/core/claudeFlags.ts:16` · confidence 30
 
+**Status:** ✅ Resolved in <N4 gate SHA>.
+**Resolution:** Accepted as framed, fixed with the reviewer's own suggestion: `(\.\w+)?` before the boundary plus the `i` flag — `claude.cmd`, `claude.exe`, and cased forms now match while the `(\s|$)` boundary still excludes `claudette` (and `claudette.exe`, added to the negative tests). Closure check: red→green — the new Windows-qualified/cased assertions fail on the old regex and pass now; suite 37/37.
+
+---
+
 `/^\s*claude(\s|$)/` requires `claude` to be immediately followed by whitespace or end-of-string, and is case-sensitive. On Windows the CLI is frequently `claude.cmd`/`claude.exe`, and shells are case-insensitive; `isClaudeCommand('claude.cmd …')` and `isClaudeCommand('CLAUDE')` both return `false`, so the model/effort chip rows never appear and the defaults never apply for those invocations. The bare `claude` quick-chip always produces a matching string, so this only bites a user who hand-types a qualified/cased binary — hence low confidence. If broadened intentionally, mind the boundary the current regex enforces (`claudette` must stay excluded); a suffix like `(\.\w+)?` before the `(\s|$)` and an `i` flag would cover it without admitting `claudette`.
 
 ### Summary

@@ -9,9 +9,16 @@ test('isClaudeCommand: bare and flagged claude invocations match', () => {
   assert.strictEqual(isClaudeCommand('  claude --model opus'), true);
 });
 
+test('isClaudeCommand: Windows-qualified and cased invocations match (N4)', () => {
+  assert.strictEqual(isClaudeCommand('claude.cmd --model opus'), true);
+  assert.strictEqual(isClaudeCommand('claude.exe'), true);
+  assert.strictEqual(isClaudeCommand('CLAUDE --effort high'), true);
+});
+
 test('isClaudeCommand: other commands and prefixes do not', () => {
   assert.strictEqual(isClaudeCommand('bash'), false);
   assert.strictEqual(isClaudeCommand('claudette'), false);
+  assert.strictEqual(isClaudeCommand('claudette.exe'), false);
   assert.strictEqual(isClaudeCommand('npx claude'), false);
   assert.strictEqual(isClaudeCommand(''), false);
 });
