@@ -41,6 +41,7 @@ Browser (any device)          Relay server :3017            Board kernel (daemon
 - **Multi-client** — multiple browsers (and terminal panes) can observe the same session simultaneously
 - **Crash-safe** — sessions live in the board daemon, so the web server can restart without losing them
 - **Model agnostic** — works with any CLI-based agent (Claude Code, Codex CLI, Gemini CLI, custom scripts)
+- **Login safety** — warns before sending your token to a host you haven't successfully connected to before, or over a non-HTTPS connection to a non-localhost host
 
 ## Stack
 
@@ -68,6 +69,11 @@ npm run kill                # free :3017 and :5173 (stop orphaned dev processes)
 
 A `predev` guard frees the port before `server`/`client` start, so a restart can't
 collide with an orphaned process.
+
+```sh
+npm test --workspace=server   # board kernel, MCP server, API/session layer
+npm test --workspace=client   # pure logic modules (host trust, WS-frame guards)
+```
 
 The board kernel auto-starts on the server's first request and outlives it. For
 terminal access to the same sessions, use the bundled `sb` CLI — e.g.
@@ -98,7 +104,10 @@ WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
 ```
 
-Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS.
+Set `AR_TOKEN` to require a bearer token on REST and a `?token=` on the WS. Set
+`AR_CORS_ORIGIN` (comma-separated) to restrict cross-origin requests to an
+allowlist once the port is tunneled/exposed — unset reflects any origin, fine
+for a same-origin localhost deployment but not once `AR_TOKEN` is the only gate.
 
 ## Roadmap
 
