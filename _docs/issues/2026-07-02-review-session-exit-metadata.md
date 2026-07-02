@@ -9,6 +9,9 @@
 
 **W1. The killed-vs-exited `reason` invariant — the feature's whole point — has no automated regression guard** — `server/board/board.js:205` · confidence 60
 
+**Status:** ✅ Resolved in ad51a08.
+**Resolution:** Took the integration-test option (the pure-helper alternative can't guard the set-before-kill *ordering*, which is the actual risk). New `server/board/tombstone.e2e.test.js` spawns a real board daemon on an isolated `AGENT_RELAY_PIPE`, drives both exit paths (a `cmd /c exit 3` line → asserts `reason: 'exited'` + `exitCode: 3`; a live line ended via `end` → asserts `reason: 'killed'`), and runs under the normal `npm test --workspace=server` (own process, so the pipe override can't leak; ~2.9s).
+
 The distinction this feature exists to draw (an operator kill vs. a process exiting on its own) rides on a two-part contract that no unit test exercises:
 
 1. The `end` handler must set `s.endReason = 'killed'` **synchronously before** `s.pty.kill()`, because `onExit` fires async and reads it (`board.js:341`, with the ordering called out in a comment).
@@ -24,17 +27,29 @@ The distinction this feature exists to draw (an operator kill vs. a process exit
 
 **N1. `endedToDto` duplicates `toDto`'s field mapping and the `session-${id}` name fallback** — `server/src/sessions.js:46` · confidence 45
 
+**Status:** ✅ Resolved in ad51a08.
+**Resolution:** `endedToDto` now spreads `toDto(...)` over the tombstone's base fields and overrides only the exit-specific ones (`pid`, `status`, `exitCode`, `reason`, `lastActive`), so a field added to the base session shape lands in both producers and the `session-${id}` fallback has one home.
+
 `endedToDto` (`:46-58`) re-emits `id`, the `name || \`session-${id}\`` fallback, `shell`, `cwd`, `pid: null`, and a `relTime(...)` `lastActive` — the same shape `toDto` (`:30-40`) builds, plus `status`/`exitCode`/`reason`. The two will drift: a future field added to the session DTO (the attention-states proposal is named as the next toucher) lands in one function and silently not the other, and the `session-${id}` fallback is now maintained in two places. The comment acknowledges "Same shape as `toDto` plus the exit metadata," so the duplication is deliberate for clarity — but a maintainer changing the DTO has no compiler signal that a second producer exists. Consider `endedToDto` spreading `toDto`-derived base fields and overriding `status`/`pid`/`lastActive`, or a shared `baseDto()` both call. Recoverable and low-churn, hence NOTE.
 
 **N2. The client's "is this a crash" predicate is duplicated across two sites and treats an unknown (`null`) exit code as an error** — `client/src/screens/SessionsScreen.jsx:143` · confidence 40
+
+**Status:** ✅ Resolved in ad51a08.
+**Resolution:** As suggested: one `failed = !killed && session.exitCode != null && session.exitCode !== 0` predicate feeds both the status dot and the badge variant; an unknown (`null`) exit code now renders neutral (`exit ?` on a grey badge), not as a crash.
 
 `!killed && session.exitCode !== 0` appears verbatim at `:143` (the status-dot color) and `:172` (the badge `danger`/`neutral` variant). Two edits to change one rule. Separately, when `exitCode` is `null` — which `endedToDto` can emit (`t.exitCode ?? null`) for an older board or a malformed tombstone — `null !== 0` is `true`, so an *unknown* exit code renders as a red "error" dot + `danger` badge reading `exit ?`. Unknown is being presented as crashed. In practice node-pty always supplies a number and the board always records it, so the `null` path is off the shipped happy path (hence low confidence); but if it ever fires, "unknown" shouldn't wear the crash color. Extract the predicate to a single `const failed = !killed && session.exitCode != null && session.exitCode !== 0` and reuse it in both spots.
 
 **N3. `status`/`reason` cross the server↔client seam as bare string literals with no shared constant** — `client/src/core/types.ts:18` · confidence 35
 
+**Status:** Accepted as-is.
+**Resolution:** Not remediated. The server (CommonJS, no build) and client (TS/ESM) are deliberately independent packages — a shared constants module would be the first cross-package runtime import, structural cost out of proportion to two literals. The seam's shape is already pinned where the repo pins such things (`types.ts` mirrors `toDto()`, with the loose `string` documented as intentional until attention-states widens it into a union — the natural point to revisit this). Both tiers' tests assert the literal wire values, which is the drift guard the note itself credits.
+
 `'exited'` is produced in `sessions.js` (`endedToDto`), compared in `ws.js:42` (`existing.status === 'exited'`) to refuse the attach, and compared again in `SessionsScreen.jsx` (`s.status !== 'exited'` / `=== 'exited'`, live/ended partition + `liveCount`); `reason`'s `'killed'`/`'exited'` values are likewise stringly-compared on both tiers. A typo in any one comparison ("exit" vs "exited") silently mis-buckets a tombstone — e.g. a dead line would become attachable again in `ws.js`, or would be counted as live in the header — with no type error, because `types.ts` keeps `status`/`reason` as `string` (a *documented* choice: the attention-states proposal will widen `status`, so the loose type is intentional and **not** itself a finding). This note is about the literal *duplication* across the boundary, not the type: a small shared string-const module (or the eventual union) would collapse the drift surface. Low confidence — single-operator, single-repo, and the tests would likely catch a wire-value typo.
 
 **N4. `sb`/MCP `list` now carry exit metadata they ignore, and `kill()`/DELETE quietly gained a second meaning** — `server/src/sessions.js:147` · confidence 30
+
+**Status:** Accepted as-is.
+**Resolution:** Not remediated. The `sb`/MCP half is an explicitly-scoped boundary the note itself acknowledges (the metadata is on the wire, free to surface when attention-states or an MCP release picks it up). On `kill()`: idempotent "make this session id go away" DELETE is reasonable REST, the fallthrough lives in exactly one commented spot, and CLAUDE.md's `src/sessions.js` entry names the `end` → `forget` fallthrough — which is where a maintainer hunting "where do tombstones get dismissed" will land.
 
 Two small maintainer signposts, both deliberate for this feature's scope:
 
@@ -49,11 +64,13 @@ This is a clean, well-scoped, additive change: the tombstone ring is bounded (ca
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| W1 | WARNING | 60 | killed-vs-exited `reason` invariant (endReason→onExit) has no automated test | (open) |
-| N1 | NOTE | 45 | `endedToDto` duplicates `toDto` field mapping + name fallback | (open) |
-| N2 | NOTE | 40 | client crash-predicate duplicated across 2 sites; treats `null` exitCode as error | (open) |
-| N3 | NOTE | 35 | `status`/`reason` compared as bare literals across server↔client, no shared const | (open) |
-| N4 | NOTE | 30 | `sb`/MCP ignore the new `ended`; `kill()`/DELETE silently also means "dismiss" | (open) |
+| ~~W1~~ | WARNING | 60 | killed-vs-exited `reason` invariant (endReason→onExit) has no automated test | ✅ Resolved in ad51a08 |
+| ~~N1~~ | NOTE | 45 | `endedToDto` duplicates `toDto` field mapping + name fallback | ✅ Resolved in ad51a08 |
+| ~~N2~~ | NOTE | 40 | client crash-predicate duplicated across 2 sites; treats `null` exitCode as error | ✅ Resolved in ad51a08 |
+| ~~N3~~ | NOTE | 35 | `status`/`reason` compared as bare literals across server↔client, no shared const | Accepted as-is |
+| ~~N4~~ | NOTE | 30 | `sb`/MCP ignore the new `ended`; `kill()`/DELETE silently also means "dismiss" | Accepted as-is |
+
+**What's left:** 3 resolved, 2 accepted as-is, 0 deferred, 0 open.
 
 ## Review methodology
 
