@@ -9,7 +9,7 @@
 
 **W1. `setFlag` inserts the value verbatim — a `$` triggers `String.replace` substitution, and a value with a space round-trips lossily** — `client/src/core/claudeFlags.ts:39` · confidence 55
 
-**Status:** ✅ Resolved in <W1 gate SHA>.
+**Status:** ✅ Resolved in 35b2801.
 **Resolution:** Accepted as framed — both failure modes re-reproduced locally before fixing (`'a$&b'` → `'claude --model a --model xb'`; `'a b'` written unquoted). Fix: the replace path now uses a replacement *function* so `$` is literal text (defect 1), and both write paths re-quote a value containing whitespace (defect 2), closing the read/write asymmetry — what `getFlag` reads out of quotes, `setFlag` writes back into them. A value containing a double quote itself remains outside the module's shell-naive contract, now stated in the `setFlag` doc comment. Closure check: red→green — three new tests (`$` literal on both paths, whitespace re-quoting, full quoted read→write round trip) fail against the old implementation and pass now; suite 36/36.
 
 ---
@@ -40,7 +40,7 @@ The reason it isn't CRITICAL is that no real `--model` alias (`sonnet`/`opus`/`h
 
 **N1. Re-clicking the already-lit `claude` quick-command chip destructively resets a hand-edited command** — `client/src/screens/SessionsScreen.jsx:192` · confidence 40
 
-**Status:** ✅ Resolved in <N1 gate SHA>.
+**Status:** ✅ Resolved in c483550.
 **Resolution:** Accepted as framed — the guard applied to the whole quick-command row (not just claude): clicking an already-selected chip is now a no-op, so a lit control can't destroy a hand-built command on a reassurance click. Selecting a *different* chip still replaces the command, which is that gesture's stated intent. Closure check: named guarded path — the `if (selected) return` in the chip's `pick` handler, with the comment naming the hazard; UI-only per repo convention (no component harness), suite stays 36/36.
 
 ---
@@ -52,6 +52,11 @@ The `claude` segmented button is rendered `selected` whenever `isClaudeCommand(c
 `FlagChipRow` computes `selected = current === value`, where `current = getFlag(command, flag)`. When the command carries a model the chips don't know (e.g. `claude --model claude-3-5-haiku-latest`, exactly the free-text-with-suggestions case the design doc blesses), `current` is a non-null string that matches neither the named options nor the `null` "default" chip — so the whole row renders with nothing lit. That reads as "no selection / broken" rather than "custom value active, see the command field." Consistent with the "chips are suggestions, field is source of truth" intent (so not a defect), but a maintainer/operator has no on-chip signal that a custom value is deliberately in play. A subtle "custom" affordance or a lit-but-unnamed state would resolve it; documented here as the most likely point of UI confusion.
 
 **N3. Model/effort enumerations are now duplicated across three locations that will drift on the next Anthropic release** — `server/board/mcp-server.js:240` · confidence 40
+
+**Status:** ✅ Resolved in <N3 gate SHA>.
+**Resolution:** Accepted; the reviewer's proposed trim applied. The `run` descriptor no longer freezes the alias/effort enumerations — it keeps the two concrete sizing examples (examples illustrate, they don't enumerate) and defers the current lists to the CLI's own reference, with an explicit "any value it accepts is fine here." The client arrays stay: they're rendered chips, already carry the rot caveat, and the command field is the escape hatch. Closure check: the descriptor prose no longer contains a list that can go stale — the guarded-path is the "CLI's to define" sentence. Note the MCP server loads per Claude Code session, so running agents see the new text on their next session start.
+
+---
 
 The alias/effort lists now live in the client chips (`CLAUDE_MODELS`/`CLAUDE_EFFORTS`, `SessionsScreen.jsx:18-19`), the MCP `run` descriptor prose (`sonnet | opus | haiku | fable` and `low | medium | high | xhigh | max`, `mcp-server.js:240-241`), and the feature's own issue doc. The client arrays carry an explicit "suggestions, not validation — the CLI is the validator; a hardcoded list must never refuse what the CLI would accept" caveat (`SessionsScreen.jsx:14-17`); the MCP prose hardcodes the same lists as prescriptive agent guidance with no equivalent "this list rots" hedge and no shared constant (they're in different packages — client ESM vs. server board CJS — so sharing one isn't free). This is the exact rot the client code guards against, reintroduced one layer over in agent-facing text. Low-severity because both are advisory, but a `fable-2`/new-effort release will leave the MCP advice quietly stale while the client field still accepts the new value. Consider trimming the MCP prose to "an explicit `--model`/`--effort` sized to the job (see the CLI reference for current aliases)" rather than freezing the enumeration.
 
