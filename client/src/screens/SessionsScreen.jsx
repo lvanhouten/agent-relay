@@ -186,10 +186,17 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
           <div style={{ display: 'flex', gap: 8 }}>
             {QUICK_COMMANDS.map((c) => {
               // The claude chip stays lit while flags ride the command — the
-              // model/effort chips below edit the same string.
+              // model/effort chips below edit the same string. Re-clicking it
+              // while lit is a no-op: a hand-built claude command (flags, a
+              // quoted prompt) must not be wiped by a "make sure it's
+              // selected" click on an already-selected control.
               const selected = c === 'claude' ? isClaudeCommand(command) : command === c;
+              const pick = () => {
+                if (selected) return;
+                setCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
+              };
               return (
-                <button key={c} onClick={() => setCommand(c === 'claude' ? withClaudeDefaults('claude') : c)} style={{
+                <button key={c} onClick={pick} style={{
                   flex: 1, height: 36, cursor: 'pointer',
                   fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
                   borderRadius: 'var(--radius-md)',

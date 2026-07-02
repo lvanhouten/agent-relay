@@ -40,6 +40,11 @@ The reason it isn't CRITICAL is that no real `--model` alias (`sonnet`/`opus`/`h
 
 **N1. Re-clicking the already-lit `claude` quick-command chip destructively resets a hand-edited command** — `client/src/screens/SessionsScreen.jsx:192` · confidence 40
 
+**Status:** ✅ Resolved in <N1 gate SHA>.
+**Resolution:** Accepted as framed — the guard applied to the whole quick-command row (not just claude): clicking an already-selected chip is now a no-op, so a lit control can't destroy a hand-built command on a reassurance click. Selecting a *different* chip still replaces the command, which is that gesture's stated intent. Closure check: named guarded path — the `if (selected) return` in the chip's `pick` handler, with the comment naming the hazard; UI-only per repo convention (no component harness), suite stays 36/36.
+
+---
+
 The `claude` segmented button is rendered `selected` whenever `isClaudeCommand(command)` is true, but its `onClick` unconditionally runs `setCommand(withClaudeDefaults('claude'))`. So a user who has built up `claude --model opus "review the PR"` and then clicks the `claude` segment again — a natural "make sure it's selected" gesture on a lit control — loses the prompt and any hand-typed flags, silently replaced by `claude` + stored defaults. The model/effort chips below correctly splice in place (they preserve the rest); only the top quick-command row is destructive. A guard (`if (!isClaudeCommand(command)) setCommand(...)`, or leave an already-selected claude command untouched) would remove the footgun. Recoverable by retyping, hence NOTE.
 
 **N2. A valid, CLI-accepted model/effort not in the chip list shows *no* chip selected — not even "default"** — `client/src/screens/SessionsScreen.jsx:62` · confidence 35
