@@ -16,7 +16,7 @@ by a rebuild+test after each commit.
 | 03-dual-auth-middleware | integrated | 2 | f85cc9c | 6/6 | bearer path verified byte-unchanged (VC-14) |
 | 05-pairing-endpoints | integrated | 2 | f80edf7 | 7/7 | |
 | 09-client-boot-flow | integrated | 3 | 3005b05 | 7/7 | fixed StrictMode fragment-loss bug (deviation); full E2E pends 07 |
-| 10-pair-device-dialog | pending | 3 | — | — | |
+| 10-pair-device-dialog | integrated | 3 | b1c2897 | 6/6 | +qrcode dep (lockfile in commit) |
 | 07-server-wiring | pending | 4 | — | — | exclusive (boots relay) |
 
 ## Handoff notes
