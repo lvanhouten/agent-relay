@@ -108,9 +108,10 @@ GET    /api/sessions/:id       Get one session
 DELETE /api/sessions/:id       Kill a session
 
 POST   /api/notify             Push a notification + optionally flag a session
-                               body { title, body, url?, priority?, sessionId?, needsInput? }
+                               body { title, body, url?, priority?, sessionId?, cwd?, needsInput? }
                                fans out to configured push sinks (Pushover);
-                               needsInput+sessionId lights the card's "needs input" state
+                               needsInput + sessionId (or cwd) lights that card's
+                               "needs input" state
 
 WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
@@ -158,7 +159,11 @@ acknowledge (retry/expire are supplied automatically). `url` deep-links on tap.
 
 Fire the alert from a Claude Code **Notification** hook (Claude is blocked asking
 for input/permission). Add to the project's `.claude/settings.json` — `$AR_TOKEN`
-and the relay URL come from the environment the agent runs in:
+and the relay URL come from the environment the agent runs in. To light the
+*specific* card that needs you (not just buzz the phone), name the session:
+the relay injects `$AGENT_RELAY_SESSION` (the board line id) into every session
+it spawns, so a hook can send it back verbatim, with `cwd` as a fallback for
+lines spawned outside the relay:
 
 ```json
 {
@@ -168,7 +173,7 @@ and the relay URL come from the environment the agent runs in:
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -X POST http://localhost:3017/api/notify -H \"Authorization: Bearer $AR_TOKEN\" -H 'Content-Type: application/json' -d '{\"title\":\"Claude needs input\",\"body\":\"A session is waiting on you\",\"needsInput\":true,\"priority\":1}'"
+            "command": "curl -s -X POST http://localhost:3017/api/notify -H \"Authorization: Bearer $AR_TOKEN\" -H 'Content-Type: application/json' -d \"{\\\"title\\\":\\\"Claude needs input\\\",\\\"body\\\":\\\"A session is waiting on you\\\",\\\"needsInput\\\":true,\\\"priority\\\":1,\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
           }
         ]
       }
@@ -177,11 +182,14 @@ and the relay URL come from the environment the agent runs in:
 }
 ```
 
+`sessionId` wins when present; otherwise the relay matches `cwd` against its live
+lines (on a same-directory tie, the most recently active line is flagged). A
+line spawned outside the relay (`sb`, or a shell you opened yourself) has no
+`$AGENT_RELAY_SESSION` — it expands to empty and the `cwd` match takes over.
+
 Add a `Stop` hook the same way (drop `needsInput`) if you also want a "session
-finished" ping. To flag a *specific* card, pass `"sessionId":"<board line id>"` —
-the cheapest bridge is matching the hook's cwd against `GET /api/sessions`, or
-inject the id when the line is spawned. The needs-input flag clears itself on the
-session's next input or output.
+finished" ping. The needs-input flag clears itself on the session's next input
+or output.
 
 ## Roadmap
 

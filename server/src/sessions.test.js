@@ -191,3 +191,57 @@ test('list(): a flag for a line that has exited is pruned, never resurrected', a
   assert.strictEqual(list[0].status, 'exited', 'needs-input never overrides a tombstone');
   assert.strictEqual(s._attention.has('1'), false, 'the dead id is pruned from the flag map');
 });
+
+// --- flagAttentionByCwd(): the /api/notify cwd fallback (line-id bridge) ---
+
+// Build sessions whose board `list` returns the given lines; case/separator
+// normalization is exercised via the cwds themselves.
+function cwdSessions(lines) {
+  return new BoardSessions({ rpc: async () => ({ ok: true, lines }) });
+}
+
+test('flagAttentionByCwd(): flags the single line whose cwd matches', async () => {
+  const s = cwdSessions([
+    { id: '1', cwd: '/home/a', idleMs: 0 },
+    { id: '2', cwd: '/home/b', idleMs: 0 },
+  ]);
+  assert.strictEqual(await s.flagAttentionByCwd('/home/b'), '2');
+  assert.strictEqual(s._attention.has('2'), true);
+  assert.strictEqual(s._attention.has('1'), false, 'only the matching line is flagged');
+});
+
+test('flagAttentionByCwd(): matches through path normalization (trailing slash, .., separators)', async () => {
+  const s = cwdSessions([{ id: '9', cwd: '/home/a/b', idleMs: 0 }]);
+  assert.strictEqual(await s.flagAttentionByCwd('/home/a/x/../b/'), '9', 'resolve() collapses .. and trailing slash');
+});
+
+test('flagAttentionByCwd(): on a same-dir tie, the most recently active line (min idleMs) wins', async () => {
+  const s = cwdSessions([
+    { id: '1', cwd: '/repo', idleMs: 9000 },
+    { id: '2', cwd: '/repo', idleMs: 500 },   // most recently active
+    { id: '3', cwd: '/repo', idleMs: 4000 },
+  ]);
+  assert.strictEqual(await s.flagAttentionByCwd('/repo'), '2');
+  assert.deepStrictEqual([...s._attention.keys()], ['2'], 'only the freshest match, not all three');
+});
+
+test('flagAttentionByCwd(): no live line matches -> null, flags nothing', async () => {
+  const s = cwdSessions([{ id: '1', cwd: '/repo', idleMs: 0 }]);
+  assert.strictEqual(await s.flagAttentionByCwd('/elsewhere'), null);
+  assert.strictEqual(s._attention.size, 0);
+});
+
+test('flagAttentionByCwd(): an empty/whitespace cwd never matches (no home-dir over-flag)', async () => {
+  const s = cwdSessions([{ id: '1', cwd: '/repo', idleMs: 0 }]);
+  assert.strictEqual(await s.flagAttentionByCwd('   '), null);
+  assert.strictEqual(await s.flagAttentionByCwd(''), null);
+  assert.strictEqual(s._attention.size, 0);
+});
+
+test('flagAttentionByCwd(): a board-down list RPC throws BoardUnreachableError (-> 503)', async () => {
+  const s = new BoardSessions({ rpc: down });
+  await assert.rejects(
+    () => s.flagAttentionByCwd('/repo'),
+    e => e instanceof BoardUnreachableError && e.boardUnreachable === true,
+  );
+});

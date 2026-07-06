@@ -22,7 +22,7 @@ function validateSpawnBody(body) {
 
 // Field caps for POST /notify. title/body transit a third-party push service, so
 // bound them here; the notifier module also enforces payload discipline in prose.
-const NOTIFY_MAX = { sessionId: 200, title: 200, body: 1000, url: 2048 };
+const NOTIFY_MAX = { sessionId: 200, cwd: 4096, title: 200, body: 1000, url: 2048 };
 
 // Validate POST /notify. Returns an error string, or null if valid. title or
 // body must be present (an empty notification is pointless); priority, if given,
@@ -89,20 +89,26 @@ function createAPI(sessions, notifiers = []) {
   });
 
   // Fan a caller-supplied notification out to every configured push sink and,
-  // when `needsInput` is set with a `sessionId`, light that session's card
-  // (needs-input attention state). Shared plumbing for a Claude Code hook: one
-  // POST both buzzes the phone (Pushover) and answers "which session needs me?"
-  // on the dashboard. Same 415 JSON-content-type guard as POST /sessions — a
+  // when `needsInput` is set, light the session's card (needs-input attention
+  // state). The session is named by `sessionId` (exact — the board injects
+  // AGENT_RELAY_SESSION into every spawned line) or, failing that, resolved from
+  // `cwd` by matching the board's live lines (the fallback for a hook that knows
+  // its directory but not the line id). Shared plumbing for a Claude Code hook:
+  // one POST both buzzes the phone (Pushover) and answers "which session needs
+  // me?" on the dashboard. Same 415 JSON-content-type guard as POST /sessions — a
   // cross-site text/plain POST skips the CORS preflight. A gone/unknown sessionId
-  // just doesn't flag anything (the flag is pruned on the next list); a sink
-  // failure is captured, never fatal (notifyAll).
+  // or unmatched cwd just doesn't flag anything (the flag is pruned on the next
+  // list); a sink failure is captured, never fatal (notifyAll).
   r.post('/notify', async (req, res, next) => {
     try {
       if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
       const body = req.body ?? {};
       const invalid = validateNotifyBody(body);
       if (invalid) return res.status(400).json({ error: invalid });
-      if (body.needsInput && body.sessionId) sessions.flagAttention(body.sessionId);
+      if (body.needsInput) {
+        if (body.sessionId) sessions.flagAttention(body.sessionId);
+        else if (body.cwd) await sessions.flagAttentionByCwd(body.cwd);
+      }
       const notified = await notifyAll(notifiers, {
         title: body.title, body: body.body, url: body.url, priority: body.priority,
       });

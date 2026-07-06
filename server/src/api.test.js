@@ -111,12 +111,33 @@ test('POST /notify -> 200 and fans out to every sink', async () => {
 
 test('POST /notify with needsInput+sessionId flags that session; omitting either does not', async () => {
   const flagged = [];
-  const sessions = { flagAttention: (id) => flagged.push(id) };
+  const sessions = { flagAttention: (id) => flagged.push(id), flagAttentionByCwd: async () => null };
   const app = serve(sessions);
   await request(app, 'POST', '/api/notify', { body: { sessionId: '7', body: 'x', needsInput: true } });
   await request(app, 'POST', '/api/notify', { body: { sessionId: '7', body: 'x' } });            // no needsInput
-  await request(app, 'POST', '/api/notify', { body: { body: 'x', needsInput: true } });          // no sessionId
+  await request(app, 'POST', '/api/notify', { body: { body: 'x', needsInput: true } });          // no id/cwd -> nothing to flag
   assert.deepStrictEqual(flagged, ['7'], 'only the needsInput+sessionId call flags a session');
+});
+
+test('POST /notify with needsInput+cwd (no sessionId) resolves via cwd; sessionId takes precedence', async () => {
+  const calls = [];
+  const sessions = {
+    flagAttention: (id) => calls.push(['byId', id]),
+    flagAttentionByCwd: async (cwd) => { calls.push(['byCwd', cwd]); return '3'; },
+  };
+  const app = serve(sessions);
+  await request(app, 'POST', '/api/notify', { body: { cwd: '/repo', body: 'x', needsInput: true } });     // cwd fallback
+  await request(app, 'POST', '/api/notify', { body: { sessionId: '7', cwd: '/repo', body: 'x', needsInput: true } }); // id wins
+  await request(app, 'POST', '/api/notify', { body: { cwd: '/repo', body: 'x' } });                        // no needsInput
+  assert.deepStrictEqual(calls, [['byCwd', '/repo'], ['byId', '7']], 'cwd only resolves absent a sessionId, and only with needsInput');
+});
+
+test('POST /notify -> 503 when the cwd resolution RPC finds the board down', async () => {
+  const { BoardUnreachableError } = require('./sessions');
+  const sessions = { flagAttentionByCwd: async () => { throw new BoardUnreachableError(); } };
+  const app = serve(sessions);
+  const { status } = await request(app, 'POST', '/api/notify', { body: { cwd: '/repo', body: 'x', needsInput: true } });
+  assert.strictEqual(status, 503);
 });
 
 test('POST /notify -> 200 even when a sink fails (resilient; per-sink outcome reported)', async () => {
