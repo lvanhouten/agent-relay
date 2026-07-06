@@ -1,7 +1,7 @@
 # Connecting from the phone should land on the relay dashboard, not a desktop — and only from the phone
 
 **Source:** Remote-access investigation, 2026-07-06 — with the RD app as the chosen phone path, the last friction is the seconds after connect: find the browser, find the tab, maximize it. The operator also RDPs in from a home desktop, where none of that should happen.
-**Status:** 💡 Proposed — 2026-07-06.
+**Status:** ✅ Shipped — 2026-07-06. `rdp-launcher.ps1` (client discrimination + idempotent app-window launch) and `rdp-launcher-install.ps1` (event-triggered task on LocalSessionManager 21/25, interactive principal) landed at the repo root alongside the existing autostart tooling. The desktop-no-op path is verified on a real RDP session (2560×1440 → correctly no-op); the phone-positive path and the live task firing still need a real phone connect to confirm (per the geometry-timing / interactive-session / CLIENTNAME risks below — the launcher logs each decision to `%LOCALAPPDATA%\agent-relay\rdp-launcher.log` to make that verification a log tail). Usage folded into `_docs/rdp-mobile-recipe.md` step 5.
 **Kind:** Enhancement
 **Modules:** scripts/ (launcher script + scheduled-task installer) — no server or client code
 **Severity:** Medium — turns the RD path from "workable" into "one tap to dashboard"; pairs with `2026-07-06-rdp-mobile-session-recipe.md`.
