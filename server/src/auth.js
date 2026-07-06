@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { loadCredentials } = require('./credentials');
 
 // Access-token policy — auth is ON by default. An unauthenticated relay is a
 // command-execution endpoint for any page the operator's browser visits (see
@@ -6,13 +7,23 @@ const crypto = require('crypto');
 // GENERATED for this run and printed at startup (index.js). AR_TOKEN pins a
 // stable token instead; AR_NO_AUTH=1 is the explicit, dev-only opt-out.
 // Pure so the three env shapes are unit-testable without subprocess env games.
+//
+// Retained as the non-persisted policy reference (and its own pinned test
+// surface): TOKEN/TOKEN_GENERATED below no longer derive from this — they come
+// from credentials.js's loadCredentials, which persists the generated case
+// across restarts (ADR 0001 — an unstable token reads as a broken app) instead
+// of minting a fresh one every run.
 function resolveToken(env) {
   if (env.AR_NO_AUTH === '1') return { token: null, generated: false };
   if (env.AR_TOKEN) return { token: env.AR_TOKEN, generated: false };
   return { token: crypto.randomBytes(24).toString('base64url'), generated: true };
 }
 
-const { token: TOKEN, generated: TOKEN_GENERATED } = resolveToken(process.env);
+const {
+  token: TOKEN,
+  generated: TOKEN_GENERATED,
+  signingSecret: SIGNING_SECRET,
+} = loadCredentials(process.env);
 
 // Constant-time compare so a network attacker can't recover the token byte by
 // byte from response-time differences. Length is compared first (unavoidably
@@ -46,4 +57,4 @@ function authMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, checkToken, resolveToken, TOKEN, TOKEN_GENERATED };
+module.exports = { authMiddleware, checkToken, resolveToken, TOKEN, TOKEN_GENERATED, SIGNING_SECRET };
