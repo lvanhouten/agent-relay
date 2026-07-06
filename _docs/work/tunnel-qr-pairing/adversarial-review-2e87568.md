@@ -59,7 +59,7 @@ The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(toke
 
 **N3. A second `tunnel.start()` orphans the running `tailscale serve` child** — `server/src/tunnel.js:182` · confidence 45
 
-**Status:** ✅ Resolved in <N3_SHA> — see below.
+**Status:** ✅ Resolved in 7b96a44 — see below.
 **Resolution:** Re-framed (B). The defect is real (a second `start()` spawns a second `serve` child and orphans the first, whose exit/error handlers early-return on the `child !== cp` guard and so never reap it), and I added an idempotency guard at the top of `start()`. But I did **not** use the reviewer's suggested `if (child || state.state === 'up') return;` — that would silently break a future `stop()`-then-`start()` restart, because `stop()` clears `child`/`backoffTimer` but leaves `state` as `'up'`, so keying on `state.state` would make `start()` no-op forever after the first stop. Instead the guard keys on the live-resource **handles**: `if (child || backoffTimer) return;` — covering both an up child and a pending respawn timer, while still allowing a restart once `stop()` has nulled the handles. Closure check: two red→green tests (a second `start()` while up, and `start()` while a respawn is pending, both assert exactly one serve child — verified failing when the guard is neutralized), plus a `stop()`-then-`start()` test that proves the re-frame — it spawns a second child *despite* `state.state === 'up'`, which the reviewer's state-based guard would have blocked. Tunnel tests 16/16 green.
 
 ---
@@ -73,9 +73,11 @@ No critical findings and no unmet promise in the validation contract — the fea
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| W1 | WARNING | 65 | `safeEqual` duplicated cookie.js↔auth.js (same package) | (open) |
-| W2 | WARNING | 60 | Pairing-URL format built in pairing.js + index.js | (open) |
-| W3 | WARNING | 50 | LoginScreen ignores `login()` failure, routes to sessions | (open) |
-| N1 | NOTE | 85 | Dead `ENOENT` sub-expression in tailscale probe | (open) |
-| N2 | NOTE | 55 | `resolveToken` vestigial / duplicates `generateToken` | (open) |
-| N3 | NOTE | 45 | Second `tunnel.start()` orphans the serve child | (open) |
+| ~~W1~~ | WARNING | 65 | `safeEqual` duplicated cookie.js↔auth.js (same package) | ✅ Resolved in 22d4683 (A — shared safeCompare.js) |
+| ~~W2~~ | WARNING | 60 | Pairing-URL format built in pairing.js + index.js | ✅ Resolved in 412fbbf (A — single pairingUrl() helper) |
+| ~~W3~~ | WARNING | 50 | LoginScreen ignores `login()` failure, routes to sessions | ✅ Resolved in 33a8c33 (A — guard on login() boolean) |
+| ~~N1~~ | NOTE | 85 | Dead `ENOENT` sub-expression in tailscale probe | ✅ Resolved in 62f7c6a (A — dropped `\|\| true`) |
+| ~~N2~~ | NOTE | 55 | `resolveToken` vestigial / duplicates `generateToken` | ✋ Rejected in 58f8f04 (E — correct + intentional; clarifying comment) |
+| ~~N3~~ | NOTE | 45 | Second `tunnel.start()` orphans the serve child | ✅ Resolved in 7b96a44 (B — guard on live handles, not state) |
+
+**What's left:** Resolved 5 (W1, W2, W3, N1, N3) · Rejected 1 (N2) · Deferred 0 · Open 0. All six findings reached a verdict. N2 was rejected on the "delete it" prong with a comment-only clarification (see its Resolution) — behavior-neutral, worth an eye in re-review. The five A/B fixes (W1, W2, W3, N1, N3) are new code the original review never saw; a re-review over the range `2e87568..HEAD` audits them.
