@@ -2,10 +2,15 @@
 const { WebSocketServer } = require('ws');
 const { parse } = require('url');
 const { StringDecoder } = require('string_decoder');
-const { checkToken } = require('./auth');
+const { isAuthenticated, TOKEN, SIGNING_SECRET } = require('./auth');
 const { originAllowed } = require('./origin');
 
-function createWSHub(server, sessions) {
+// authConfig is injectable for tests (same reason as auth.makeAuthMiddleware —
+// the module credentials aren't otherwise overridable); real callers omit it and
+// get the module TOKEN/SIGNING_SECRET.
+function createWSHub(server, sessions, authConfig = {}) {
+  const expectedToken = 'expectedToken' in authConfig ? authConfig.expectedToken : TOKEN;
+  const signingSecret = 'signingSecret' in authConfig ? authConfig.signingSecret : SIGNING_SECRET;
   const wss = new WebSocketServer({ server });
 
   wss.on('connection', async (ws, req) => {
@@ -15,9 +20,12 @@ function createWSHub(server, sessions) {
     // Origin gate first: CORS never applied to WebSockets, so without this any
     // page the operator's browser visits could open a socket to a line. Same
     // policy as the REST tier (src/origin.js); non-browser clients send no
-    // Origin and pass through to the token check.
+    // Origin and pass through to the credential check.
     if (!originAllowed(req.headers.origin, req.headers.host)) { ws.close(1008, 'forbidden origin'); return; }
-    if (!checkToken(parsed.query.token)) { ws.close(1008, 'unauthorized'); return; }
+    // Either credential: the ?token= query param (non-browser clients, kept
+    // byte-for-byte) or a valid auth cookie on the upgrade headers (browsers).
+    // Same shared decision as the REST middleware so the two can't drift.
+    if (!isAuthenticated({ token: parsed.query.token, cookieHeader: req.headers.cookie, expectedToken, signingSecret })) { ws.close(1008, 'unauthorized'); return; }
     if (!id) { ws.close(1008, 'session not found'); return; }
 
     // Distinguish "board unreachable" from "session not found": a board hiccup

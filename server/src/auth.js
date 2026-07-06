@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { loadCredentials } = require('./credentials');
+const { verify: verifyCookie, readAuthCookie } = require('./cookie');
 
 // Access-token policy — auth is ON by default. An unauthenticated relay is a
 // command-execution endpoint for any page the operator's browser visits (see
@@ -49,12 +50,44 @@ function checkToken(candidate, token = TOKEN) {
   return safeEqual(candidate, token);
 }
 
-function authMiddleware(req, res, next) {
-  if (!TOKEN) return next();
-  const header = req.headers['authorization'] ?? '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!checkToken(token)) return res.status(401).json({ error: 'unauthorized' });
-  next();
+// The single "is this request authenticated?" decision, shared by the REST
+// middleware and the WS upgrade gate so the two can't drift (a browser holds a
+// cookie, not the raw token; a non-browser client holds only the token). Order
+// is load-bearing: the bearer path (checkToken) is evaluated FIRST and exactly
+// as before, so non-browser clients (VC-14) see byte-for-byte identical timing
+// and behavior — the cookie is a *fallback* consulted only when the bearer path
+// didn't already pass. Pure over its inputs (expectedToken/signingSecret are
+// injectable, defaulting to the module credentials) so every path is unit-
+// testable without env games or a live board.
+function isAuthenticated({ token, cookieHeader, expectedToken = TOKEN, signingSecret = SIGNING_SECRET }) {
+  if (!expectedToken) return true;            // auth explicitly disabled (AR_NO_AUTH=1)
+  if (checkToken(token, expectedToken)) return true;  // bearer path — unchanged, checked first
+  const cookieValue = readAuthCookie(cookieHeader);   // cookie fallback
+  return !!(cookieValue && verifyCookie(cookieValue, signingSecret).ok);
 }
 
-module.exports = { authMiddleware, checkToken, resolveToken, TOKEN, TOKEN_GENERATED, SIGNING_SECRET };
+// Factory so the middleware's credentials are injectable in tests (the module
+// TOKEN/SIGNING_SECRET are derived from process.env + the persisted credentials
+// file at load and aren't otherwise overridable). Real callers use the default
+// instance `authMiddleware`, bound to the module credentials.
+function makeAuthMiddleware({ expectedToken = TOKEN, signingSecret = SIGNING_SECRET } = {}) {
+  return function authMiddleware(req, res, next) {
+    const header = req.headers['authorization'] ?? '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+    if (isAuthenticated({ token, cookieHeader: req.headers.cookie, expectedToken, signingSecret })) return next();
+    return res.status(401).json({ error: 'unauthorized' });
+  };
+}
+
+const authMiddleware = makeAuthMiddleware();
+
+module.exports = {
+  authMiddleware,
+  makeAuthMiddleware,
+  isAuthenticated,
+  checkToken,
+  resolveToken,
+  TOKEN,
+  TOKEN_GENERATED,
+  SIGNING_SECRET,
+};
