@@ -7,6 +7,7 @@ const { createWSHub } = require('./src/ws');
 const { authMiddleware, TOKEN, TOKEN_GENERATED } = require('./src/auth');
 const { originAllowed } = require('./src/origin');
 const { errorHandler } = require('./src/errorHandler');
+const { createStatic } = require('./src/static');
 
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
@@ -22,6 +23,14 @@ app.use(express.json());
 const sessions = new BoardSessions();
 app.use('/api', authMiddleware, createAPI(sessions));
 
+// Serve the built client (client/dist) from this port — the production story:
+// same origin for page, API, and WS, no Vite proxy. Unauthenticated on purpose
+// (the login page must load before there's a token). Mounted after /api so API
+// routes win; its SPA fallback excludes /api and /sessions. No build → dev mode,
+// where Vite owns the page.
+const staticRouter = createStatic();
+if (staticRouter) app.use(staticRouter);
+
 // Final error handler. Without it, Express's default handler leaks the full stack
 // trace in the response body whenever NODE_ENV isn't 'production' (the default
 // here). Log server-side, return a generic body — a board-unreachable failure is
@@ -34,6 +43,9 @@ createWSHub(server, sessions);
 
 server.listen(PORT, () => {
   console.log(`agent-relay server → http://localhost:${PORT}`);
+  console.log(staticRouter
+    ? '  serving client build (client/dist)'
+    : '  no client build — UI via Vite dev server (npm run client); build with `npm run build --workspace=client`');
   if (TOKEN_GENERATED) {
     console.log(
       `\nAR_TOKEN not set — generated an access token for this run:\n\n  ${TOKEN}\n\n` +

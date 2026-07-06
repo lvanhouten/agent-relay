@@ -45,6 +45,7 @@ This is an npm workspaces monorepo (`server/`, `client/`). The two packages are 
 - `src/origin.js` — origin policy shared by the REST CORS config (`index.js`) and the WS upgrade gate (`ws.js`): no-Origin (non-browser) passes, loopback and same-origin pass, anything else needs the `AR_CORS_ORIGIN` allowlist. Exists because the operator's browser bridges every page it visits to localhost — and CORS never applied to WebSockets, so the upgrade must enforce it itself.
 - `src/sessions.js` — `BoardSessions`: presents the session DTO/surface the API + WS hub consume; every op is an RPC to the board. `spawn` maps the API `command` to the board's `run` (initial command typed into the shell, which stays open) and expands a leading `~` in `cwd`. `list` returns live lines with an **attention state** derived from the board's per-line `idleMs` — `status: 'running'` (output within `wait.js`'s `DEFAULT_IDLE_MS`, the same threshold `sb wait` and `switchboard_wait_for_idle` use, so "idle" has one definition) or `'idle'` (quiet beyond it; deliberately not "done" — PTY bytes can't tell thinking from blocked from finished) — plus the board's tombstones (`status: 'exited'`, with `exitCode`/`reason`); `kill` falls through `end` → `forget`, so DELETE on an exited session dismisses its tombstone (both misses still map to 404). Replaced the old in-process `SessionManager`.
 - `src/api.js` — Express router at `/api`. Async REST CRUD (`GET/POST /sessions`, `GET/DELETE /sessions/:id`). POST requires an `application/json` content type (415 otherwise) — a `text/plain` cross-site POST skips the CORS preflight, and an empty parsed body would otherwise spawn a default shell as a side effect.
+- `src/static.js` — serves the built client (`client/dist`) from the same port as the API, when a build exists (`npm run build`, root script). Deliberately unauthenticated (the login page must load before there's a token — the token gates `/api` and the WS attach, not the page). Hashed `assets/` get immutable cache headers; `index.html` is `no-cache`. SPA fallback serves `index.html` for unknown GETs but never shadows `/api` or `/sessions`. No build → returns `null` and `index.js` skips the mount (dev mode, where Vite owns the page).
 - `src/ws.js` — WebSocket hub; each connection is origin-gated (`src/origin.js`) then token-gated before it `attach`es to one line by ID from the URL (`/sessions/:id`). Scrollback replays down the data pipe on connect. Inbound `input` / `resize`; outbound `data` / `exit` (the exit frame carries the code parsed from the board's farewell sentinel). An exited session (tombstone) refuses attach with 1008 — its data pipe is gone.
 - `index.js` — wires Express + `WebSocketServer` onto one `http.Server`. Port via `PORT` env (default 3017). Closes the listener gracefully on SIGINT/SIGTERM.
 
@@ -73,7 +74,7 @@ This is an npm workspaces monorepo (`server/`, `client/`). The two packages are 
 - `/api/*` → `http://localhost:3017` (REST)
 - `/sessions/*` → `ws://localhost:3017` (WebSocket, `ws: true`)
 
-In production the client is served statically by Express (not yet wired up), so the proxy is only needed in dev.
+In production the client is served statically by Express (`server/src/static.js`, from `client/dist` — build with `npm run build`), so the proxy is only needed in dev.
 
 ## Open issues
 
