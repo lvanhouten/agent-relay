@@ -1,7 +1,7 @@
 # The RD-app path works today but arrives as a shrunken desktop — the phone-shaped setup is undocumented
 
 **Source:** Remote-access investigation, 2026-07-06 — office DNS filter blocks Tailscale, phone VPN enrollment is a heavier IT ask than it looks, so the sanctioned Remote Desktop app became the chosen phone path. It works, but only feels usable after several non-obvious client settings.
-**Status:** 💡 Proposed — 2026-07-06.
+**Status:** ✅ Landed — 2026-07-06. The tested recipe is written up in [`_docs/rdp-mobile-recipe.md`](../rdp-mobile-recipe.md) (phone-shaped resolution + high DPI, touch mode, home-screen icon, chromeless Edge app-mode window, disconnect/no-config expectations, and the RemoteApp dead-end), with a pointer from the README Running section.
 **Kind:** Docs
 **Modules:** docs only (README / operator notes) — no code
 **Severity:** Low effort, high daily-use payoff — this is the difference between "technically reachable" and "actually used from the couch".
