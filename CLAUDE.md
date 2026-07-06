@@ -92,6 +92,7 @@ Priorities: **P1** = do next, **P2** = soon, **P3** = wait for its trigger signa
 | Idea | Pri | Effort | File |
 |---|---|---|---|
 | RD-app mobile session recipe (docs: phone-shaped RDP settings) | P1 | S | `_docs/issues/2026-07-06-rdp-mobile-session-recipe.md` |
+| Hook→line-id bridge: let `/api/notify` flag a *specific* card (cwd-match + `AGENT_RELAY_SESSION` env) | P2 | S | `_docs/issues/2026-07-06-hook-session-id-bridge.md` |
 | Mobile answer mode: composer bar + canned key chips (priority raised 2026-07-06 — helps the RDP phone path too) | P2 | M | `_docs/issues/2026-07-02-mobile-answer-mode.md` |
 | Terminal QoL: search, transcript download, scroll-to-bottom pill (pill promoted 2026-07-06 — RDP touch-scroll; pill alone is S) | P2 | S | `_docs/issues/2026-07-02-terminal-qol.md` |
 | Client-aware relay launcher on RDP connect (phone → app window; desktop → no-op) | P2 | M | `_docs/issues/2026-07-06-rdp-client-aware-relay-launcher.md` |
