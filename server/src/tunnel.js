@@ -229,6 +229,15 @@ function createTunnel({
 
   async function start() {
     if (state.state === 'disabled') return; // AR_TUNNEL unset — no-op.
+    // Idempotent: a live serve child, or a pending respawn timer that will spawn
+    // one, means a `serve` process already exists. Re-entering would spawn a
+    // second child and orphan the first (its exit/error handlers early-return on
+    // the `child !== cp` guard, so it'd never be reaped). Guard on the live
+    // HANDLES — not `state.state === 'up'` — because stop() clears child/
+    // backoffTimer but leaves state as 'up', so keying on state would silently
+    // break a future stop()-then-start() restart. With handles null (after stop,
+    // or while degraded/down), start() proceeds and re-runs preconditions.
+    if (child || backoffTimer) return;
     stopped = false;
     attempt = 0;
     const ok = await preconditionsOk();

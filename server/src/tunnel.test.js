@@ -286,6 +286,43 @@ test('repeated deaths escalate the backoff to the 30s cap', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// start() idempotency (no orphaned serve child)
+// ---------------------------------------------------------------------------
+
+test('start() is idempotent: a second start() while up spawns no second serve child', async () => {
+  const exec = makeExec(RUNNING_STATUS);
+  const t = createTunnel({ port: PORT, env: { AR_TUNNEL: 'tailscale' }, exec, existsClientBuild: () => true });
+  await t.start();
+  assert.strictEqual(exec.serveCalls().length, 1);
+  // Second call while already up — must NOT spawn a second child (which would
+  // orphan the first: its exit/error handlers early-return on child !== cp).
+  await t.start();
+  assert.strictEqual(exec.serveCalls().length, 1);
+  assert.strictEqual(t.status().state, 'up');
+});
+
+test('start() while a respawn is pending does not spawn an extra child', async () => {
+  const scheduler = fakeScheduler();
+  const exec = makeExec(RUNNING_STATUS);
+  const t = createTunnel({ port: PORT, env: { AR_TUNNEL: 'tailscale' }, exec, existsClientBuild: () => true, scheduler });
+  await t.start();
+  exec.serveChildren[0].emit('exit', 1); // down, backoff timer pending
+  assert.strictEqual(scheduler.timers.length, 1);
+  await t.start(); // backoffTimer set → guarded, no immediate spawn
+  assert.strictEqual(exec.serveCalls().length, 1);
+});
+
+test('stop() then start() restarts (guard keys on live handles, not state.state)', async () => {
+  const exec = makeExec(RUNNING_STATUS);
+  const t = createTunnel({ port: PORT, env: { AR_TUNNEL: 'tailscale' }, exec, existsClientBuild: () => true });
+  await t.start();
+  t.stop(); // clears child + backoffTimer; leaves state.state === 'up'
+  await t.start(); // handles are null → a fresh serve spawns despite state 'up'
+  assert.strictEqual(exec.serveCalls().length, 2);
+  assert.strictEqual(t.status().state, 'up');
+});
+
+// ---------------------------------------------------------------------------
 // stop
 // ---------------------------------------------------------------------------
 
