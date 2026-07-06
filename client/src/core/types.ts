@@ -44,3 +44,14 @@ export type ClientFrame = InputFrame | ResizeFrame;
 // contract instead of retrofitting one — see
 // _docs/issues/2026-07-02-desktop-workspace-shell.md.
 export type TerminalViewMode = 'interactive' | 'spectator';
+
+// Mirrors server/src/pairing.js's GET /api/pairing response. pairingUrl is a
+// full `https://<tunnel-host>/#token=<token>` string IFF tunnel.state==='up';
+// null otherwise (down/disabled never expose a URL — a localhost URL would be
+// unreachable from the device being paired).
+export type TunnelState = 'up' | 'down' | 'disabled';
+
+export interface PairingInfo {
+  tunnel: { state: TunnelState; reason: string | null };
+  pairingUrl: string | null;
+}

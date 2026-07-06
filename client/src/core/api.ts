@@ -1,4 +1,4 @@
-import type { Session } from './types.ts';
+import type { PairingInfo, Session } from './types.ts';
 
 const BASE = '/api';
 
@@ -57,4 +57,15 @@ export async function login(token: string): Promise<boolean> {
     headers: headers(token),
   });
   return res.status === 204;
+}
+
+// Fetches tunnel status + (when up) the pairing URL. Cookie-authed like every
+// other call post-boot (see App.jsx) — no bearer header, since the caller (the
+// pair-device dialog) only ever renders after the sessions screen is reachable.
+// Throws on any non-ok response (network failure, 401) so the caller can show
+// an inline dialog error instead of an unhandled rejection.
+export async function getPairing(): Promise<PairingInfo> {
+  const res = await fetch(`${BASE}/pairing`, { headers: headers() });
+  if (!res.ok) throw new Error('failed to fetch pairing info');
+  return res.json();
 }
