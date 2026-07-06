@@ -52,7 +52,14 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme, initialEr
       // The probe only proves the bearer works — exchange it for the ar_auth
       // cookie so the browser doesn't need to keep the token in memory for
       // every subsequent request (REST + WS ride the cookie from here on).
-      await login(token);
+      // Only advance if the cookie was actually granted (login → 204). If the
+      // exchange fails (e.g. the token rotated between the probe and here),
+      // routing to sessions would immediately 401 cookie-only into the offline-
+      // looking state this whole feature exists to prevent — surface it instead.
+      if (!(await login(token))) {
+        setError('Could not complete sign-in — try again.');
+        return;
+      }
       onConnect(origin);
     } catch {
       setError('Could not reach the relay. Is the server running?');

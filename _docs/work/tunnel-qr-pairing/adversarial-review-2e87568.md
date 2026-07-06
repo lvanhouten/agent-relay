@@ -21,7 +21,7 @@ The design is careful and heavily grounded in ADR 0001 / the PRD. The known-acce
 
 **W2. Pairing-URL format string built in two places** — `server/src/pairing.js:72` · confidence 60
 
-**Status:** ✅ Resolved in <W2_SHA> — see below.
+**Status:** ✅ Resolved in 412fbbf — see below.
 **Resolution:** Accepted as framed (A). Introduced a single exported `pairingUrl(tunnelUrl, token)` in `server/src/pairing.js` that formats the token-bearing fragment URL (`https://<host>/#token=<encoded token>`); both call sites now delegate to it — the `GET /api/pairing` handler (was `pairing.js:72`) and `index.js`'s console-QR block (was `index.js:77`). The no-logs guarantee (token in the fragment, never a query string) now lives in exactly one function, so a half-applied "fix" can't move the token to a query string on one path only. `pairing.js` was already required by `index.js`, so no new import graph. Closure check: three new red→green unit tests on the exported `pairingUrl` (fragment placement, percent-encoding, host-with-port) — the export didn't exist before, so they were red; plus the existing `GET /api/pairing` UP test still asserts the identical URL. 14 pairing tests green; `index.js` passes `node --check`.
 
 ---
@@ -29,6 +29,12 @@ The design is careful and heavily grounded in ADR 0001 / the PRD. The known-acce
 The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(token)}` is constructed independently in `pairing.js:72` (the `GET /api/pairing` response) and `index.js:77` (the console QR), each doing its own `new URL(...).host` extraction. This is a security-sensitive format — the whole point is *fragment, never query*. Failure scenario: someone "fixes" one site (adds a query param, changes the fragment key, switches to a path) and a device paired via the console QR then diverges from one paired via the in-UI dialog; worse, a half-applied change could move the token to a query string in one path only, defeating the no-logs guarantee. Fix: a single `pairingUrl(tunnelUrl, token)` helper (natural home: `cookie.js`/`pairing.js` or a small shared util) called by both.
 
 **W3. `LoginScreen` ignores the `login()` result and lands on sessions anyway** — `client/src/screens/LoginScreen.jsx:55` · confidence 50
+
+**Status:** ✅ Resolved in <W3_SHA> — see below.
+**Resolution:** Accepted as framed (A). `connect()` now guards on the `login()` boolean: `if (!(await login(token))) { setError('Could not complete sign-in — try again.'); return; }` before `onConnect(origin)`. A cookie-exchange that returns anything but 204 (e.g. a token rotated between the `/api/sessions` probe and the `/api/login` call) now surfaces an inline error and stays on the login screen, instead of routing to sessions where a cookie-only fetch would 401 into the offline-looking state. Closure check (per this repo's convention, a UI-only change in a JSX screen with no component-render harness is proven by a named guarded code path): the guarded path is `LoginScreen.jsx` `connect()` — the early-return on `!(await login(token))` between the successful bearer probe and `onConnect`. Client test suite green 61/61. Note: `npm run typecheck --workspace=client` is pre-existing-red in this worktree (missing `react` type declarations, all in `src/core/`; identical at the pre-remediation HEAD) — unrelated to this change, and `LoginScreen.jsx` is a screen outside the `src/core` typecheck scope.
+
+---
+
 `await login(token); onConnect(origin);` — the boolean from the cookie-exchange is discarded. If the exchange does not set the cookie (204 not returned), the user is still routed to the sessions screen, where `useSessions` immediately fetches **cookie-only** (no bearer) and 401s into the offline-looking state the whole feature exists to prevent. The window is narrow (the same bearer just passed the `/api/sessions` probe one line above), so in practice this needs a token rotation or a login-endpoint fault between the two calls — but the code treats a failure as success rather than surfacing "Could not complete sign-in." Fix: `if (!(await login(token))) { setError('Could not complete sign-in — try again.'); return; }` before `onConnect`.
 
 ### Notes
