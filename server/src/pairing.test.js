@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const express = require('express');
 const http = require('http');
-const { createPairing } = require('./pairing');
+const { createPairing, pairingUrl } = require('./pairing');
 const { makeAuthMiddleware, checkToken } = require('./auth');
 const { issue, setCookieHeader, verify, COOKIE_NAME } = require('./cookie');
 
@@ -54,6 +54,25 @@ function request(app, method, path, { headers = {} } = {}) {
 function validCookie() {
   return `${COOKIE_NAME}=${issue(SECRET)}`;
 }
+
+// ---- pairingUrl helper (the single fragment-URL formatter) ----------------
+
+test('pairingUrl: token rides the fragment, never a query string; uses tunnel host', () => {
+  const url = pairingUrl('https://box.tail1234.ts.net', TOKEN);
+  assert.strictEqual(url, `https://box.tail1234.ts.net/#token=${TOKEN}`);
+  assert.ok(url.includes(`#token=${TOKEN}`), 'token after #token=');
+  assert.ok(!url.includes('?'), 'no query string');
+  assert.ok(url.startsWith('https://box.tail1234.ts.net/'), 'uses the tunnel host');
+});
+
+test('pairingUrl: percent-encodes token characters that would break the fragment', () => {
+  const url = pairingUrl('https://box.tail1234.ts.net', 'a b/c#d');
+  assert.strictEqual(url, 'https://box.tail1234.ts.net/#token=a%20b%2Fc%23d');
+});
+
+test('pairingUrl: extracts host from a URL carrying a port/path', () => {
+  assert.strictEqual(pairingUrl('https://host.ts.net:8443/serve', 'tok'), 'https://host.ts.net:8443/#token=tok');
+});
 
 // ---- POST /api/login ------------------------------------------------------
 

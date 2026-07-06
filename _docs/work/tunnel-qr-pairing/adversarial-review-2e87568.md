@@ -12,7 +12,7 @@ The design is careful and heavily grounded in ADR 0001 / the PRD. The known-acce
 
 **W1. `safeEqual` duplicated within the same package (`cookie.js` ↔ `auth.js`)** — `server/src/cookie.js:29` · confidence 65
 
-**Status:** ✅ Resolved in <W1_SHA> — see below.
+**Status:** ✅ Resolved in 22d4683 — see below.
 **Resolution:** Accepted as framed (A). Lifted both byte-for-byte copies into a new shared module `server/src/safeCompare.js`; `auth.js` and `cookie.js` now both `require('./safeCompare').safeEqual`, so there is exactly one definition and the token-compare and signature-compare paths can no longer drift. Neither copy was exported, so extraction broke no external consumer. The *board* twin (`board/lib.js`'s `secretEqual`) stays hand-synced — it's an independent standalone package with no dependency on `server/src`; the new module's header documents why it isn't shared too. Closure check: `safeCompare.test.js` covers the shared function directly (incl. a singleton-require assertion), and the divergence hazard is closed structurally — one definition at `server/src/safeCompare.js:16`, two importers. `auth.test.js`/`cookie.test.js` (47 tests) still green, exercising it in situ.
 
 ---
@@ -20,6 +20,12 @@ The design is careful and heavily grounded in ADR 0001 / the PRD. The known-acce
 `cookie.js` hand-copies `auth.js`'s constant-time `safeEqual` byte-for-byte. The in-code comment justifies this the same way the board's `secretEqual` twin is justified — "an independent package that runs standalone, no dependency on `server/src`." That rationale is real for `board/lib.js` (verified: separate package, `sb`/`mcp-server` standalone) but **false for `cookie.js` ↔ `auth.js`** — both live in `server/src/`, same package, same directory, and `cookie.js` is already required by `auth.js`. There is no dependency reason not to `require('./auth').safeEqual` (or extract a shared `server/src/safeCompare.js` that both import). Failure scenario: a future hardening of the compare (e.g. eliminating the length-leak the comment itself flags) lands in one copy; the auth-token path and the cookie-signature path silently diverge on their timing/rejection behavior. Fix: import one from the other, or lift both to a shared module; keep only the *board* twin hand-synced.
 
 **W2. Pairing-URL format string built in two places** — `server/src/pairing.js:72` · confidence 60
+
+**Status:** ✅ Resolved in <W2_SHA> — see below.
+**Resolution:** Accepted as framed (A). Introduced a single exported `pairingUrl(tunnelUrl, token)` in `server/src/pairing.js` that formats the token-bearing fragment URL (`https://<host>/#token=<encoded token>`); both call sites now delegate to it — the `GET /api/pairing` handler (was `pairing.js:72`) and `index.js`'s console-QR block (was `index.js:77`). The no-logs guarantee (token in the fragment, never a query string) now lives in exactly one function, so a half-applied "fix" can't move the token to a query string on one path only. `pairing.js` was already required by `index.js`, so no new import graph. Closure check: three new red→green unit tests on the exported `pairingUrl` (fragment placement, percent-encoding, host-with-port) — the export didn't exist before, so they were red; plus the existing `GET /api/pairing` UP test still asserts the identical URL. 14 pairing tests green; `index.js` passes `node --check`.
+
+---
+
 The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(token)}` is constructed independently in `pairing.js:72` (the `GET /api/pairing` response) and `index.js:77` (the console QR), each doing its own `new URL(...).host` extraction. This is a security-sensitive format — the whole point is *fragment, never query*. Failure scenario: someone "fixes" one site (adds a query param, changes the fragment key, switches to a path) and a device paired via the console QR then diverges from one paired via the in-UI dialog; worse, a half-applied change could move the token to a query string in one path only, defeating the no-logs guarantee. Fix: a single `pairingUrl(tunnelUrl, token)` helper (natural home: `cookie.js`/`pairing.js` or a small shared util) called by both.
 
 **W3. `LoginScreen` ignores the `login()` result and lands on sessions anyway** — `client/src/screens/LoginScreen.jsx:55` · confidence 50

@@ -8,7 +8,7 @@ const { createWSHub } = require('./src/ws');
 const { authMiddleware, checkToken, TOKEN, TOKEN_GENERATED, SIGNING_SECRET } = require('./src/auth');
 const { originAllowed, allowRuntimeOrigin } = require('./src/origin');
 const { issue, setCookieHeader } = require('./src/cookie');
-const { createPairing } = require('./src/pairing');
+const { createPairing, pairingUrl } = require('./src/pairing');
 const { createTunnel } = require('./src/tunnel');
 const { errorHandler } = require('./src/errorHandler');
 const { createStatic } = require('./src/static');
@@ -73,12 +73,13 @@ createWSHub(server, sessions);
 function printTunnelEvent(event) {
   if (event.type === 'up') {
     allowRuntimeOrigin(event.url);
-    const host = new URL(event.url).host;
-    const pairingUrl = `https://${host}/#token=${encodeURIComponent(TOKEN)}`;
+    // Same single formatter the GET /api/pairing response uses — token in the
+    // URL FRAGMENT, never a query string (src/pairing.js pairingUrl()).
+    const url = pairingUrl(event.url, TOKEN);
     console.log(`\n=== Tunnel up ===`);
     console.log(`  reachable from your tailnet at ${event.url}`);
     console.log(`  Pair a device — scan this QR (opens the app already signed in):\n`);
-    qrcode.generate(pairingUrl, { small: true });
+    qrcode.generate(url, { small: true });
     return;
   }
   if (event.type === 'degraded') {

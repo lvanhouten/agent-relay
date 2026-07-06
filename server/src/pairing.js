@@ -45,6 +45,16 @@ function bearerFrom(req) {
   return header.startsWith('Bearer ') ? header.slice(7) : '';
 }
 
+// The one place the token-bearing pairing URL is formatted, called by BOTH the
+// GET /api/pairing response and index.js's console QR so they can never diverge.
+// The token rides the URL FRAGMENT, never a query string, so it is never sent to
+// the tunnel host / written to an access log — this format is the no-logs
+// guarantee, so it lives in exactly one function.
+function pairingUrl(tunnelUrl, token) {
+  const host = new URL(tunnelUrl).host;
+  return `https://${host}/#token=${encodeURIComponent(token)}`;
+}
+
 function createPairing({ token, checkToken, issue, setCookieHeader, signingSecret, tunnelStatus }) {
   const r = Router();
 
@@ -64,17 +74,16 @@ function createPairing({ token, checkToken, issue, setCookieHeader, signingSecre
     // Only { state, reason } is exposed — never the raw local url, which is
     // useless to the paired device and is only ever surfaced as the fragment URL.
     const tunnel = { state: s.state, reason: s.reason };
-    let pairingUrl = null;
-    // url is non-null IFF state === 'up' (tunnel supervisor invariant), but gate on
-    // state to make the contract explicit and to never emit a null-host URL.
+    let url = null;
+    // s.url is non-null IFF state === 'up' (tunnel supervisor invariant), but gate
+    // on state to make the contract explicit and to never emit a null-host URL.
     if (s.state === 'up' && s.url) {
-      const host = new URL(s.url).host;
-      pairingUrl = `https://${host}/#token=${encodeURIComponent(token)}`;
+      url = pairingUrl(s.url, token);
     }
-    return res.json({ tunnel, pairingUrl });
+    return res.json({ tunnel, pairingUrl: url });
   });
 
   return r;
 }
 
-module.exports = { createPairing };
+module.exports = { createPairing, pairingUrl };
