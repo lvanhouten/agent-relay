@@ -19,6 +19,20 @@ function resolveCwd(cwd) {
   return raw;
 }
 
+// Canonicalize a cwd for equality matching (the /api/notify cwd bridge). A hook
+// reports its own absolute cwd; the board records the resolveCwd()'d value passed
+// at spawn. Normalize both through path.resolve (collapses separators, trailing
+// slashes, and `.`/`..`) and lowercase on Windows, whose filesystem is
+// case-insensitive. Returns '' for an empty/whitespace cwd so a blank field can
+// never match every home-dir line. Deliberately does NOT expand `~` — a hook's
+// cwd is already absolute, and treating a literal '~' as home would over-match.
+function normalizeCwdForMatch(cwd) {
+  const raw = (cwd ?? '').trim();
+  if (!raw) return '';
+  const resolved = path.resolve(raw);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 function relTime(ms) {
   const s = Math.max(0, ms) / 1000;
   if (s < 60) return `${Math.round(s)}s ago`;
@@ -98,6 +112,34 @@ class BoardSessions {
   // once output/input has moved past it.
   flagAttention(id) {
     if (id) this._attention.set(id, this._now());
+  }
+
+  // Flag the live line whose cwd matches `cwd` — the /api/notify fallback for a
+  // hook that knows its own directory but not the board line id (the precise
+  // bridge is the AGENT_RELAY_SESSION env var the board injects at spawn; this
+  // backstops sb-spawned or pre-existing lines the hook can't name). cwd isn't
+  // unique, so on a tie the most recently active match (smallest idleMs) wins —
+  // over-lighting every same-dir line would be worse than picking the one the
+  // operator is most likely staring at. Returns the flagged id, or null when no
+  // live line matches (a gone/typo'd cwd just flags nothing). Board-down throws
+  // BoardUnreachableError like the other RPC paths (-> 503, not a silent no-op).
+  async flagAttentionByCwd(cwd) {
+    const target = normalizeCwdForMatch(cwd);
+    if (!target) return null;
+    let r;
+    try {
+      r = await this._rpc({ cmd: 'list' });
+    } catch (e) {
+      console.error('[sessions] board list RPC failed (flagAttentionByCwd):', e.message);
+      throw new BoardUnreachableError(e);
+    }
+    if (!r || !r.ok) throw new BoardUnreachableError();
+    const matches = r.lines
+      .filter((l) => normalizeCwdForMatch(l.cwd) === target)
+      .sort((a, b) => (a.idleMs ?? 0) - (b.idleMs ?? 0)); // most recently active first
+    if (!matches.length) return null;
+    this.flagAttention(matches[0].id);
+    return matches[0].id;
   }
 
   // Clear a flag explicitly — the WS hub calls this the instant it sees an

@@ -149,7 +149,11 @@ function createLine(o = {}) {
     cols: o.cols || 120,
     rows: o.rows || 30,
     cwd,
-    env: process.env,
+    // Inject the line id so a process in the shell (a Claude Code Notification
+    // hook) can name its own line to POST /api/notify without guessing — the
+    // precise half of the line-id bridge (cwd-match is the fallback). Additive
+    // and namespaced; harmless to lines nobody queries.
+    env: { ...process.env, AGENT_RELAY_SESSION: id },
   });
   const now = Date.now();
   const s = { pty: p, clients: new Set(), buf: [], sizes: new Map(), name: o.name || '', shell, cwd, startedAt: now, lastActivity: now };

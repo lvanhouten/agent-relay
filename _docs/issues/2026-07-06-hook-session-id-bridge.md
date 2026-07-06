@@ -1,7 +1,7 @@
 # A notification hook can't name the session it fired for — `/api/notify` needs a line-id bridge
 
 **Source:** Follow-up from the Pushover + `needs-input` build (2026-07-06, `feat/pushover-needs-input`). Shipped `POST /api/notify` accepts a `sessionId` to flag a specific card, but nothing populates it automatically — so today the needs-input flag is effectively all-or-nothing per operator, not per session.
-**Status:** 💡 Proposed — 2026-07-06.
+**Status:** ✅ Shipped — 2026-07-06. Both bridges landed: the board injects `AGENT_RELAY_SESSION=<line id>` into every spawned line's env (`board.js` `createLine`), and `POST /api/notify` accepts a `cwd` field that `BoardSessions.flagAttentionByCwd` resolves to a live line — sessionId wins, cwd is the fallback, most-recently-active match on a same-dir tie. README recipe updated to send both. Guarded by `env-injection.e2e.test.js` (real board) + `flagAttentionByCwd` / `/api/notify` unit tests.
 **Kind:** Enhancement
 **Modules:** server/board (`new` spawn env), server/api (`/api/notify` cwd-match fallback), Claude Code hooks (external config)
 **Severity:** Medium — the notification/card feature works, but "which session needs me?" is only answered precisely once a hook can name its own line.
