@@ -15,7 +15,7 @@ by a rebuild+test after each commit.
 | 04-tunnel-supervisor | integrated | 1 | 5b59759 | 6/6 | monotonic-backoff deviation (see below) — no VC impact |
 | 03-dual-auth-middleware | integrated | 2 | f85cc9c | 6/6 | bearer path verified byte-unchanged (VC-14) |
 | 05-pairing-endpoints | integrated | 2 | f80edf7 | 7/7 | |
-| 09-client-boot-flow | pending | 3 | — | — | |
+| 09-client-boot-flow | integrated | 3 | 3005b05 | 7/7 | fixed StrictMode fragment-loss bug (deviation); full E2E pends 07 |
 | 10-pair-device-dialog | pending | 3 | — | — | |
 | 07-server-wiring | pending | 4 | — | — | exclusive (boots relay) |
 
@@ -29,5 +29,6 @@ by a rebuild+test after each commit.
 - **05-pairing-endpoints → [07, 09, 10]:** `server/src/pairing.js` exports `createPairing({ token, checkToken, issue, setCookieHeader, signingSecret, tunnelStatus }) → router`. **Applies no auth itself** — brief 07 MUST mount it behind the dual gate: `app.use('/api', authMiddleware, createPairing({...}))` (api.js symmetry). `POST /api/login` layers its own bearer-specific check (cookie satisfies the gate but login rejects it 401), returns 204 + `Set-Cookie: ar_auth` on valid bearer, takes no body. `GET /api/pairing` response shape (09/10 build against it): `{ tunnel: { state, reason }, pairingUrl }` — `state` is `'up'|'down'|'disabled'`, raw tunnel url NOT exposed, `pairingUrl` is `https://<tunnel-host>/#token=<token>` only when `state==='up'` else `null`. (contract-change)
 
 ## Deviations
+- **09-client-boot-flow:** (1) Fixed a React-18-StrictMode dev-only bug not in the brief — reading the fragment token live inside the boot `useEffect` loses it on the double-invoke (first invoke's `history.replaceState` strips the hash before the second reads it); fixed via a `useState` lazy initializer. Directly protects VC-3/VC-4 in dev. No VC strike (strengthens, not changes, promised behavior). (2) Booted the dev server briefly for live E2E verification — acceptable per operator's standing "free to kill dev procs on agent-relay"; committed only client files.
 - **04-tunnel-supervisor:** backoff counter is monotonic within a `start()` cycle (reset only by `start()`, not per-spawn) — no readiness signal is available to safely reset it during a rapid spawn-then-die flap. Deterministic under the injected scheduler; documented in a code comment. Does not invalidate VC-13 (respawn still restores the same URL without operator action). No contract strike.
 - **RUN-LEVEL (process, not code):** `isolation: "worktree"` produced no isolated worktree — all five Wave-1 agents ran in the single checkout on `feat/tunnel-qr-pairing`, racing on the shared tree and `.git/index`. Caught after briefs 06/08/01 had already committed (cleanly, disjoint files, careful per-file staging — no corruption); 02/04 were stopped before writing. Pivoted to strictly-sequential synchronous executors for the rest of the run. Root cause likely: the checkout is itself a linked git worktree of `../agent-relay`, so nested `.claude/worktrees/` creation off it did not engage. No feature-code impact; VC coverage unchanged.
