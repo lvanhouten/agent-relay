@@ -78,26 +78,30 @@ In production the client is served statically by Express (`server/src/static.js`
 
 ## Open issues
 
-| Issue | File |
-|---|---|
-| Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | `_docs/issues/2026-07-01-session-card-live-preview.md` |
-| Windows secret-file ACL is unverified — `mode` bits are inert on NTFS; the real boundary is the inherited profile ACL (deferred W1) | `_docs/issues/2026-07-01-secret-file-acl-verification.md` |
+| Issue | Pri | Effort | File |
+|---|---|---|---|
+| Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | P3 | M | `_docs/issues/2026-07-01-session-card-live-preview.md` |
+| Windows secret-file ACL is unverified — `mode` bits are inert on NTFS; the real boundary is the inherited profile ACL (deferred W1). Raised 2026-07-06: the persisted token + cookie-signing secret now live behind the same unverified assumption | P2 | S | `_docs/issues/2026-07-01-secret-file-acl-verification.md` |
 
 ## Feature backlog (proposed, not started)
 
-One doc per idea under `_docs/issues/`, each with motivation, outline, risks, and the signals that should trigger picking it up. Rough dependency order: tunnel/QR unlocks push, push unlocks notification actions. Session exit metadata (tombstones) landed 2026-07-02 — it unblocked the `exited` attention state and gives scrollback persistence its tombstones. Attention states phase 1 (running/idle/exited on cards) also landed 2026-07-02; the doc stays open for phase 2 (`needs-input` via a Claude Code Notification hook — shared plumbing with hook-driven push).
+One doc per idea under `_docs/issues/`, each with motivation, outline, risks, and the signals that should trigger picking it up. Rough dependency order: tunnel/QR unlocks push, push unlocks notification actions. Session exit metadata (tombstones) landed 2026-07-02 — it unblocked the `exited` attention state and gives scrollback persistence its tombstones. Attention states phase 1 (running/idle/exited on cards) also landed 2026-07-02; the doc stays open for phase 2 (`needs-input` via a Claude Code Notification hook — shared plumbing with hook-driven push). **Built-in tunnel + QR pairing landed 2026-07-06 (#25)** — persisted token, HttpOnly auth cookie, `AR_TUNNEL=tailscale` supervisor, fragment auto-login, pair-a-device dialog. Deployment note: the office network DNS-filters Tailscale, so at work the tunnel degrades (by design) and the phone path is the Remote Desktop app (see the two 2026-07-06 RDP issues); the tunnel path is fully usable on unfiltered networks, and push/PWA still need a secure origin (App Proxy or tailnet) before they unblock.
 
-| Idea | File |
-|---|---|
-| Hook-driven Web Push when a session needs attention | `_docs/issues/2026-07-02-hook-driven-push-notifications.md` |
-| Approve/deny prompts from notification action buttons | `_docs/issues/2026-07-02-notification-action-buttons.md` |
-| Attention states phase 2: `needs-input` via hooks (phase 1 landed) | `_docs/issues/2026-07-02-session-attention-states.md` |
-| Mobile answer mode: composer bar + canned key chips | `_docs/issues/2026-07-02-mobile-answer-mode.md` |
-| Claude-native lines: structured session state from transcripts/hooks | `_docs/issues/2026-07-02-claude-native-lines.md` |
-| One-tap spawn templates | `_docs/issues/2026-07-02-fleet-spawn-templates.md` |
-| Built-in tunnel + QR pairing | `_docs/issues/2026-07-02-tunnel-qr-pairing.md` |
-| Scoped tokens (read-only / per-session input) | `_docs/issues/2026-07-02-scoped-tokens.md` |
-| Paired/connected device dashboard + per-device unpair | `_docs/issues/2026-07-06-paired-device-dashboard.md` |
-| Scrollback persistence: transcripts survive line exit / board restart | `_docs/issues/2026-07-02-scrollback-persistence.md` |
-| Terminal QoL: search, transcript download, scroll-to-bottom pill | `_docs/issues/2026-07-02-terminal-qol.md` |
-| Desktop workspace shell: two shells over one core, spectator attach, panes, palette | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |
+Priorities: **P1** = do next, **P2** = soon, **P3** = wait for its trigger signal. Effort: S/M/L. The current P1 cluster is one coherent build: the Pushover notifier + `needs-input` hooks share trigger plumbing (build together), and the RDP recipe is the zero-code doc that makes the phone path usable day-to-day.
+
+| Idea | Pri | Effort | File |
+|---|---|---|---|
+| Pushover phone notifications (validated 2026-07-06; the unblocked delivery half of hook-driven push) | P1 | S | `_docs/issues/2026-07-06-pushover-notification-channel.md` |
+| Attention states phase 2: `needs-input` via hooks (phase 1 landed; shares hook/`/api/notify` plumbing with Pushover) | P1 | M | `_docs/issues/2026-07-02-session-attention-states.md` |
+| RD-app mobile session recipe (docs: phone-shaped RDP settings) | P1 | S | `_docs/issues/2026-07-06-rdp-mobile-session-recipe.md` |
+| Mobile answer mode: composer bar + canned key chips (priority raised 2026-07-06 — helps the RDP phone path too) | P2 | M | `_docs/issues/2026-07-02-mobile-answer-mode.md` |
+| Terminal QoL: search, transcript download, scroll-to-bottom pill (pill promoted 2026-07-06 — RDP touch-scroll; pill alone is S) | P2 | S | `_docs/issues/2026-07-02-terminal-qol.md` |
+| Client-aware relay launcher on RDP connect (phone → app window; desktop → no-op) | P2 | M | `_docs/issues/2026-07-06-rdp-client-aware-relay-launcher.md` |
+| One-tap spawn templates | P2 | S | `_docs/issues/2026-07-02-fleet-spawn-templates.md` |
+| Scrollback persistence: transcripts survive line exit / board restart | P2 | L | `_docs/issues/2026-07-02-scrollback-persistence.md` |
+| Hook-driven Web Push when a session needs attention (blocked on secure origin; Pushover covers the need meanwhile) | P3 | M | `_docs/issues/2026-07-02-hook-driven-push-notifications.md` |
+| Approve/deny prompts from notification action buttons (needs Web Push delivery — Pushover can't host approve/deny) | P3 | L | `_docs/issues/2026-07-02-notification-action-buttons.md` |
+| Claude-native lines: structured session state from transcripts/hooks | P3 | L | `_docs/issues/2026-07-02-claude-native-lines.md` |
+| Scoped tokens (read-only / per-session input; prerequisite for any multi-user or App Proxy rollout) | P3 | M | `_docs/issues/2026-07-02-scoped-tokens.md` |
+| Paired/connected device dashboard + per-device unpair | P3 | M | `_docs/issues/2026-07-06-paired-device-dashboard.md` |
+| Desktop workspace shell: two shells over one core, spectator attach, panes, palette | P3 | L | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |

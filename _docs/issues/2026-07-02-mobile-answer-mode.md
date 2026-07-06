@@ -1,7 +1,7 @@
 # Typing into a raw PTY through a phone soft keyboard is the worst part of the mobile UX
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — 90% of remote interactions are one-liners (`y`, `1`, `2`, a short reply, Ctrl+C), and xterm.js on a phone makes each of them painful.
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** 💡 Proposed — 2026-07-02. **Revisited 2026-07-06:** priority raised — the RD-app path chosen for office phone access (see `2026-07-06-rdp-mobile-session-recipe.md`) makes this pay double: the composer and canned chips are in-page tap targets, so they beat the RD on-screen keyboard exactly as they beat the native soft keyboard. Helps the RDP path today and carries over unchanged if a real HTTPS ingress (Entra App Proxy / home tailnet) lands later. Note the composer's native-`<input>` IME benefits apply only to the native-browser case — inside RDP, input rides the RD keyboard either way; the chips are the part that pays there.
 **Kind:** Enhancement
 **Modules:** client/TerminalScreen
 **Severity:** Medium — pure client work, no server or board changes.
