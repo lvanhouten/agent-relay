@@ -39,8 +39,11 @@ vs. tokens in localStorage (Home Assistant, WhatsApp-Web-class pairing).
 - A paired device stays paired across server restarts, page reloads, and tab
   eviction; the QR fragment token becomes a one-time bootstrap (Jupyter's
   model), never stored client-side.
-- The browser never holds the token in JS-readable storage; XSS can drive the
-  API while the page is compromised but cannot exfiltrate the credential.
+- The browser never *stores* the token in JS-readable storage; XSS can drive
+  the API while the page is compromised. One deliberate recovery path exists:
+  the pairing endpoint returns the token to an authenticated caller (headless
+  pairing needs it) — accepted for a single-operator tool; narrowing it is the
+  scoped-tokens backlog item.
 - A credential now lives at rest on disk (mitigated: owner-only file, same
   boundary as the board pipe secret) — a deliberate trade against per-run
   hygiene.
