@@ -13,6 +13,7 @@
 // first three, HMAC-SHA256'd with the secret. deviceId is base64url (no '.'),
 // issuedAt is decimal ms, so splitting on '.' is unambiguous.
 const crypto = require('crypto');
+const { safeEqual } = require('./safeCompare');
 
 const VERSION = 'v1';
 const COOKIE_NAME = 'ar_auth';
@@ -23,16 +24,10 @@ const COOKIE_NAME = 'ar_auth';
 const LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_AGE_SECONDS = Math.floor(LIFETIME_MS / 1000);
 
-// Constant-time compare — a twin of auth.js's safeEqual (and board/lib.js's
-// secretEqual), kept in sync by hand rather than shared-imported. A signature
-// mismatch must not leak byte-by-byte via timing.
-function safeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
-}
+// Constant-time signature compare comes from ./safeCompare — the same function
+// auth.js's token check uses, so a signature mismatch can't leak byte-by-byte via
+// timing and the two paths can't drift. A signature mismatch must reject in
+// constant time.
 
 function sign(payload, secret) {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64url');

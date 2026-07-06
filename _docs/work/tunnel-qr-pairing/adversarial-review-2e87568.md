@@ -11,6 +11,12 @@ The design is careful and heavily grounded in ADR 0001 / the PRD. The known-acce
 ### Warnings
 
 **W1. `safeEqual` duplicated within the same package (`cookie.js` ↔ `auth.js`)** — `server/src/cookie.js:29` · confidence 65
+
+**Status:** ✅ Resolved in <W1_SHA> — see below.
+**Resolution:** Accepted as framed (A). Lifted both byte-for-byte copies into a new shared module `server/src/safeCompare.js`; `auth.js` and `cookie.js` now both `require('./safeCompare').safeEqual`, so there is exactly one definition and the token-compare and signature-compare paths can no longer drift. Neither copy was exported, so extraction broke no external consumer. The *board* twin (`board/lib.js`'s `secretEqual`) stays hand-synced — it's an independent standalone package with no dependency on `server/src`; the new module's header documents why it isn't shared too. Closure check: `safeCompare.test.js` covers the shared function directly (incl. a singleton-require assertion), and the divergence hazard is closed structurally — one definition at `server/src/safeCompare.js:16`, two importers. `auth.test.js`/`cookie.test.js` (47 tests) still green, exercising it in situ.
+
+---
+
 `cookie.js` hand-copies `auth.js`'s constant-time `safeEqual` byte-for-byte. The in-code comment justifies this the same way the board's `secretEqual` twin is justified — "an independent package that runs standalone, no dependency on `server/src`." That rationale is real for `board/lib.js` (verified: separate package, `sb`/`mcp-server` standalone) but **false for `cookie.js` ↔ `auth.js`** — both live in `server/src/`, same package, same directory, and `cookie.js` is already required by `auth.js`. There is no dependency reason not to `require('./auth').safeEqual` (or extract a shared `server/src/safeCompare.js` that both import). Failure scenario: a future hardening of the compare (e.g. eliminating the length-leak the comment itself flags) lands in one copy; the auth-token path and the cookie-signature path silently diverge on their timing/rejection behavior. Fix: import one from the other, or lift both to a shared module; keep only the *board* twin hand-synced.
 
 **W2. Pairing-URL format string built in two places** — `server/src/pairing.js:72` · confidence 60

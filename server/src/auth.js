@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { loadCredentials } = require('./credentials');
 const { verify: verifyCookie, readAuthCookie } = require('./cookie');
+const { safeEqual } = require('./safeCompare');
 
 // Access-token policy — auth is ON by default. An unauthenticated relay is a
 // command-execution endpoint for any page the operator's browser visits (see
@@ -26,23 +27,9 @@ const {
   signingSecret: SIGNING_SECRET,
 } = loadCredentials(process.env);
 
-// Constant-time compare so a network attacker can't recover the token byte by
-// byte from response-time differences. Length is compared first (unavoidably
-// non-constant on length, which leaks only the token's length, not its bytes);
-// the byte comparison itself is constant-time via timingSafeEqual.
-//
-// Deliberately a twin of board/lib.js's secretEqual, not a shared import: this is
-// the web tier's HTTP-token compare, that one is the board kernel's pipe-secret
-// compare, and the board kernel is an independent package that runs standalone
-// (sb / mcp-server) with no dependency on server/src. Keep the two in sync by
-// hand — if you change the algorithm here, change it there too.
-function safeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
-}
+// The constant-time token compare lives in ./safeCompare (shared with cookie.js's
+// HMAC-signature check so the two can't drift). board/lib.js's secretEqual is a
+// separate hand-synced twin — see safeCompare.js for why it isn't shared too.
 
 // token is injectable for tests; every real call site uses the module TOKEN.
 function checkToken(candidate, token = TOKEN) {
