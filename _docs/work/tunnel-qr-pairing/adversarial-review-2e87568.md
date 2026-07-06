@@ -30,7 +30,7 @@ The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(toke
 
 **W3. `LoginScreen` ignores the `login()` result and lands on sessions anyway** — `client/src/screens/LoginScreen.jsx:55` · confidence 50
 
-**Status:** ✅ Resolved in <W3_SHA> — see below.
+**Status:** ✅ Resolved in 33a8c33 — see below.
 **Resolution:** Accepted as framed (A). `connect()` now guards on the `login()` boolean: `if (!(await login(token))) { setError('Could not complete sign-in — try again.'); return; }` before `onConnect(origin)`. A cookie-exchange that returns anything but 204 (e.g. a token rotated between the `/api/sessions` probe and the `/api/login` call) now surfaces an inline error and stays on the login screen, instead of routing to sessions where a cookie-only fetch would 401 into the offline-looking state. Closure check (per this repo's convention, a UI-only change in a JSX screen with no component-render harness is proven by a named guarded code path): the guarded path is `LoginScreen.jsx` `connect()` — the early-return on `!(await login(token))` between the successful bearer probe and `onConnect`. Client test suite green 61/61. Note: `npm run typecheck --workspace=client` is pre-existing-red in this worktree (missing `react` type declarations, all in `src/core/`; identical at the pre-remediation HEAD) — unrelated to this change, and `LoginScreen.jsx` is a screen outside the `src/core` typecheck scope.
 
 ---
@@ -40,6 +40,12 @@ The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(toke
 ### Notes
 
 **N1. Dead `ENOENT` sub-expression in the tailscale probe** — `server/src/tunnel.js:108` · confidence 85
+
+**Status:** ✅ Resolved in <N1_SHA> — see below.
+**Resolution:** Accepted as framed (A). The `error` handler now reads `done({ missing: true })`, and the comment says plainly that any spawn error is uniformly "missing" (no discrimination) — removing the `|| true` that made the `ENOENT` check dead and misleading. The unused `err` param was dropped. This is behavior-neutral (`X || true` was already always `true`), so there is no red→green to add; closure is the existing ENOENT test — `tailscale binary missing (ENOENT) → down naming install, no serve spawn` (`tunnel.test.js:170`) — which drives this exact `error` path and stays green, plus the change is provably behavior-identical. Tunnel tests 13/13 green.
+
+---
+
 `done({ missing: (err && err.code === 'ENOENT') || true })` — `X || true` is unconditionally `true`, so the `ENOENT` check is dead code that reads as if it discriminates the not-installed case from other spawn errors. Behavior matches intent ("any spawn error ⇒ missing", per the comment), so this is cosmetic, but it actively misleads a maintainer into thinking `missing` can be `false` here. Fix: `done({ missing: true })`.
 
 **N2. `resolveToken` is now vestigial** — `server/src/auth.js:17` · confidence 55

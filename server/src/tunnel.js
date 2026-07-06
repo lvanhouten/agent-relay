@@ -102,10 +102,11 @@ function createTunnel({
         return done({ missing: true });
       }
 
-      cp.on('error', (err) => {
-        // ENOENT ⇒ the binary isn't on PATH. Any other spawn error is also
-        // "can't run tailscale" for our purposes.
-        done({ missing: (err && err.code === 'ENOENT') || true });
+      cp.on('error', () => {
+        // Any spawn error — ENOENT (binary not on PATH) or otherwise — means we
+        // can't run tailscale, so it's uniformly "missing". (No discrimination
+        // here: the caller only branches on `missing`.)
+        done({ missing: true });
       });
       if (cp.stdout && cp.stdout.on) cp.stdout.on('data', (d) => { out += d; });
       cp.on('exit', (code) => {
