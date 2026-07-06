@@ -91,6 +91,12 @@ powershell -ExecutionPolicy Bypass -File autostart.ps1 uninstall   # unregister
 powershell -ExecutionPolicy Bypass -File autostart.ps1 status      # (default) check
 ```
 
+**From your phone** — on an unfiltered network, expose the relay via the built-in
+tunnel (`AR_TUNNEL=tailscale`) and pair a device with the QR in the dashboard. On
+a network that DNS-filters Tailscale (e.g. a locked-down office), reach the relay
+over the Microsoft Remote Desktop app instead — see the phone-shaped RDP recipe in
+[`_docs/rdp-mobile-recipe.md`](_docs/rdp-mobile-recipe.md).
+
 ## API
 
 ```
