@@ -77,7 +77,14 @@ function createWSHub(server, sessions, authConfig = {}) {
     ws.on('message', raw => {
       try {
         const msg = JSON.parse(raw.toString());
-        if (msg.type === 'input') handle.write(msg.payload);
+        if (msg.type === 'input') {
+          // The operator answered from the web terminal — clear any needs-input
+          // flag immediately (the precise "cleared on next input" signal; the
+          // output-based clear in sessions.list() is only the fallback for input
+          // arriving via another attach, e.g. the `sb` pane).
+          sessions.clearAttention?.(id);
+          handle.write(msg.payload);
+        }
         if (msg.type === 'resize') handle.resize(msg.cols, msg.rows);
       } catch { /* malformed message — ignore */ }
     });

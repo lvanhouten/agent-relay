@@ -101,6 +101,11 @@ POST   /api/sessions           Spawn a new session
 GET    /api/sessions/:id       Get one session
 DELETE /api/sessions/:id       Kill a session
 
+POST   /api/notify             Push a notification + optionally flag a session
+                               body { title, body, url?, priority?, sessionId?, needsInput? }
+                               fans out to configured push sinks (Pushover);
+                               needsInput+sessionId lights the card's "needs input" state
+
 WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
 ```
@@ -118,6 +123,60 @@ policy (CORS never applied to WebSockets), and `POST /api/sessions` requires an
 `application/json` content type so a preflight-exempt "simple" cross-site POST
 can't spawn a session.
 
+## Notifications
+
+The relay is pull-only, so a session can sit blocked on a prompt while your phone
+is locked. `POST /api/notify` pushes an alert to your phone **and** lights the
+session's card with a pulsing "needs input" state so the dashboard answers "which
+session needs me?" at a glance.
+
+Delivery is [Pushover](https://pushover.net): the relay makes one outbound HTTPS
+POST and Pushover's own app renders the notification — no VAPID, no service
+worker, no secure origin, no tunnel. (It also survives networks that DNS-filter
+Tailscale.) Enable it with two env vars; leave them unset and the endpoint still
+flags the card but sends no push (feature simply off):
+
+```
+AR_PUSHOVER_TOKEN=<your Pushover application API token>
+AR_PUSHOVER_USER=<your Pushover user key>
+```
+
+> Payload discipline: `title`/`body` transit Pushover's servers. Keep them to
+> "session `<name>` needs attention" — **never** session output, which can carry
+> secrets or PHI given what runs in these shells.
+
+`priority` maps to Pushover's: `1` bypasses quiet hours, `2` repeats until you
+acknowledge (retry/expire are supplied automatically). `url` deep-links on tap.
+
+### Claude Code hook recipe
+
+Fire the alert from a Claude Code **Notification** hook (Claude is blocked asking
+for input/permission). Add to the project's `.claude/settings.json` — `$AR_TOKEN`
+and the relay URL come from the environment the agent runs in:
+
+```json
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST http://localhost:3017/api/notify -H \"Authorization: Bearer $AR_TOKEN\" -H 'Content-Type: application/json' -d '{\"title\":\"Claude needs input\",\"body\":\"A session is waiting on you\",\"needsInput\":true,\"priority\":1}'"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Add a `Stop` hook the same way (drop `needsInput`) if you also want a "session
+finished" ping. To flag a *specific* card, pass `"sessionId":"<board line id>"` —
+the cheapest bridge is matching the hook's cwd against `GET /api/sessions`, or
+inject the id when the line is spawned. The needs-input flag clears itself on the
+session's next input or output.
+
 ## Roadmap
 
 - [x] Backend: PTY session kernel (switchboard board) over node-pty
@@ -129,4 +188,4 @@ can't spawn a session.
 - [x] Auth: opt-in bearer-token auth (`AR_TOKEN`)
 - [x] Auth: secure defaults — token required (auto-generated), WS `Origin` check, CORS allowlist
 - [ ] Frontend: mobile polish
-- [ ] Notifications: push alerts when a session needs input
+- [x] Notifications: push alerts when a session needs input (Pushover + `needs-input` cards)

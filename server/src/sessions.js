@@ -80,9 +80,47 @@ class BoardUnreachableError extends Error {
 class BoardSessions {
   // rpc/attach are injectable (defaults = the real board-client) so the board-down
   // classification can be unit-tested without a live board.
-  constructor({ rpc: rpcFn = rpc, attach: attachFn = attach } = {}) {
+  constructor({ rpc: rpcFn = rpc, attach: attachFn = attach, now = Date.now } = {}) {
     this._rpc = rpcFn;
     this._attach = attachFn;
+    this._now = now; // injectable clock so the needs-input reconciliation is testable
+    // needs-input attention flags: session id -> the wall-clock ms at which a
+    // Claude Code Notification hook (via POST /api/notify) reported the line as
+    // blocked on a prompt. A web-tier-only Map on purpose — the board owns no
+    // notion of "needs input", and putting it here avoids a board restart (which
+    // would end every line). Lost on a web-tier restart (a re-fired hook re-flags);
+    // that's acceptable per the issue doc's pragmatism.
+    this._attention = new Map();
+  }
+
+  // Mark a live line as needing input. Set unconditionally (no existence RPC —
+  // stay dumb); list() prunes flags for ids that aren't live and clears a flag
+  // once output/input has moved past it.
+  flagAttention(id) {
+    if (id) this._attention.set(id, this._now());
+  }
+
+  // Clear a flag explicitly — the WS hub calls this the instant it sees an
+  // `input` frame (the operator answered from the web terminal), which is the
+  // precise "cleared on next input" signal. The output-based clear in list() is
+  // the fallback for input arriving via another attach (e.g. the `sb` pane).
+  clearAttention(id) {
+    this._attention.delete(id);
+  }
+
+  // Overlay the needs-input state onto a live-line DTO. A flag survives only
+  // while the line has produced no output since it was set: once the board's
+  // idleMs implies output (or input echo) landed AFTER flaggedAt, the agent is
+  // moving again, so the flag is stale — drop it and report the normal state.
+  _applyAttention(dto, line) {
+    const flaggedAt = this._attention.get(dto.id);
+    if (flaggedAt == null) return dto;
+    const lastOutputAt = this._now() - (line.idleMs ?? 0);
+    if (lastOutputAt > flaggedAt) {
+      this._attention.delete(dto.id);
+      return dto;
+    }
+    return { ...dto, status: 'needs-input' };
   }
 
   async list() {
@@ -97,9 +135,17 @@ class BoardSessions {
       console.error('[sessions] board list RPC returned a non-ok reply:', JSON.stringify(r));
       throw new BoardUnreachableError();
     }
-    // Live lines first, then recently-ended tombstones (`ended` is absent from
-    // an older board's reply — treat that as none, not an error).
-    return [...r.lines.map(toDto), ...(r.ended || []).map(endedToDto)];
+    // Prune attention flags whose line is no longer live (it exited) so the Map
+    // can't leak entries for dead ids or resurrect a flag onto a reused id.
+    const liveIds = new Set(r.lines.map((l) => l.id));
+    for (const id of this._attention.keys()) if (!liveIds.has(id)) this._attention.delete(id);
+    // Live lines first (with the needs-input overlay), then recently-ended
+    // tombstones (`ended` is absent from an older board's reply — treat that as
+    // none, not an error).
+    return [
+      ...r.lines.map((line) => this._applyAttention(toDto(line), line)),
+      ...(r.ended || []).map(endedToDto),
+    ];
   }
 
   async get(id) {

@@ -1,7 +1,7 @@
 # Session cards can't answer "which session needs me?"
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — the cheaper sibling of the deferred live-preview idea (`2026-07-01-session-card-live-preview.md`): most of what a preview would communicate is really a one-word state.
-**Status:** ✅ Phase 1 landed — 2026-07-02 (`running`/`idle` derived in `toDto()` from the board's `idleMs` against `wait.js`'s exported `DEFAULT_IDLE_MS`; card shows the dot next to the name and a labeled dot — "running" / "quiet" — beside the last-active time; `exited` came with the tombstone work). Phase 2 (`needs-input` via a Notification hook) remains proposed.
+**Status:** ✅ Phases 1 & 2 landed. Phase 1 — 2026-07-02 (`running`/`idle` derived in `toDto()` from the board's `idleMs` against `wait.js`'s exported `DEFAULT_IDLE_MS`; `exited` came with the tombstone work). Phase 2 — 2026-07-06 (`needs-input`): a Claude Code Notification hook POSTs `/api/notify` with `needsInput:true`, which sets a web-tier flag (`BoardSessions._attention`, no board change) that `list()` overlays as `status: 'needs-input'`; cleared explicitly on WS input, or as a fallback when the board's `idleMs` shows output landed after the flag. Card renders a pulsing blue `attention` StatusDot and floats to the top of the grid. Built together with the Pushover channel — shared `/api/notify` plumbing.
 **Kind:** Enhancement
 **Modules:** server/sessions, board (list reply), client/SessionsScreen
 **Severity:** Medium — small effort, large navigation payoff.

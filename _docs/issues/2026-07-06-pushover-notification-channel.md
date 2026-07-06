@@ -1,7 +1,7 @@
 # Push a phone notification when a session needs attention — via Pushover, sidestepping the Web Push stack
 
 **Source:** Remote-notification investigation, 2026-07-06 — validated a tenant-free push channel end-to-end after the Microsoft Teams routes all dead-ended (see Risks).
-**Status:** 💡 Proposed — 2026-07-06. Channel proven; wiring not started.
+**Status:** ✅ Landed — 2026-07-06. Notifier seam (`server/src/notifiers.js`), `POST /api/notify` (fans out to sinks + flags the needs-input card), env config (`AR_PUSHOVER_TOKEN`/`AR_PUSHOVER_USER`), and the Claude Code hook recipe (README). Built together with the `needs-input` attention state — they share the `/api/notify` plumbing.
 **Kind:** Enhancement
 **Modules:** server/api (notifier module + `/api/notify`), Claude Code hooks (external config). **No client/SW work** — that's the point.
 **Severity:** High value — the concrete, unblocked delivery half of `2026-07-02-hook-driven-push-notifications.md`.

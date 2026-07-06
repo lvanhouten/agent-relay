@@ -12,6 +12,7 @@ const { createPairing, pairingUrl } = require('./src/pairing');
 const { createTunnel } = require('./src/tunnel');
 const { errorHandler } = require('./src/errorHandler');
 const { createStatic } = require('./src/static');
+const { resolveNotifiers } = require('./src/notifiers');
 
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
@@ -25,7 +26,10 @@ app.use(cors((req, cb) => cb(null, { origin: originAllowed(req.headers.origin, r
 app.use(express.json());
 
 const sessions = new BoardSessions();
-app.use('/api', authMiddleware, createAPI(sessions));
+// Push-notification sinks (Pushover today). Absent config -> empty list ->
+// POST /api/notify still flags the card but fans out to nobody (feature off).
+const notifiers = resolveNotifiers(process.env);
+app.use('/api', authMiddleware, createAPI(sessions, notifiers));
 
 // Tunnel supervisor — created unconditionally so the pairing router always has a
 // stable status() getter. With AR_TUNNEL unset it sits in the 'disabled' state and
@@ -106,6 +110,9 @@ server.listen(PORT, () => {
   console.log(TOKEN
     ? '  auth on — an access token (bearer) or auth cookie is required'
     : '  auth DISABLED (AR_NO_AUTH=1) — dev only; an open relay executes commands for any page your browser visits');
+  console.log(notifiers.length
+    ? `  push notifications: ${notifiers.map((n) => n.name).join(', ')} (POST /api/notify)`
+    : '  push notifications: off (set AR_PUSHOVER_TOKEN + AR_PUSHOVER_USER to enable)');
   if (TOKEN_GENERATED) {
     console.log(
       `\nAR_TOKEN not set — generated an access token (persisted across runs):\n\n  ${TOKEN}\n\n` +

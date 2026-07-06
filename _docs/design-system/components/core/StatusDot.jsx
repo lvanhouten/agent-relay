@@ -16,6 +16,7 @@ function useStyles() {
   .rl-status--idle   .rl-status__dot{background:var(--status-idle);}
   .rl-status--offline .rl-status__dot{background:var(--status-offline);}
   .rl-status--error  .rl-status__dot{background:var(--status-error);}
+  .rl-status--attention .rl-status__dot{background:var(--status-attention);}
   .rl-status--online  { color:var(--text-accent); }
   .rl-status__dot--pulse::after{content:"";position:absolute;inset:0;border-radius:50%;
     background:inherit;animation:rl-pulse 1.8s var(--ease-out) infinite;}
@@ -28,7 +29,7 @@ function useStyles() {
   document.head.appendChild(el);
 }
 
-const DEFAULT_LABELS = { online: 'online', idle: 'idle', offline: 'offline', error: 'error' };
+const DEFAULT_LABELS = { online: 'online', idle: 'idle', offline: 'offline', error: 'error', attention: 'needs input' };
 
 /** StatusDot — connection state indicator for sessions and the relay host. */
 export function StatusDot({

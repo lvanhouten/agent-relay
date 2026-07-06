@@ -11,29 +11,30 @@ const { createAPI } = require('./api');
 const { BoardUnreachableError } = require('./sessions');
 const { errorHandler } = require('./errorHandler');
 
-function serve(sessions) {
+function serve(sessions, notifiers = []) {
   const app = express();
   app.use(express.json());
-  app.use('/api', createAPI(sessions));
+  app.use('/api', createAPI(sessions, notifiers));
   // The real handler (index.js's own), not a duplicate — W3-new: a hand-rolled
   // copy here had drifted from index.js's actual fix and gave it zero coverage.
   app.use(errorHandler);
   return app;
 }
 
-function request(app, method, path, { contentType = 'application/json' } = {}) {
+function request(app, method, path, { contentType = 'application/json', body } = {}) {
   return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const { port } = server.address();
       const sendBody = method === 'POST';
       const headers = sendBody ? { 'content-type': contentType } : {};
+      const payload = body !== undefined ? JSON.stringify(body) : '{}';
       const req = http.request({ port, method, path, headers }, res => {
-        let body = '';
-        res.on('data', c => (body += c));
-        res.on('end', () => { server.close(); resolve({ status: res.statusCode, body }); });
+        let out = '';
+        res.on('data', c => (out += c));
+        res.on('end', () => { server.close(); resolve({ status: res.statusCode, body: out }); });
       });
       req.on('error', e => { server.close(); reject(e); });
-      req.end(sendBody ? '{}' : undefined);
+      req.end(sendBody ? payload : undefined);
     });
   });
 }
@@ -74,6 +75,56 @@ test('DELETE /sessions/:id -> 500 on a non-board error (not swallowed as 404)', 
   const app = serve({ kill: async () => { throw new Error('boom'); } });
   const { status } = await request(app, 'DELETE', '/api/sessions/7');
   assert.strictEqual(status, 500);
+});
+
+// --- POST /notify: fan-out + needs-input flag ---
+
+test('POST /notify -> 415 on a non-JSON content type (same cross-site guard as /sessions)', async () => {
+  const app = serve({});
+  const { status } = await request(app, 'POST', '/api/notify', { contentType: 'text/plain' });
+  assert.strictEqual(status, 415);
+});
+
+test('POST /notify -> 400 when neither title nor body is present', async () => {
+  const app = serve({});
+  const { status } = await request(app, 'POST', '/api/notify', { body: { sessionId: '1' } });
+  assert.strictEqual(status, 400);
+});
+
+test('POST /notify -> 400 on an out-of-range priority', async () => {
+  const app = serve({});
+  const { status } = await request(app, 'POST', '/api/notify', { body: { body: 'x', priority: 9 } });
+  assert.strictEqual(status, 400);
+});
+
+test('POST /notify -> 200 and fans out to every sink', async () => {
+  const seen = [];
+  const notifier = { name: 'fake', notify: async (p) => { seen.push(p); } };
+  const app = serve({}, [notifier]);
+  const { status, body } = await request(app, 'POST', '/api/notify', {
+    body: { title: 'api-dev', body: 'needs input', priority: 1 },
+  });
+  assert.strictEqual(status, 200);
+  assert.deepStrictEqual(JSON.parse(body), { notified: [{ name: 'fake', ok: true }] });
+  assert.deepStrictEqual(seen, [{ title: 'api-dev', body: 'needs input', url: undefined, priority: 1 }]);
+});
+
+test('POST /notify with needsInput+sessionId flags that session; omitting either does not', async () => {
+  const flagged = [];
+  const sessions = { flagAttention: (id) => flagged.push(id) };
+  const app = serve(sessions);
+  await request(app, 'POST', '/api/notify', { body: { sessionId: '7', body: 'x', needsInput: true } });
+  await request(app, 'POST', '/api/notify', { body: { sessionId: '7', body: 'x' } });            // no needsInput
+  await request(app, 'POST', '/api/notify', { body: { body: 'x', needsInput: true } });          // no sessionId
+  assert.deepStrictEqual(flagged, ['7'], 'only the needsInput+sessionId call flags a session');
+});
+
+test('POST /notify -> 200 even when a sink fails (resilient; per-sink outcome reported)', async () => {
+  const bad = { name: 'bad', notify: async () => { throw new Error('boom'); } };
+  const app = serve({}, [bad]);
+  const { status, body } = await request(app, 'POST', '/api/notify', { body: { body: 'x' } });
+  assert.strictEqual(status, 200);
+  assert.deepStrictEqual(JSON.parse(body), { notified: [{ name: 'bad', ok: false, error: 'boom' }] });
 });
 
 // Direct unit tests against the real handler (W3-new: the branch below had no

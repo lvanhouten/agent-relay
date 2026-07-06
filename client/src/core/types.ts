@@ -13,10 +13,12 @@ export interface Session {
   pid: number | null;
   // Attention state. Live lines are 'running' (output within the board's
   // shared idle threshold) or 'idle' (quiet beyond it — which may mean
-  // thinking, blocked on a prompt, or finished; PTY bytes can't tell).
-  // 'exited' is a recently-ended tombstone from the board's capped ring.
-  // Kept string (not a union) so an older/newer server can't type-error the
-  // client; render unknown values as-is.
+  // thinking, blocked on a prompt, or finished; PTY bytes can't tell), or
+  // 'needs-input' when a Claude Code Notification hook has explicitly reported
+  // the line as blocked on a prompt (server sets it via POST /api/notify,
+  // clears it on next input/output). 'exited' is a recently-ended tombstone
+  // from the board's capped ring. Kept string (not a union) so an older/newer
+  // server can't type-error the client; render unknown values as-is.
   status: string;
   lastActive: string;
   // Present only on status 'exited' (sessions.js endedToDto): the process's

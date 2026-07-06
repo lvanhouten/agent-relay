@@ -92,6 +92,7 @@
   --status-idle:    var(--amber-500);
   --status-offline: var(--gray-400);
   --status-error:   var(--red-500);
+  --status-attention: var(--blue-500);  /* needs-input: distinct from idle(amber)/error(red)/running(green) */
 
   /* Semantic feedback */
   --success: var(--relay-600);
@@ -150,6 +151,7 @@
   --status-idle:    var(--amber-400);
   --status-offline: var(--gray-600);
   --status-error:   var(--red-400);
+  --status-attention: var(--blue-400);
 
   --success: var(--relay-400);
   --success-soft: rgba(31, 206, 138, 0.12);
