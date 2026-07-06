@@ -49,9 +49,24 @@ Do these in the **Microsoft Remote Desktop** / **Windows App** on your phone
 
    Maximize it. With the relay's dark theme it reads as a native app. Pin that
    command to a desktop shortcut on the workstation so it's a single click each
-   session. (Automating this on connect — phone client → app window, desktop
-   client → no-op — is its own tracked idea:
-   `_docs/issues/2026-07-06-rdp-client-aware-relay-launcher.md`.)
+   session.
+
+5. **Automate step 4 on connect (optional).** Instead of the manual shortcut,
+   register the client-aware launcher so the app window opens by itself the moment
+   the *phone* connects — and does nothing when you RDP in from a desktop:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File rdp-launcher-install.ps1 install
+   ```
+
+   It reads the RDP session's geometry (portrait or narrow ⇒ phone) on
+   LocalSessionManager connect/reconnect events; a wide landscape desktop session
+   is a strict no-op. Tune the rule or exempt a named desktop client, e.g.
+   `... install -WidthThreshold 800 -DesktopClientNames HOME-DESKTOP`. Each fire
+   logs its decision to `%LOCALAPPDATA%\agent-relay\rdp-launcher.log` — tail it to
+   confirm what the iOS/Android client actually reports for geometry and
+   `CLIENTNAME` on your devices. Remove with `rdp-launcher-install.ps1 uninstall`
+   (an already-open window stays until you close it).
 
 ## What you don't need to worry about
 
