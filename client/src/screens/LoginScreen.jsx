@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
 import { Sun, Moon, Lock } from 'lucide-react';
-import { headers } from '../core/api.ts';
+import { headers, login } from '../core/api.ts';
 import { isLocalhost } from '../hostTrust.js';
 
 // The app is served BY the relay (or the Vite dev proxy), so every request —
@@ -12,9 +12,12 @@ import { isLocalhost } from '../hostTrust.js';
 // collects only the access token and reports the origin it will talk to, rather
 // than a free-text host field that (mis)implied it retargeted all traffic.
 
-export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
+// initialError: set by the boot flow (App.jsx) when a QR-pairing fragment
+// token turned out to be rotated/stale — surfaces immediately on first paint
+// instead of a silent drop to a blank form.
+export default function LoginScreen({ onConnect, theme, onToggleTheme, initialError = '' }) {
   const [token, setToken] = React.useState('');
-  const [error, setError] = React.useState('');
+  const [error, setError] = React.useState(initialError);
   const [loading, setLoading] = React.useState(false);
   // When set, the user has been warned the token would travel in cleartext and
   // must click Connect again to send it anyway.
@@ -46,7 +49,18 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme }) {
       const res = await fetch('/api/sessions', { headers: headers(token) });
       if (res.status === 401) { setError('Invalid access token.'); return; }
       if (!res.ok) throw new Error();
-      onConnect(origin, token);
+      // The probe only proves the bearer works — exchange it for the ar_auth
+      // cookie so the browser doesn't need to keep the token in memory for
+      // every subsequent request (REST + WS ride the cookie from here on).
+      // Only advance if the cookie was actually granted (login → 204). If the
+      // exchange fails (e.g. the token rotated between the probe and here),
+      // routing to sessions would immediately 401 cookie-only into the offline-
+      // looking state this whole feature exists to prevent — surface it instead.
+      if (!(await login(token))) {
+        setError('Could not complete sign-in — try again.');
+        return;
+      }
+      onConnect(origin);
     } catch {
       setError('Could not reach the relay. Is the server running?');
     } finally {

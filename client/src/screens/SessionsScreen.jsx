@@ -1,4 +1,5 @@
 import React from 'react';
+import QRCode from 'qrcode';
 import { Button } from '@ds/Button.jsx';
 import { Card } from '@ds/Card.jsx';
 import { Badge } from '@ds/Badge.jsx';
@@ -7,7 +8,9 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
-import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown } from 'lucide-react';
+import { getPairing } from '../core/api.ts';
+import { pairingDisplay } from '../core/pairingDisplay.ts';
+import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode } from 'lucide-react';
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
@@ -318,13 +321,128 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   );
 }
 
-export default function SessionsScreen({ host, token, theme, onToggleTheme, onAttach }) {
+// "Pair a device" dialog (VC-9, VC-10). Fetches GET /api/pairing on open (not
+// on page load — this component only mounts while the dialog is open, so its
+// state — including the credential-bearing pairingUrl — is discarded on close
+// rather than cached in the screen/app state) and renders a client-side QR
+// (qrcode package) when the tunnel is up. Status -> display fan-out lives in
+// core/pairingDisplay.ts; this stays a thin render over that + the QR image.
+function PairDeviceDialog({ onClose }) {
+  const [info, setInfo] = React.useState(null); // PairingInfo | null, from core/types.ts
+  const [error, setError] = React.useState('');
+  const [qrDataUrl, setQrDataUrl] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getPairing()
+      .then((data) => { if (!cancelled) setInfo(data); })
+      .catch(() => { if (!cancelled) setError('Could not reach the server to fetch pairing info.'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const pairingUrl = info?.pairingUrl ?? null;
+
+  React.useEffect(() => {
+    if (!pairingUrl) { setQrDataUrl(''); return; }
+    let cancelled = false;
+    QRCode.toDataURL(pairingUrl, { margin: 1, width: 224 })
+      .then((url) => { if (!cancelled) setQrDataUrl(url); })
+      .catch(() => { if (!cancelled) setError('Could not render the pairing QR code.'); });
+    return () => { cancelled = true; };
+  }, [pairingUrl]);
+
+  const display = info ? pairingDisplay(info) : null;
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 40, display: 'grid', placeItems: 'center',
+      background: 'var(--surface-overlay)', backdropFilter: 'blur(2px)', padding: 'var(--space-6)',
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 420, background: 'var(--surface-card)',
+        border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)',
+        boxShadow: 'var(--shadow-pop)', padding: 'var(--space-6)',
+        display: 'flex', flexDirection: 'column', gap: 'var(--space-5)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ fontSize: 'var(--text-xl)', margin: 0, color: 'var(--text-strong)' }}>Pair a device</h2>
+          <IconButton label="Close" size="sm" onClick={onClose}>
+            <span style={{ fontSize: 18, lineHeight: 1, color: 'var(--text-muted)' }}>×</span>
+          </IconButton>
+        </div>
+
+        {error && (
+          <p style={{
+            color: 'var(--danger)', fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--text-sm)', margin: 0,
+          }}>
+            {error}
+          </p>
+        )}
+
+        {!error && !info && (
+          <p style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', margin: 0 }}>
+            Checking tunnel status…
+          </p>
+        )}
+
+        {!error && display && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', alignItems: 'center' }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+              textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
+              alignSelf: 'flex-start',
+            }}>
+              {display.heading}
+            </span>
+
+            {display.showQr && pairingUrl ? (
+              <>
+                {/* QR modules need a light, high-contrast background regardless
+                    of the app theme, hence the fixed white box. */}
+                <div style={{
+                  background: '#fff', padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-lg)', lineHeight: 0,
+                  width: 224, height: 224, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {qrDataUrl
+                    ? <img src={qrDataUrl} width={200} height={200} alt="Pairing QR code — scan with the device you want to pair" />
+                    : <span style={{ color: '#888', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)' }}>Rendering…</span>}
+                </div>
+                <code style={{
+                  width: '100%', wordBreak: 'break-all', textAlign: 'center',
+                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-body)',
+                }}>
+                  {pairingUrl}
+                </code>
+              </>
+            ) : (
+              <p style={{
+                margin: 0, textAlign: 'center', color: 'var(--text-body)',
+                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
+              }}>
+                {display.message}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
+          <Button fullWidth variant="ghost" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function SessionsScreen({ host, theme, onToggleTheme, onAttach }) {
   // Data layer — list + poll + create/kill with their concurrency guards —
   // lives in core/useSessions. This screen owns only presentation state.
-  const { sessions, create, kill, creating } = useSessions(token);
+  const { sessions, create, kill, creating } = useSessions();
   const [query, setQuery] = React.useState('');
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');
+  const [pairOpen, setPairOpen] = React.useState(false);
 
   const handleCreate = async (opts) => {
     // Keep the dialog open until the create actually succeeds — create()
@@ -381,6 +499,9 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
           agent-relay
         </span>
         <span style={{ flex: 1 }} />
+        <IconButton label="Pair a device" onClick={() => setPairOpen(true)}>
+          <QrCode size={16} />
+        </IconButton>
         <IconButton label="Toggle theme" onClick={onToggleTheme}>
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </IconButton>
@@ -477,6 +598,11 @@ export default function SessionsScreen({ host, token, theme, onToggleTheme, onAt
           busy={creating}
         />
       )}
+
+      {/* Mounted only while open — its own state (including the
+          credential-bearing pairing URL) is discarded on close, never lifted
+          into this screen's state. */}
+      {pairOpen && <PairDeviceDialog onClose={() => setPairOpen(false)} />}
     </div>
   );
 }

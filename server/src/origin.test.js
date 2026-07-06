@@ -5,7 +5,7 @@
 // deny-by-default fall-through (including the unparseable "null" Origin).
 const test = require('node:test');
 const assert = require('node:assert');
-const { originAllowed, parseAllowlist } = require('./origin');
+const { originAllowed, parseAllowlist, allowRuntimeOrigin } = require('./origin');
 
 const HOST = 'machine.tailnet:3017';
 
@@ -49,4 +49,38 @@ test('the AR_CORS_ORIGIN allowlist admits exact origins only', () => {
 test('parseAllowlist tolerates whitespace and empty entries', () => {
   assert.deepStrictEqual(parseAllowlist(' a.com ,, b.com '), ['a.com', 'b.com']);
   assert.deepStrictEqual(parseAllowlist(undefined), []);
+});
+
+// Pin test (the original issue demanded this): a tunneled page's Origin must
+// pass the gate even when the request's Host header is something unrelated —
+// the feature must not bet on the tailscale proxy preserving Host passthrough.
+test('a runtime-registered tunnel origin passes with a mismatched Host header (pin test)', () => {
+  allowRuntimeOrigin('https://machine.tailnet.ts.net');
+  assert.strictEqual(
+    originAllowed('https://machine.tailnet.ts.net', '127.0.0.1:3017', []),
+    true
+  );
+});
+
+test('registration is additive to, not a replacement for, the static allowlist', () => {
+  const list = parseAllowlist('https://relay.example.com');
+  allowRuntimeOrigin('https://runtime.example.com');
+  assert.strictEqual(originAllowed('https://relay.example.com', HOST, list), true);
+  assert.strictEqual(originAllowed('https://runtime.example.com', HOST, list), true);
+});
+
+test('registration is idempotent (registering twice does not change behavior)', () => {
+  allowRuntimeOrigin('https://idempotent.example.net');
+  allowRuntimeOrigin('https://idempotent.example.net');
+  assert.strictEqual(originAllowed('https://idempotent.example.net', HOST, []), true);
+});
+
+test('unregistered non-loopback, non-same-origin, non-allowlisted origins still fail', () => {
+  assert.strictEqual(originAllowed('https://not-registered.example', HOST, []), false);
+});
+
+test('originAllowed accepts an injected runtimeOrigins set, independent of the module-level one', () => {
+  const injected = new Set(['https://injected.example']);
+  assert.strictEqual(originAllowed('https://injected.example', HOST, [], injected), true);
+  assert.strictEqual(originAllowed('https://injected.example', HOST, [], new Set()), false);
 });
