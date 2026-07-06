@@ -142,3 +142,52 @@ test('get(): finds a tombstone by id (so the WS hub can refuse it as exited)', a
   assert.ok(got);
   assert.strictEqual(got.status, 'exited');
 });
+
+// --- needs-input: a hook-set flag overlays 'needs-input' until output/input
+//     moves past it (a web-tier-only Map; the board owns no such notion) ---
+
+// A line whose last output was `idleMs` ago, evaluated against a fixed clock so
+// the flaggedAt vs last-output comparison is deterministic.
+function attnSessions(idleMs, { NOW = 1_000_000 } = {}) {
+  return new BoardSessions({
+    now: () => NOW,
+    rpc: async () => ({ ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs }] }),
+  });
+}
+
+test('flagAttention(): a quiet line (no output since the flag) reports needs-input', async () => {
+  const s = attnSessions(13000); // last output 13s ago (quiet); flag set "now" is later
+  s.flagAttention('1');
+  assert.strictEqual((await s.list())[0].status, 'needs-input', 'needs-input overrides the base idle state');
+});
+
+test('list(): output arriving after the flag clears it (stale flag dropped)', async () => {
+  // Flagged 10s before NOW, but the line's last output was only 1s ago
+  // (idleMs=1000) — output landed AFTER the flag, so the agent moved on.
+  const NOW = 1_000_000;
+  const s = new BoardSessions({
+    now: () => NOW,
+    rpc: async () => ({ ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: 1000 }] }),
+  });
+  s._attention.set('1', NOW - 10_000); // lastOutputAt (NOW-1000) > flaggedAt (NOW-10000)
+  assert.strictEqual((await s.list())[0].status, 'running');
+  assert.strictEqual(s._attention.has('1'), false, 'stale flag is pruned once cleared');
+});
+
+test('clearAttention(): explicit clear (WS input) drops the flag immediately', async () => {
+  const s = attnSessions(13000);
+  s.flagAttention('1');
+  s.clearAttention('1');
+  assert.strictEqual((await s.list())[0].status, 'idle', 'no longer needs-input; 13s idle -> quiet');
+});
+
+test('list(): a flag for a line that has exited is pruned, never resurrected', async () => {
+  const s = new BoardSessions({
+    now: () => 1_000_000,
+    rpc: async () => ({ ok: true, lines: [], ended: [{ id: '1', shell: 'bash', cwd: '/', exitCode: 0, endedAt: 1_000_000, reason: 'exited' }] }),
+  });
+  s.flagAttention('1');
+  const list = await s.list();
+  assert.strictEqual(list[0].status, 'exited', 'needs-input never overrides a tombstone');
+  assert.strictEqual(s._attention.has('1'), false, 'the dead id is pruned from the flag map');
+});

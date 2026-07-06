@@ -1,7 +1,7 @@
 # Push a phone notification when a session needs attention — via Pushover, sidestepping the Web Push stack
 
 **Source:** Remote-notification investigation, 2026-07-06 — validated a tenant-free push channel end-to-end after the Microsoft Teams routes all dead-ended (see Risks).
-**Status:** 💡 Proposed — 2026-07-06. Channel proven; wiring not started.
+**Status:** ✅ Landed — 2026-07-06. Notifier seam (`server/src/notifiers.js`), `POST /api/notify` (fans out to sinks + flags the needs-input card), env config (`AR_PUSHOVER_TOKEN`/`AR_PUSHOVER_USER`), and the Claude Code hook recipe (README). Built together with the `needs-input` attention state — they share the `/api/notify` plumbing.
 **Kind:** Enhancement
 **Modules:** server/api (notifier module + `/api/notify`), Claude Code hooks (external config). **No client/SW work** — that's the point.
 **Severity:** High value — the concrete, unblocked delivery half of `2026-07-02-hook-driven-push-notifications.md`.
@@ -25,7 +25,7 @@ Same core need as the Web Push doc (`2026-07-02-hook-driven-push-notifications.m
 ## Risks / open questions
 
 - **Payload discipline (unchanged from the parent doc):** payloads transit Pushover's servers. Keep them to "session `name` needs attention" — never session output, which can carry PHI/secrets given what runs in these shells.
-- **Line-id bridge (shared problem):** a hook knows its cwd + pid, not the board line id. Cheapest bridge: relay matches on cwd against `list`; more precise: an env var (`AGENT_RELAY_SESSION`) injected when the line is spawned with a `run` command.
+- **Line-id bridge (shared problem):** a hook knows its cwd + pid, not the board line id. Cheapest bridge: relay matches on cwd against `list`; more precise: an env var (`AGENT_RELAY_SESSION`) injected when the line is spawned with a `run` command. **Promoted to its own tracked item — `2026-07-06-hook-session-id-bridge.md`.** As shipped, `/api/notify` accepts `sessionId` but nothing auto-populates it, so the README recipe flags the operator (phone push) without naming a specific card.
 - **Token storage on Windows:** same inert-`mode`-bits caveat as the board secret file (`2026-07-01-secret-file-acl-verification.md`) — the real boundary is the inherited profile ACL.
 - **Pushover limits:** 10,000 messages/month on the free tier per app — a runaway hook loop could burn that; the notifier should be resilient to a non-200 (log, don't crash the caller).
 - **Relationship to the Web Push doc:** this is *not* a replacement — it's the pragmatic now-path that works before the secure-origin stack exists. Web Push stays the eventual PWA-native channel (no third-party app, no per-platform cost). Both hang off the same `/api/notify`. The Teams alternatives are dead in this tenant: Graph app-registration is blocked (user lacks directory rights; the desktop `az` CLI's broad scopes are an over-consented first-party client, not a personal grant), and Power Automate Workflows isn't enabled + the generic HTTP trigger needs the ~$15/mo premium plan.

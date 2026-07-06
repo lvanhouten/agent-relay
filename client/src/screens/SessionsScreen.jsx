@@ -91,16 +91,22 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
 // DTO attention state -> StatusDot color + card label. 'quiet' rather than
 // 'idle'/'done' on purpose: a silent agent may be thinking (LLM latency
 // produces legitimate 30s+ silences) or waiting on a prompt — the label claims
-// only "no output lately". Unknown states (newer server) fall back to a plain
-// offline dot showing the raw status string.
+// only "no output lately". 'needs-input' is the honest exception: it's not
+// heuristic silence-sniffing but a Claude Code Notification hook explicitly
+// reporting the line is blocked on a prompt (server sets it via POST /api/notify;
+// cleared on next input/output). It pulses so it reads across a grid of cards.
+// Unknown states (newer server) fall back to a plain offline dot showing the
+// raw status string.
 const ATTENTION = {
   running: { dot: 'online', label: 'running' },
   idle: { dot: 'idle', label: 'quiet' },
+  'needs-input': { dot: 'attention', label: 'needs input', pulse: true },
 };
 
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const attention = ATTENTION[session.status] ?? { dot: 'offline', label: session.status };
+  const pulse = attention.pulse ?? false;
   return (
     <Card interactive padding="md" onClick={() => onAttach(session)}
       style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -111,7 +117,7 @@ function SessionCard({ session, onAttach, onKill }) {
             fontFamily: 'var(--font-display)', fontWeight: 600,
             fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
           }}>
-            <StatusDot status={attention.dot} size="sm" showLabel={false} />
+            <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={pulse} />
             {session.name}
           </span>
           <span style={{
@@ -135,7 +141,7 @@ function SessionCard({ session, onAttach, onKill }) {
         {/* State word + relative time read as one clause ("quiet · 43s ago") —
             the state is literally derived from that same idle clock server-side. */}
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <StatusDot status={attention.dot} pulse={false} size="sm" label={attention.label} />
+          <StatusDot status={attention.dot} pulse={pulse} size="sm" label={attention.label} />
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
@@ -474,8 +480,14 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
   );
   // The list carries live sessions and recently-ended tombstones in one array
   // (both come from GET /sessions); the tombstones render in their own
-  // collapsed section, and the header count stays live-only.
-  const live = filtered.filter((s) => s.status !== 'exited');
+  // collapsed section, and the header count stays live-only. needs-input cards
+  // float to the top — the whole point of the state is "which session needs me?",
+  // so a blocked session shouldn't hide below a screen of running ones. Stable
+  // otherwise (only needs-input is lifted; the poll order is preserved within
+  // each group).
+  const live = filtered
+    .filter((s) => s.status !== 'exited')
+    .sort((a, b) => (b.status === 'needs-input' ? 1 : 0) - (a.status === 'needs-input' ? 1 : 0));
   const ended = filtered.filter((s) => s.status === 'exited');
   const liveCount = sessions.filter((s) => s.status !== 'exited').length;
 
