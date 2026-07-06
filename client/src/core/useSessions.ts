@@ -23,7 +23,11 @@ export interface Sessions {
 // fence React-specific pathologies (state commits lag events). The guards are
 // refs precisely so they never retrigger effects — do not "clean them up" into
 // state (see _docs/issues/2026-07-02-extract-client-core.md).
-export function useSessions(token?: string): Sessions {
+//
+// No token parameter: the browser path is cookie-only post-boot (ar_auth
+// rides every same-origin fetch by default), so there's nothing to thread
+// through here — see client-boot-flow brief.
+export function useSessions(): Sessions {
   const [sessions, setSessions] = React.useState<Session[]>([]);
 
   // Poll guards (pure logic in sessionGuards.ts, held in refs): a sequence
@@ -37,11 +41,11 @@ export function useSessions(token?: string): Sessions {
   const load = React.useCallback(async () => {
     const seq = pollSeq.current.begin();
     try {
-      const list = await listSessions(token);
+      const list = await listSessions();
       if (!pollSeq.current.tryApply(seq)) return; // stale — a newer load() already applied
       setSessions(filterKilled(list, killed.current));
     } catch { /* offline — keep stale list */ }
-  }, [token]);
+  }, []);
 
   React.useEffect(() => {
     load();
@@ -60,12 +64,12 @@ export function useSessions(token?: string): Sessions {
     creatingRef.current = true;
     setCreating(true);
     try {
-      return await createSession(opts, token);
+      return await createSession(opts);
     } finally {
       setCreating(false);
       creatingRef.current = false;
     }
-  }, [token]);
+  }, []);
 
   // Per-id re-entrancy guard (W2): a fast double-click on the same Terminate
   // button before React commits any state fires two concurrent killSession
@@ -82,14 +86,14 @@ export function useSessions(token?: string): Sessions {
     killed.current.add(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
     try {
-      await killSession(id, token);
+      await killSession(id);
     } finally {
       // Reconcile against a fresh list, then stop suppressing the id.
       await load();
       killed.current.delete(id);
       killingRef.current.delete(id);
     }
-  }, [token, load]);
+  }, [load]);
 
   return { sessions, load, create, kill, creating };
 }

@@ -318,10 +318,10 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   );
 }
 
-export default function SessionsScreen({ host, token, theme, onToggleTheme, onAttach }) {
+export default function SessionsScreen({ host, theme, onToggleTheme, onAttach }) {
   // Data layer — list + poll + create/kill with their concurrency guards —
   // lives in core/useSessions. This screen owns only presentation state.
-  const { sessions, create, kill, creating } = useSessions(token);
+  const { sessions, create, kill, creating } = useSessions();
   const [query, setQuery] = React.useState('');
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');

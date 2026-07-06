@@ -8,7 +8,7 @@ import { TerminalView } from '../core/TerminalView.tsx';
 
 // Chrome around the terminal: header, footer, status dot. The terminal itself —
 // xterm, the WS lifecycle, the mount dance — lives in core/TerminalView.
-export default function TerminalScreen({ session, host, token, theme, onToggleTheme, onBack }) {
+export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack }) {
   const viewRef = React.useRef(null);
   const [connStatus, setConnStatus] = React.useState('connecting');
 
@@ -63,7 +63,6 @@ export default function TerminalScreen({ session, host, token, theme, onToggleTh
       <TerminalView
         ref={viewRef}
         sessionId={session.id}
-        token={token}
         theme={theme}
         onDetach={onBack}
         onStatusChange={setConnStatus}

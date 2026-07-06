@@ -24,6 +24,10 @@ export function useSessionWS(
   token: string | undefined,
   { onData, onExit, onReady }: SessionWSHandlers,
 ): SessionWS {
+  // token is optional: the browser path is cookie-only post-boot (ar_auth
+  // rides the upgrade), so callers pass undefined and the qs below is empty.
+  // Non-browser callers of the underlying WS endpoint may still use ?token=
+  // server-side — not this hook's concern.
   const [connStatus, setConnStatus] = React.useState<ConnStatus>('connecting');
   const wsRef = React.useRef<WebSocket | null>(null);
 

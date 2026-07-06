@@ -8,7 +8,6 @@ import type { ConnStatus, TerminalViewMode } from './types.ts';
 
 export interface TerminalViewProps {
   sessionId: string;
-  token?: string;
   theme: string;
   // 'interactive' (the default, and the only implemented mode): fit xterm to
   // the container and push the size to the board. 'spectator' (adopt the
@@ -32,7 +31,7 @@ export interface TerminalViewHandle {
 // session WebSocket. Chrome — headers, footers, back buttons — stays in the
 // consuming screen.
 export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewProps>(
-  function TerminalView({ sessionId, token, theme, onDetach, onStatusChange }, handleRef) {
+  function TerminalView({ sessionId, theme, onDetach, onStatusChange }, handleRef) {
     const containerRef = React.useRef<HTMLDivElement | null>(null);
     const termRef = React.useRef<Terminal | null>(null);
 
@@ -48,7 +47,7 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     const onDetachRef = React.useRef(onDetach);
     React.useEffect(() => { onDetachRef.current = onDetach; }, [onDetach]);
 
-    const { connStatus, send, resize } = useSessionWS(sessionId, token, {
+    const { connStatus, send, resize } = useSessionWS(sessionId, undefined, {
       onData: React.useCallback((data: string) => onDataRef.current?.(data), []),
       onExit: React.useCallback((code: number | null) => onExitRef.current?.(code), []),
       // On (re)connect the socket is finally OPEN, so push the fitted size to the

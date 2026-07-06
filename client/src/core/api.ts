@@ -45,3 +45,16 @@ export async function killSession(id: string, token?: string): Promise<void> {
   });
   if (!res.ok && res.status !== 404) throw new Error('failed to kill session');
 }
+
+// Exchanges a bearer token for the ar_auth cookie (POST /api/login — no body,
+// bearer required). 204 means the cookie was granted and the browser can drop
+// the token from memory; anything else (401 on a rotated/stale token) means
+// it wasn't. Never throws on a non-2xx response — the caller (boot flow /
+// manual login) only cares about the boolean.
+export async function login(token: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/login`, {
+    method: 'POST',
+    headers: headers(token),
+  });
+  return res.status === 204;
+}
