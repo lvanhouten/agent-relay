@@ -10,11 +10,13 @@ const { safeEqual } = require('./safeCompare');
 // stable token instead; AR_NO_AUTH=1 is the explicit, dev-only opt-out.
 // Pure so the three env shapes are unit-testable without subprocess env games.
 //
-// Retained as the non-persisted policy reference (and its own pinned test
-// surface): TOKEN/TOKEN_GENERATED below no longer derive from this — they come
-// from credentials.js's loadCredentials, which persists the generated case
-// across restarts (ADR 0001 — an unstable token reads as a broken app) instead
-// of minting a fresh one every run.
+// NOT authoritative and NOT on any production path — referenced only by
+// auth.test.js. Retained deliberately as the non-persisted policy reference (and
+// its own pinned test surface): TOKEN/TOKEN_GENERATED below no longer derive from
+// this — they come from credentials.js's loadCredentials, which persists the
+// generated case across restarts (ADR 0001 — an unstable token reads as a broken
+// app) instead of minting a fresh one every run. Read loadCredentials, not this,
+// for the live token model.
 function resolveToken(env) {
   if (env.AR_NO_AUTH === '1') return { token: null, generated: false };
   if (env.AR_TOKEN) return { token: env.AR_TOKEN, generated: false };

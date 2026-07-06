@@ -41,7 +41,7 @@ The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(toke
 
 **N1. Dead `ENOENT` sub-expression in the tailscale probe** — `server/src/tunnel.js:108` · confidence 85
 
-**Status:** ✅ Resolved in <N1_SHA> — see below.
+**Status:** ✅ Resolved in 62f7c6a — see below.
 **Resolution:** Accepted as framed (A). The `error` handler now reads `done({ missing: true })`, and the comment says plainly that any spawn error is uniformly "missing" (no discrimination) — removing the `|| true` that made the `ENOENT` check dead and misleading. The unused `err` param was dropped. This is behavior-neutral (`X || true` was already always `true`), so there is no red→green to add; closure is the existing ENOENT test — `tailscale binary missing (ENOENT) → down naming install, no serve spawn` (`tunnel.test.js:170`) — which drives this exact `error` path and stays green, plus the change is provably behavior-identical. Tunnel tests 13/13 green.
 
 ---
@@ -49,6 +49,12 @@ The token-bearing fragment URL `https://${host}/#token=${encodeURIComponent(toke
 `done({ missing: (err && err.code === 'ENOENT') || true })` — `X || true` is unconditionally `true`, so the `ENOENT` check is dead code that reads as if it discriminates the not-installed case from other spawn errors. Behavior matches intent ("any spawn error ⇒ missing", per the comment), so this is cosmetic, but it actively misleads a maintainer into thinking `missing` can be `false` here. Fix: `done({ missing: true })`.
 
 **N2. `resolveToken` is now vestigial** — `server/src/auth.js:17` · confidence 55
+
+**Status:** ✋ Rejected (with a clarifying comment) — see below.
+**Resolution:** Rejected as framed (E) on the "delete it" prong, applied the "add a pointer" prong. The cited code is correct: `resolveToken` works and is *intentionally* retained as a non-persisted policy reference + pinned test surface — a documented author decision (the pre-existing block comment plus ADR 0001, which makes the persisted `loadCredentials` token the one live model). Evidence it's non-authoritative and safe: `grep` across the repo shows `resolveToken` is referenced only by `auth.test.js` (never `index.js` or any production module); production `TOKEN`/`TOKEN_GENERATED` derive from `loadCredentials` (`auth.js:23-27`). Deleting the function and its tests would override that documented decision, so I did not — instead I strengthened the comment with an explicit, unmissable first line ("NOT authoritative and NOT on any production path — referenced only by auth.test.js … Read loadCredentials, not this, for the live token model"), closing the "misleads a maintainer reading top-down" concern the reviewer raised. Comment-only, behavior-neutral: no test change; the existing `resolveToken` policy tests stay green.
+
+---
+
 `TOKEN`/`TOKEN_GENERATED` come from `loadCredentials` (`auth.js:23-27`); `resolveToken` is no longer in any production path (confirmed: only referenced by tests) and re-implements token generation (`crypto.randomBytes(24).toString('base64url')`) that now also lives in `credentials.js:22` `generateToken`. The comment retains it as a "non-persisted policy reference" and test surface, but a maintainer reading `auth.js` top-down will reasonably assume `resolveToken` is authoritative and be wrong. Fix: either delete it (and its test) now that persistence is the one token model, or add a one-line pointer that it is intentionally unused by production.
 
 **N3. A second `tunnel.start()` orphans the running `tailscale serve` child** — `server/src/tunnel.js:182` · confidence 45
