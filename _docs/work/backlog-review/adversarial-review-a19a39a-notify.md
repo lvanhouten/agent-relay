@@ -16,6 +16,7 @@ Mode: fan-out — Saboteur, Maintainer, and Security Auditor ran as isolated age
 **W2. Copy-pasted field-cap validation loop between `validateSpawnBody` and `validateNotifyBody`** — `server/src/api.js:13-19, 31-37` · confidence 80 · Maintainer
 Byte-for-byte the same type/length loop over a different cap table, in the same file. A future fix to one (trim-before-check, non-finite rejection) has no structural reason to land in the other; a third validated body (`/api/templates` phase 2 is already on the backlog) makes it three drifting copies.
 **Fix:** extract `validateFieldCaps(body, caps)`; layer each endpoint's extra rules (title-or-body, priority range, needsInput boolean) on top.
+**Resolution (fixed):** extracted exactly that — one `validateFieldCaps(body, caps)` loop; `validateSpawnBody` delegates with `FIELD_MAX`, `validateNotifyBody` layers its extra rules on the `NOTIFY_MAX` result. Pure refactor; existing 400-path tests cover both callers.
 
 **W3. `sessions.clearAttention?.(id)` optional-chains around an incomplete test double, not a real nullability** — `server/src/ws.js:85` · confidence 70 · Maintainer
 Production `sessions` is always a `BoardSessions` (which always has `clearAttention`); the `?.` exists only because `ws.test.js`'s `makeSessions()` fixture omits the method. Cost: if `clearAttention` is ever renamed or a future sessions implementation forgets it, this line silently no-ops and the needs-input flag never clears on WS input — a regression with no error to grep for.
@@ -59,7 +60,7 @@ The seam design (pluggable notifiers, dumb endpoint, web-tier flag) is faithful 
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| W2 | WARNING | 80 | Copy-pasted validation loop (spawn vs notify) | (open) |
+| W2 | WARNING | 80 | Copy-pasted validation loop (spawn vs notify) | fixed |
 | W1 | WARNING | 75 | Notifier failures never logged — silent-forever failure | fixed |
 | W3 | WARNING | 70 | `clearAttention?.()` masks a contract, tolerates stale fixture | (open) |
 | W4 | WARNING | 55 | Bearer token in curl argv (README recipe) | (open) |

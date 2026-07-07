@@ -8,16 +8,23 @@ const { notifyAll } = require('./notifiers');
 // reach a live shell.
 const FIELD_MAX = { name: 200, cwd: 4096, shell: 500, command: 8192 };
 
-// Every field is optional, but any present one must be a string within its cap.
-// Returns an error string, or null if valid.
-function validateSpawnBody(body) {
-  for (const [field, max] of Object.entries(FIELD_MAX)) {
+// Shared type+length check over a cap table. Every field is optional, but any
+// present one must be a string within its cap. Returns an error string, or null
+// if valid. One loop for every validated body (spawn, notify, and /api/templates
+// when phase 2 lands) so a fix to the check can't land in one copy and not the
+// other; each endpoint layers its extra rules on top.
+function validateFieldCaps(body, caps) {
+  for (const [field, max] of Object.entries(caps)) {
     const v = body[field];
     if (v === undefined || v === null) continue;
     if (typeof v !== 'string') return `${field} must be a string`;
     if (v.length > max) return `${field} exceeds the ${max}-character limit`;
   }
   return null;
+}
+
+function validateSpawnBody(body) {
+  return validateFieldCaps(body, FIELD_MAX);
 }
 
 // Field caps for POST /notify. title/body transit a third-party push service, so
@@ -28,12 +35,8 @@ const NOTIFY_MAX = { sessionId: 200, cwd: 4096, title: 200, body: 1000, url: 204
 // body must be present (an empty notification is pointless); priority, if given,
 // must be a Pushover-valid integer in [-2, 2]; needsInput, if given, a boolean.
 function validateNotifyBody(body) {
-  for (const [field, max] of Object.entries(NOTIFY_MAX)) {
-    const v = body[field];
-    if (v === undefined || v === null) continue;
-    if (typeof v !== 'string') return `${field} must be a string`;
-    if (v.length > max) return `${field} exceeds the ${max}-character limit`;
-  }
+  const capError = validateFieldCaps(body, NOTIFY_MAX);
+  if (capError) return capError;
   if (!body.title && !body.body) return 'title or body is required';
   if (body.priority !== undefined && body.priority !== null) {
     if (typeof body.priority !== 'number' || !Number.isInteger(body.priority) || body.priority < -2 || body.priority > 2) {
