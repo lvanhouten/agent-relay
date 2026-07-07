@@ -26,6 +26,7 @@ Production `sessions` is always a `BoardSessions` (which always has `clearAttent
 **W4. Hook recipe puts the bearer token in curl argv** — `README.md` (hook recipe) · confidence 55 · Security
 `-H "Authorization: Bearer $AR_TOKEN"` expands the token into the process command line, visible to any local principal with process-listing rights (Task Manager's command-line column, `Get-CimInstance Win32_Process`, EDR telemetry — relevant on a SOC2/HIPAA-context workstation). A different exposure channel than the env var itself: argv is routinely sampled by monitoring tooling. New surface introduced by this diff.
 **Fix:** feed the header via `curl --config -` on stdin or a tightened-ACL `-K` file; at minimum add the caveat beside the recipe.
+**Resolution (fixed):** the recipe now pipes `printf 'header = "Authorization: Bearer %s"' "$AR_TOKEN"` into `curl -K -` — printf is a shell builtin (no process, no argv), so the token never appears in any command line; prose beside the recipe explains why. Verified live against the running relay: header arrives intact (401 for a fake token, as expected).
 
 **W5. `/api/notify`'s `url` field is forwarded to Pushover unvalidated — an off-device phishing vector that exceeds the accepted XSS ceiling** — `server/src/api.js` (`NOTIFY_MAX.url` caps length only), `server/src/notifiers.js` (url passthrough) · confidence 55 · Security
 ADR-0001 accepts "XSS can drive the API" because the blast radius was local shell spawn — something the token-holder could already do. But `url` renders as a tap-through deep link inside a *trusted* push notification on the operator's phone, potentially days later, away from the compromised browser context. An XSS-driven caller can deliver a convincing "Claude needs input" notification whose tap lands on a credential-harvesting page — a capability `POST /sessions` cannot reach, targeting the human rather than the machine.
@@ -64,7 +65,7 @@ The seam design (pluggable notifiers, dumb endpoint, web-tier flag) is faithful 
 | W2 | WARNING | 80 | Copy-pasted validation loop (spawn vs notify) | fixed |
 | W1 | WARNING | 75 | Notifier failures never logged — silent-forever failure | fixed |
 | W3 | WARNING | 70 | `clearAttention?.()` masks a contract, tolerates stale fixture | fixed |
-| W4 | WARNING | 55 | Bearer token in curl argv (README recipe) | (open) |
+| W4 | WARNING | 55 | Bearer token in curl argv (README recipe) | fixed |
 | W5 | WARNING | 55 | Unvalidated `url` → trusted-channel phishing beyond XSS ceiling | fixed |
 | N4 | NOTE | 65 | Tests assert private `_attention` representation | (open) |
 | N1 | NOTE | 55 | `_attention` prune only in `list()`; id-reuse edge | (open) |

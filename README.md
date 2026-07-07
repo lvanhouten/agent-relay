@@ -178,7 +178,7 @@ lines spawned outside the relay:
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -X POST http://localhost:3017/api/notify -H \"Authorization: Bearer $AR_TOKEN\" -H 'Content-Type: application/json' -d \"{\\\"title\\\":\\\"Claude needs input\\\",\\\"body\\\":\\\"A session is waiting on you\\\",\\\"needsInput\\\":true,\\\"priority\\\":1,\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
+            "command": "printf 'header = \"Authorization: Bearer %s\"' \"$AR_TOKEN\" | curl -s -X POST http://localhost:3017/api/notify -K - -H 'Content-Type: application/json' -d \"{\\\"title\\\":\\\"Claude needs input\\\",\\\"body\\\":\\\"A session is waiting on you\\\",\\\"needsInput\\\":true,\\\"priority\\\":1,\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
           }
         ]
       }
@@ -186,6 +186,12 @@ lines spawned outside the relay:
   }
 }
 ```
+
+The auth header is fed to curl as a config file on stdin (`-K -`, written by the
+shell-builtin `printf`) rather than a `-H` argument: an argument would put the
+token in curl's command line, which any local process-listing (Task Manager's
+command-line column, `Get-CimInstance Win32_Process`, EDR telemetry) can read.
+Stdin between a builtin and curl never touches a visible argv.
 
 `sessionId` wins when present; otherwise the relay matches `cwd` against its live
 lines (on a same-directory tie, the most recently active line is flagged). A
