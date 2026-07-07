@@ -29,7 +29,9 @@ const sessions = new BoardSessions();
 // Push-notification sinks (Pushover today). Absent config -> empty list ->
 // POST /api/notify still flags the card but fans out to nobody (feature off).
 const notifiers = resolveNotifiers(process.env);
-app.use('/api', authMiddleware, createAPI(sessions, notifiers));
+// AR_NOTIFY_URL_ORIGIN: the one origin /api/notify's `url` deep link may point
+// at (unset -> the field is rejected; see validateNotifyUrl in api.js).
+app.use('/api', authMiddleware, createAPI(sessions, notifiers, { notifyUrlOrigin: process.env.AR_NOTIFY_URL_ORIGIN }));
 
 // Tunnel supervisor — created unconditionally so the pairing router always has a
 // stable status() getter. With AR_TUNNEL unset it sits in the 'disabled' state and

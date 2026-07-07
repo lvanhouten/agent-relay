@@ -28,6 +28,7 @@ Production `sessions` is always a `BoardSessions` (which always has `clearAttent
 **W5. `/api/notify`'s `url` field is forwarded to Pushover unvalidated — an off-device phishing vector that exceeds the accepted XSS ceiling** — `server/src/api.js` (`NOTIFY_MAX.url` caps length only), `server/src/notifiers.js` (url passthrough) · confidence 55 · Security
 ADR-0001 accepts "XSS can drive the API" because the blast radius was local shell spawn — something the token-holder could already do. But `url` renders as a tap-through deep link inside a *trusted* push notification on the operator's phone, potentially days later, away from the compromised browser context. An XSS-driven caller can deliver a convincing "Claude needs input" notification whose tap lands on a credential-harvesting page — a capability `POST /sessions` cannot reach, targeting the human rather than the machine.
 **Fix:** require `https://` and restrict `url` to the relay's own origin (deep-link back into the relay), or drop the passthrough until scoped tokens land.
+**Resolution (fixed):** default-deny with explicit opt-in — `url` is now rejected (400) unless `AR_NOTIFY_URL_ORIGIN` names the one allowed origin (the server can't know its own tunnel hostname, so the operator states it). Comparison is by parsed `URL.origin`, never a string prefix, so `https://relay.example.evil.com` can't ride `https://relay.example`; scheme is part of the origin, so an http downgrade is also rejected. Tests cover no-config deny, allowed-origin pass-through, lookalike host, downgrade, and relative URL; mutation-proven. README updated (API table + Notifications section).
 
 ### Notes
 
@@ -62,7 +63,7 @@ The seam design (pluggable notifiers, dumb endpoint, web-tier flag) is faithful 
 | W1 | WARNING | 75 | Notifier failures never logged — silent-forever failure | fixed |
 | W3 | WARNING | 70 | `clearAttention?.()` masks a contract, tolerates stale fixture | (open) |
 | W4 | WARNING | 55 | Bearer token in curl argv (README recipe) | (open) |
-| W5 | WARNING | 55 | Unvalidated `url` → trusted-channel phishing beyond XSS ceiling | (open) |
+| W5 | WARNING | 55 | Unvalidated `url` → trusted-channel phishing beyond XSS ceiling | fixed |
 | N4 | NOTE | 65 | Tests assert private `_attention` representation | (open) |
 | N1 | NOTE | 55 | `_attention` prune only in `list()`; id-reuse edge | (open) |
 | N3 | NOTE | 50 | Payload discipline is prose-only | (open) |

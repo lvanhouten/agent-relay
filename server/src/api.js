@@ -44,11 +44,30 @@ function validateNotifyBody(body) {
   return null;
 }
 
+// `url` renders as a tap-through deep link inside a TRUSTED push notification
+// on the operator's phone — a phishing surface nothing else on this API has
+// (ADR-0001's accepted XSS ceiling covers local shell spawn, not off-device
+// credential harvesting from a notification tapped days later). Default-deny:
+// the field is rejected unless AR_NOTIFY_URL_ORIGIN names the one allowed
+// origin (set it to the origin you load the relay from). Compared as parsed
+// origins, not a string prefix, so https://relay.example.evil.com can't ride
+// a prefix match on https://relay.example.
+function validateNotifyUrl(url, allowedOrigin) {
+  if (url === undefined || url === null) return null;
+  if (!allowedOrigin) return 'url is disabled (set AR_NOTIFY_URL_ORIGIN to enable deep links)';
+  let allowed;
+  try { allowed = new URL(allowedOrigin).origin; } catch { return 'url is disabled (AR_NOTIFY_URL_ORIGIN is not a valid origin)'; }
+  let parsed;
+  try { parsed = new URL(url); } catch { return 'url must be an absolute URL'; }
+  if (parsed.origin !== allowed) return `url must be on ${allowed}`;
+  return null;
+}
+
 // REST over the board-backed session store. Handlers are async because every
 // operation is an RPC to the board kernel; errors propagate to Express via next().
 // `notifiers` is the resolved push-sink list (notifiers.js); an empty list makes
 // POST /notify a no-op fan-out (feature off) while still flagging the card.
-function createAPI(sessions, notifiers = []) {
+function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
   const r = Router();
 
   // A board-unreachable failure is a transient 503, not a 500 — the board is a
@@ -103,7 +122,7 @@ function createAPI(sessions, notifiers = []) {
     try {
       if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
       const body = req.body ?? {};
-      const invalid = validateNotifyBody(body);
+      const invalid = validateNotifyBody(body) ?? validateNotifyUrl(body.url, notifyUrlOrigin);
       if (invalid) return res.status(400).json({ error: invalid });
       if (body.needsInput) {
         if (body.sessionId) sessions.flagAttention(body.sessionId);

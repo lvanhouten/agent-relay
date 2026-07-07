@@ -111,7 +111,8 @@ POST   /api/notify             Push a notification + optionally flag a session
                                body { title, body, url?, priority?, sessionId?, cwd?, needsInput? }
                                fans out to configured push sinks (Pushover);
                                needsInput + sessionId (or cwd) lights that card's
-                               "needs input" state
+                               "needs input" state; url requires AR_NOTIFY_URL_ORIGIN
+                               (rejected otherwise — see Notifications)
 
 WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
@@ -153,7 +154,11 @@ AR_PUSHOVER_USER=<your Pushover user key>
 > secrets or PHI given what runs in these shells.
 
 `priority` maps to Pushover's: `1` bypasses quiet hours, `2` repeats until you
-acknowledge (retry/expire are supplied automatically). `url` deep-links on tap.
+acknowledge (retry/expire are supplied automatically). `url` deep-links on tap —
+but it rides a *trusted* notification, so it's **off by default**: set
+`AR_NOTIFY_URL_ORIGIN` to the one origin links may point at (the origin you
+load the relay from, e.g. your tailnet URL) and any `url` on another origin is
+rejected. Unset, the field is rejected outright.
 
 ### Claude Code hook recipe
 
