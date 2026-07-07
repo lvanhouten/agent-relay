@@ -9,7 +9,7 @@ import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
 import { attentionFor } from '../core/attention.ts';
-import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, fallbackLabel } from '../core/templates.ts';
+import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
 import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode, Bookmark, BookmarkPlus } from 'lucide-react';
@@ -226,10 +226,10 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const saveAsTemplate = () => {
     // The session name is the label — the operator already types a meaningful
     // one ("claude · agent-relay"); upsert dedupes so a re-save overwrites.
-    // Blank name -> a content-derived label (core/templates.ts fallbackLabel),
-    // so two different blank-name templates don't collide and silently
-    // overwrite each other.
-    const label = name.trim() || fallbackLabel(cwd, command);
+    // Blank name -> a content-derived label (core/templates.ts), widened with
+    // path segments if it would clash with a different directory's template —
+    // only a same-cwd re-save may upsert over an existing blank-name entry.
+    const label = name.trim() || uniqueFallbackLabel(templates, cwd, command);
     const next = upsertTemplate(templates, {
       label, name: name.trim() || 'untitled', cwd, command: command.trim(),
     });

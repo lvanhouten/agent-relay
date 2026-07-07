@@ -79,6 +79,27 @@ export function fallbackLabel(cwd: string, command: string): string {
   return `${cmd} · ${dir}`;
 }
 
+// fallbackLabel still collides when two DIFFERENT directories share a basename
+// and leading command word ('/work/api' vs '/home/api' → both 'claude · api'),
+// and an upsert there silently replaces a genuinely different template. Given
+// the existing list, widen the label with the parent segment on such a clash
+// (then the full cwd if even that collides); a clash with the SAME cwd keeps
+// the base label — that's the intended re-save collapse.
+export function uniqueFallbackLabel(list: SpawnTemplate[], cwd: string, command: string): string {
+  const cmd = command.trim().split(/\s+/)[0] || 'shell';
+  const segs = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).filter((s) => s);
+  const candidates = [
+    fallbackLabel(cwd, command),
+    `${cmd} · ${segs.slice(-2).join('/')}`,
+    `${cmd} · ${cwd}`,
+  ];
+  for (const label of candidates) {
+    const clash = list.find((t) => t.label === label);
+    if (!clash || clash.cwd === cwd) return label;
+  }
+  return candidates[candidates.length - 1];
+}
+
 // --- localStorage wrappers (browser I/O over the pure ops above) ---
 
 export function loadTemplates(): SpawnTemplate[] {
