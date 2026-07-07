@@ -66,3 +66,52 @@ test('createLine injects AGENT_RELAY_SESSION=<line id> into the spawned process 
 
   await rpc({ cmd: 'shutdown' });
 });
+
+test('the daemon strips inherited Claude-session markers from every Line, keeping preferences', async t => {
+  // Reproduces the incident (_docs/issues/2026-07-07-board-scrub-claude-session-env.md):
+  // a board launched from a process that carries the Claude-session identity markers
+  // (i.e. from inside a Claude Code session) must NOT pass them to its Lines, or a
+  // `claude` in a Line treats itself as a nested child and writes no transcript.
+  // We seed the markers on THIS process's env before the board child spawns, so the
+  // reproduction is deterministic whether or not the test itself runs in a session.
+  const outFile = path.join(os.tmpdir(), `ar-scrubprobe-${process.pid}.txt`);
+  try { fs.unlinkSync(outFile); } catch { /* fresh run */ }
+  process.env.AR_SCRUBPROBE_OUT = outFile;
+
+  const MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_EXECPATH'];
+  for (const k of MARKERS) process.env[k] = `seed-${k}`;
+  process.env.CLAUDE_EFFORT = 'seed-effort';   // a preference: must survive the scrub
+
+  const child = spawn(process.execPath, [path.join(__dirname, 'board.js')], {
+    stdio: 'ignore',
+    env: process.env,   // board inherits the markers, exactly as it would in a session
+  });
+  t.after(() => {
+    try { child.kill(); } catch { /* already exited via shutdown */ }
+    try { fs.unlinkSync(lib.secretPath()); } catch { /* best effort */ }
+    try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+    delete process.env.AR_SCRUBPROBE_OUT;
+    for (const k of MARKERS) delete process.env[k];
+    delete process.env.CLAUDE_EFFORT;
+  });
+
+  // The probe dumps each var (null when absent) as JSON, run directly as the line's
+  // process so it reads the exact env createLine handed the pty.
+  const probe = 'const k=["CLAUDECODE","CLAUDE_CODE_CHILD_SESSION","CLAUDE_CODE_SESSION_ID",'
+    + '"CLAUDE_CODE_ENTRYPOINT","CLAUDE_CODE_EXECPATH","CLAUDE_EFFORT"];'
+    + 'const o={};for(const x of k)o[x]=x in process.env?process.env[x]:null;'
+    + 'require("fs").writeFileSync(process.env.AR_SCRUBPROBE_OUT,JSON.stringify(o))';
+  const r = await rpc({ cmd: 'new', open: false, name: 'scrubprobe', shell: process.execPath, args: ['-e', probe] });
+  assert.strictEqual(r.ok, true, 'board spawned the probe line');
+
+  const written = await pollFor(() => (fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : null));
+  assert.ok(written != null, 'the probe process wrote its env out');
+  const env = JSON.parse(written);
+  for (const k of MARKERS) {
+    assert.strictEqual(env[k], null, `${k} was scrubbed before the Line was spawned`);
+  }
+  assert.strictEqual(env.CLAUDE_EFFORT, 'seed-effort', 'a deliberate preference survives the scrub (not a CLAUDE_* glob)');
+
+  await rpc({ cmd: 'shutdown' });
+});
