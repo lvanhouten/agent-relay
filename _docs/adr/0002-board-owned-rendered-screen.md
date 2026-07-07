@@ -33,9 +33,9 @@ Two placements were weighed:
   of the scrollback window, rendering a stale or half-screen.
 - **Board-side persistent emulator** — the board owns bytes, size, and
   lifecycle, so it also owns the screen. Cheap per read (dump the current grid),
-  and no truncation risk (fed incrementally from line birth). Its only real
-  cost is deploy friction: shipping a board change means restarting the daemon,
-  which ends every live line.
+  and truncation-free once the emulator exists (fed incrementally thereafter).
+  Its only real cost is deploy friction: shipping a board change means
+  restarting the daemon, which ends every live line.
 
 ## Decision
 
@@ -47,7 +47,12 @@ ask the board.
 - The emulator is **lazy-initialized** on the first screen read of a line:
   constructed at the line's current PTY size, seeded by replaying the existing
   `s.buf`, then fed live in `p.onData` and resized by the existing resize path.
-  Lines nobody screen-reads allocate nothing.
+  Lines nobody screen-reads allocate nothing. The seeding means the **first**
+  read of a line that ran unread carries a bounded version of the
+  consumer-side truncation exposure — the current frame must sit within the
+  2000-chunk scrollback window; every read after init is exact. This is
+  acceptable (a repainting TUI's current frame is far inside that window) and is
+  a spike validation point, not an eliminated risk.
 - Emulator scrollback is 0 (only the live grid matters); the instance is
   disposed on `p.onExit`. Reading the screen of an exited line is an error
   (mirrors `read_output`'s EREADCLOSED / the gone data pipe) — a dead process
@@ -60,8 +65,9 @@ this placement and tips it decisively over the consumer-side alternative.
 ## Consequences
 
 - Screen state lives in the daemon that already owns the stream and the size, so
-  the render is always correct and cheap; the truncation risk of the
-  consumer-side approach is eliminated by construction.
+  the render is correct and cheap; the consumer-side truncation risk is retired
+  for every read after init, and reduced to a bounded, spike-validated exposure
+  on the first read (the seed-from-scrollback step above).
 - The board process gains a runtime dependency (`@xterm/headless`) and a small,
   bounded amount of memory per *screen-read* line. Untouched lines pay nothing.
 - Shipping this — and any later change to it — requires a board restart, which
