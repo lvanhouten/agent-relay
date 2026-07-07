@@ -66,12 +66,50 @@ export function removeTemplate(list: SpawnTemplate[], label: string): SpawnTempl
   return list.filter((t) => t.label !== label);
 }
 
+// Label fallback when the session-name field is blank: derive it from what the
+// template actually does ("claude · agent-relay") instead of a literal
+// 'template' — under which every blank-name save collided and silently
+// overwrote the previous one. Content-derived labels make genuinely different
+// templates distinct; two saves that DO produce the same label (same leading
+// command word, same directory name) still upsert, which is the intended
+// same-template re-save semantics.
+export function fallbackLabel(cwd: string, command: string): string {
+  const dir = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd.trim() || '~';
+  const cmd = command.trim().split(/\s+/)[0] || 'shell';
+  return `${cmd} · ${dir}`;
+}
+
+// fallbackLabel still collides when two DIFFERENT directories share a basename
+// and leading command word ('/work/api' vs '/home/api' → both 'claude · api'),
+// and an upsert there silently replaces a genuinely different template. Given
+// the existing list, widen the label with the parent segment on such a clash
+// (then the full cwd if even that collides); a clash with the SAME cwd keeps
+// the base label — that's the intended re-save collapse.
+export function uniqueFallbackLabel(list: SpawnTemplate[], cwd: string, command: string): string {
+  const cmd = command.trim().split(/\s+/)[0] || 'shell';
+  const segs = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).filter((s) => s);
+  const candidates = [
+    fallbackLabel(cwd, command),
+    `${cmd} · ${segs.slice(-2).join('/')}`,
+    `${cmd} · ${cwd}`,
+  ];
+  for (const label of candidates) {
+    const clash = list.find((t) => t.label === label);
+    if (!clash || clash.cwd === cwd) return label;
+  }
+  return candidates[candidates.length - 1];
+}
+
 // --- localStorage wrappers (browser I/O over the pure ops above) ---
 
 export function loadTemplates(): SpawnTemplate[] {
   try { return parseTemplates(localStorage.getItem(KEY)); } catch { return []; }
 }
 
-export function saveTemplates(list: SpawnTemplate[]): void {
-  try { localStorage.setItem(KEY, serializeTemplates(list)); } catch { /* quota/private-mode — non-fatal */ }
+// Returns whether the write actually persisted. Quota/private-mode failures
+// are non-fatal, but the caller must know: showing "Saved" for a template
+// that's gone on reload is a lie the UI otherwise has no way to catch.
+export function saveTemplates(list: SpawnTemplate[]): boolean {
+  try { localStorage.setItem(KEY, serializeTemplates(list)); return true; }
+  catch { return false; }
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import {
-  parseTemplates, serializeTemplates, upsertTemplate, removeTemplate,
+  parseTemplates, serializeTemplates, upsertTemplate, removeTemplate, fallbackLabel, uniqueFallbackLabel,
 } from './templates.ts';
 import type { SpawnTemplate } from './templates.ts';
 
@@ -67,4 +67,43 @@ test('removeTemplate: drops the matching label only', () => {
 test('serialize -> parse round-trips a valid list', () => {
   const list = [tpl('a'), tpl('b', { command: '' })];
   assert.deepStrictEqual(parseTemplates(serializeTemplates(list)), list);
+});
+
+test('fallbackLabel: derived from command word + cwd leaf, so blank-name saves differ by content', () => {
+  assert.strictEqual(fallbackLabel('C:\\Users\\x\\dev\\agent-relay', 'claude --model opus'), 'claude · agent-relay');
+  assert.strictEqual(fallbackLabel('/repo/sub/', 'npm run dev'), 'npm · sub');
+  // Two blank-name saves of DIFFERENT templates must not collide on one label
+  // (the old literal 'template' fallback silently overwrote the first).
+  assert.notStrictEqual(
+    fallbackLabel('/repo/api', 'claude'),
+    fallbackLabel('/repo/web', 'npm run dev'),
+  );
+});
+
+test('fallbackLabel: blank command and bare cwd degrade to shell · ~', () => {
+  assert.strictEqual(fallbackLabel('~/', ''), 'shell · ~');
+});
+
+test('uniqueFallbackLabel: no clash -> the base label', () => {
+  assert.strictEqual(uniqueFallbackLabel([], '/work/api', 'claude'), 'claude · api');
+});
+
+test('uniqueFallbackLabel: same-cwd clash keeps the base label (re-save upsert)', () => {
+  const list = [tpl('claude · api', { cwd: '/work/api', command: 'claude' })];
+  assert.strictEqual(uniqueFallbackLabel(list, '/work/api', 'claude --model opus'), 'claude · api');
+});
+
+test('uniqueFallbackLabel: different-cwd clash widens with the parent segment', () => {
+  // '/work/api' and '/home/api' share basename + command word — the second
+  // blank-name save must NOT upsert over the first (a different template).
+  const list = [tpl('claude · api', { cwd: '/work/api', command: 'claude' })];
+  assert.strictEqual(uniqueFallbackLabel(list, '/home/api', 'claude'), 'claude · home/api');
+});
+
+test('uniqueFallbackLabel: a still-clashing parent segment falls back to the full cwd', () => {
+  const list = [
+    tpl('claude · api', { cwd: '/a/home/api', command: 'claude' }),
+    tpl('claude · home/api', { cwd: '/a/home/api', command: 'claude' }),
+  ];
+  assert.strictEqual(uniqueFallbackLabel(list, '/b/home/api', 'claude'), 'claude · /b/home/api');
 });

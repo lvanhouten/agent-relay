@@ -8,16 +8,23 @@ const { notifyAll } = require('./notifiers');
 // reach a live shell.
 const FIELD_MAX = { name: 200, cwd: 4096, shell: 500, command: 8192 };
 
-// Every field is optional, but any present one must be a string within its cap.
-// Returns an error string, or null if valid.
-function validateSpawnBody(body) {
-  for (const [field, max] of Object.entries(FIELD_MAX)) {
+// Shared type+length check over a cap table. Every field is optional, but any
+// present one must be a string within its cap. Returns an error string, or null
+// if valid. One loop for every validated body (spawn, notify, and /api/templates
+// when phase 2 lands) so a fix to the check can't land in one copy and not the
+// other; each endpoint layers its extra rules on top.
+function validateFieldCaps(body, caps) {
+  for (const [field, max] of Object.entries(caps)) {
     const v = body[field];
     if (v === undefined || v === null) continue;
     if (typeof v !== 'string') return `${field} must be a string`;
     if (v.length > max) return `${field} exceeds the ${max}-character limit`;
   }
   return null;
+}
+
+function validateSpawnBody(body) {
+  return validateFieldCaps(body, FIELD_MAX);
 }
 
 // Field caps for POST /notify. title/body transit a third-party push service, so
@@ -28,12 +35,8 @@ const NOTIFY_MAX = { sessionId: 200, cwd: 4096, title: 200, body: 1000, url: 204
 // body must be present (an empty notification is pointless); priority, if given,
 // must be a Pushover-valid integer in [-2, 2]; needsInput, if given, a boolean.
 function validateNotifyBody(body) {
-  for (const [field, max] of Object.entries(NOTIFY_MAX)) {
-    const v = body[field];
-    if (v === undefined || v === null) continue;
-    if (typeof v !== 'string') return `${field} must be a string`;
-    if (v.length > max) return `${field} exceeds the ${max}-character limit`;
-  }
+  const capError = validateFieldCaps(body, NOTIFY_MAX);
+  if (capError) return capError;
   if (!body.title && !body.body) return 'title or body is required';
   if (body.priority !== undefined && body.priority !== null) {
     if (typeof body.priority !== 'number' || !Number.isInteger(body.priority) || body.priority < -2 || body.priority > 2) {
@@ -44,11 +47,34 @@ function validateNotifyBody(body) {
   return null;
 }
 
+// `url` renders as a tap-through deep link inside a TRUSTED push notification
+// on the operator's phone — a phishing surface nothing else on this API has
+// (ADR-0001's accepted XSS ceiling covers local shell spawn, not off-device
+// credential harvesting from a notification tapped days later). Default-deny:
+// the field is rejected unless AR_NOTIFY_URL_ORIGIN names the one allowed
+// origin (set it to the origin you load the relay from). Compared as parsed
+// origins, not a string prefix, so https://relay.example.evil.com can't ride
+// a prefix match on https://relay.example.
+// Standing dependency: this closes the off-device vector only while the relay
+// origin itself has no attacker-steerable redirect. If a return_to/OAuth-
+// callback style endpoint is ever added, a deep link could bounce through the
+// trusted origin onward — pin an allowed path prefix here at that point.
+function validateNotifyUrl(url, allowedOrigin) {
+  if (url === undefined || url === null) return null;
+  if (!allowedOrigin) return 'url is disabled (set AR_NOTIFY_URL_ORIGIN to enable deep links)';
+  let allowed;
+  try { allowed = new URL(allowedOrigin).origin; } catch { return 'url is disabled (AR_NOTIFY_URL_ORIGIN is not a valid origin)'; }
+  let parsed;
+  try { parsed = new URL(url); } catch { return 'url must be an absolute URL'; }
+  if (parsed.origin !== allowed) return `url must be on ${allowed}`;
+  return null;
+}
+
 // REST over the board-backed session store. Handlers are async because every
 // operation is an RPC to the board kernel; errors propagate to Express via next().
 // `notifiers` is the resolved push-sink list (notifiers.js); an empty list makes
 // POST /notify a no-op fan-out (feature off) while still flagging the card.
-function createAPI(sessions, notifiers = []) {
+function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
   const r = Router();
 
   // A board-unreachable failure is a transient 503, not a 500 — the board is a
@@ -103,7 +129,7 @@ function createAPI(sessions, notifiers = []) {
     try {
       if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
       const body = req.body ?? {};
-      const invalid = validateNotifyBody(body);
+      const invalid = validateNotifyBody(body) ?? validateNotifyUrl(body.url, notifyUrlOrigin);
       if (invalid) return res.status(400).json({ error: invalid });
       if (body.needsInput) {
         if (body.sessionId) sessions.flagAttention(body.sessionId);

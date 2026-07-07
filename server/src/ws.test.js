@@ -26,6 +26,9 @@ function makeSessions() {
   return {
     whenAttached,
     get: async () => ({ id: ID, status: 'running' }),
+    // Part of the real BoardSessions surface ws.js calls on input — the fixture
+    // carries it so ws.js needn't optional-chain around an incomplete double.
+    clearAttention() {},
     attach: async () => {
       resolveAttached();
       return { detach() {}, write() {}, resize() {} };
@@ -86,4 +89,43 @@ test('WS: wrong token → close 1008', async () => {
 
 test('WS: AR_NO_AUTH (expectedToken null) → attach proceeds with no credential', async () => {
   assert.deepStrictEqual(await attempt({ expectedToken: null, signingSecret: SECRET }, {}), { attached: true });
+});
+
+test('WS: a sessions store missing clearAttention still delivers input, and the failure is logged', async () => {
+  // The contract-drift case: clearAttention renamed/omitted. The keystroke must
+  // reach the line (write happens first) and the TypeError must surface as a
+  // greppable log line — NOT vanish into the malformed-message catch.
+  const written = [];
+  let resolveWritten;
+  const whenWritten = new Promise(r => { resolveWritten = r; });
+  const sessions = {
+    get: async () => ({ id: ID, status: 'running' }),
+    // clearAttention deliberately MISSING.
+    attach: async () => ({ detach() {}, write(d) { written.push(d); resolveWritten(); }, resize() {} }),
+  };
+  const errors = [];
+  const origError = console.error;
+  console.error = (...args) => { errors.push(args.join(' ')); };
+  try {
+    const server = http.createServer();
+    createWSHub(server, sessions, cfg);
+    await new Promise(res => server.listen(0, res));
+    const { port } = server.address();
+    const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}`);
+    // The message listener registers only after the async attach completes, so
+    // re-send until the write lands rather than racing a single send.
+    const frame = JSON.stringify({ type: 'input', payload: 'y' });
+    const timer = setInterval(() => { if (client.readyState === WebSocket.OPEN) client.send(frame); }, 50);
+    await whenWritten;
+    clearInterval(timer);
+    client.close();
+    await new Promise(res => server.close(res));
+  } finally {
+    console.error = origError;
+  }
+  assert.strictEqual(written[0], 'y', 'input is delivered before the clearAttention failure');
+  assert.ok(
+    errors.some(e => e.includes('[ws] clearAttention failed')),
+    `expected a clearAttention error log, got: ${JSON.stringify(errors)}`,
+  );
 });

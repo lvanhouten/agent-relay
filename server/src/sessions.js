@@ -44,19 +44,22 @@ function relTime(ms) {
 // status is the attention state: 'running' (output within the shared idle
 // threshold) or 'idle' (quiet beyond it — deliberately NOT "done": an idle
 // agent may be thinking, blocked on a prompt, or finished, and PTY bytes can't
-// tell those apart). The threshold is wait.js's DEFAULT_IDLE_MS so the card,
-// `sb wait`, and switchboard_wait_for_idle can't disagree about what idle
-// means. Tombstones map via endedToDto, which overrides to 'exited'. A missing
-// idleMs (older board, or the `new` reply) counts as 0 — just active.
+// tell those apart). The threshold is wait.js's DEFAULT_IDLE_MS so the card
+// and `sb wait` can't disagree about what idle means. Tombstones map via
+// endedToDto, which overrides to 'exited'. A missing or non-finite idleMs
+// (older board, the `new` reply, or a malformed pipe value) counts as 0 — just
+// active. Number.isFinite, not ??: a NaN would compare false into 'idle' and
+// render "NaNs ago" on the card.
 function toDto(line) {
+  const idleMs = Number.isFinite(line.idleMs) ? line.idleMs : 0;
   return {
     id: line.id,
     name: line.name || `session-${line.id}`,
     shell: line.shell,
     cwd: line.cwd,
     pid: line.pid ?? null,
-    status: (line.idleMs ?? 0) < DEFAULT_IDLE_MS ? 'running' : 'idle',
-    lastActive: relTime(line.idleMs ?? 0),
+    status: idleMs < DEFAULT_IDLE_MS ? 'running' : 'idle',
+    lastActive: relTime(idleMs),
   };
 }
 
@@ -105,6 +108,9 @@ class BoardSessions {
     // would end every line). Lost on a web-tier restart (a re-fired hook re-flags);
     // that's acceptable per the issue doc's pragmatism.
     this._attention = new Map();
+    // The board boot nonce last seen in a list reply — a change means the board
+    // restarted and every line id may be reused, so the flags above are void.
+    this._boardBoot = null;
   }
 
   // Mark a live line as needing input. Set unconditionally (no existence RPC —
@@ -154,6 +160,15 @@ class BoardSessions {
   // while the line has produced no output since it was set: once the board's
   // idleMs implies output (or input echo) landed AFTER flaggedAt, the agent is
   // moving again, so the flag is stale — drop it and report the normal state.
+  //
+  // ORDERING ASSUMPTION this rides on: a Claude Code Notification hook fires
+  // after the prompt's final paint, so by the time its POST lands here the
+  // line's last output PRECEDES flaggedAt and the flag sticks. A laggy hook
+  // racing a late TUI repaint (or an attach-triggered resize repaint) would be
+  // read as "the agent moved again" and silently clear a flag that should
+  // stick — a soft failure (stale card, no corruption). If false-clears show
+  // up in practice, add a small grace window (ignore output within ~1s after
+  // flaggedAt) rather than loosening the clear entirely.
   _applyAttention(dto, line) {
     const flaggedAt = this._attention.get(dto.id);
     if (flaggedAt == null) return dto;
@@ -176,6 +191,16 @@ class BoardSessions {
     if (!r || !r.ok) {
       console.error('[sessions] board list RPC returned a non-ok reply:', JSON.stringify(r));
       throw new BoardUnreachableError();
+    }
+    // A board restart resets its line-id counter, so a web tier that outlives
+    // the board can hold a flag a REUSED id would inherit (the output-after-
+    // flag clear usually self-heals it, but a fresh quiet line would read
+    // needs-input). The list reply carries the board's per-process boot nonce —
+    // the same signal mcp-server.js namespaces its read cursors by — so drop
+    // every flag when it changes.
+    if (r.boot !== this._boardBoot) {
+      if (this._boardBoot !== null) this._attention.clear();
+      this._boardBoot = r.boot;
     }
     // Prune attention flags whose line is no longer live (it exited) so the Map
     // can't leak entries for dead ids or resurrect a flag onto a reused id.

@@ -111,7 +111,8 @@ POST   /api/notify             Push a notification + optionally flag a session
                                body { title, body, url?, priority?, sessionId?, cwd?, needsInput? }
                                fans out to configured push sinks (Pushover);
                                needsInput + sessionId (or cwd) lights that card's
-                               "needs input" state
+                               "needs input" state; url requires AR_NOTIFY_URL_ORIGIN
+                               (rejected otherwise — see Notifications)
 
 WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
@@ -153,7 +154,11 @@ AR_PUSHOVER_USER=<your Pushover user key>
 > secrets or PHI given what runs in these shells.
 
 `priority` maps to Pushover's: `1` bypasses quiet hours, `2` repeats until you
-acknowledge (retry/expire are supplied automatically). `url` deep-links on tap.
+acknowledge (retry/expire are supplied automatically). `url` deep-links on tap —
+but it rides a *trusted* notification, so it's **off by default**: set
+`AR_NOTIFY_URL_ORIGIN` to the one origin links may point at (the origin you
+load the relay from, e.g. your tailnet URL) and any `url` on another origin is
+rejected. Unset, the field is rejected outright.
 
 ### Claude Code hook recipe
 
@@ -173,7 +178,7 @@ lines spawned outside the relay:
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -X POST http://localhost:3017/api/notify -H \"Authorization: Bearer $AR_TOKEN\" -H 'Content-Type: application/json' -d \"{\\\"title\\\":\\\"Claude needs input\\\",\\\"body\\\":\\\"A session is waiting on you\\\",\\\"needsInput\\\":true,\\\"priority\\\":1,\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
+            "command": "printf 'header = \"Authorization: Bearer %s\"' \"$AR_TOKEN\" | curl -s -X POST http://localhost:3017/api/notify -K - -H 'Content-Type: application/json' -d \"{\\\"title\\\":\\\"Claude needs input\\\",\\\"body\\\":\\\"A session is waiting on you\\\",\\\"needsInput\\\":true,\\\"priority\\\":1,\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
           }
         ]
       }
@@ -181,6 +186,12 @@ lines spawned outside the relay:
   }
 }
 ```
+
+The auth header is fed to curl as a config file on stdin (`-K -`, written by the
+shell-builtin `printf`) rather than a `-H` argument: an argument would put the
+token in curl's command line, which any local process-listing (Task Manager's
+command-line column, `Get-CimInstance Win32_Process`, EDR telemetry) can read.
+Stdin between a builtin and curl never touches a visible argv.
 
 `sessionId` wins when present; otherwise the relay matches `cwd` against its live
 lines (on a same-directory tie, the most recently active line is flagged). A

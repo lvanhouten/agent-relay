@@ -8,7 +8,8 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
-import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate } from '../core/templates.ts';
+import { attentionFor } from '../core/attention.ts';
+import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
 import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode, Bookmark, BookmarkPlus } from 'lucide-react';
@@ -89,25 +90,12 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
 // `list` reply and threading it into toDto(). Deferred as a feature, not a bug —
 // see _docs/issues/2026-07-01-session-card-live-preview.md.
 
-// DTO attention state -> StatusDot color + card label. 'quiet' rather than
-// 'idle'/'done' on purpose: a silent agent may be thinking (LLM latency
-// produces legitimate 30s+ silences) or waiting on a prompt — the label claims
-// only "no output lately". 'needs-input' is the honest exception: it's not
-// heuristic silence-sniffing but a Claude Code Notification hook explicitly
-// reporting the line is blocked on a prompt (server sets it via POST /api/notify;
-// cleared on next input/output). It pulses so it reads across a grid of cards.
-// Unknown states (newer server) fall back to a plain offline dot showing the
-// raw status string.
-const ATTENTION = {
-  running: { dot: 'online', label: 'running' },
-  idle: { dot: 'idle', label: 'quiet' },
-  'needs-input': { dot: 'attention', label: 'needs input', pulse: true },
-};
-
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
-  const attention = ATTENTION[session.status] ?? { dot: 'offline', label: session.status };
-  const pulse = attention.pulse ?? false;
+  // status decode lives in core/attention.ts (the vocabulary sync point with
+  // server/src/sessions.js) — see the rationale + tests there.
+  const attention = attentionFor(session.status);
+  const pulse = attention.pulse;
   return (
     <Card interactive padding="md" onClick={() => onAttach(session)}
       style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -221,6 +209,13 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const [templates, setTemplates] = React.useState(loadTemplates);
   const [justSaved, setJustSaved] = React.useState(false);
 
+  // Every form edit goes through these, not the raw setters: any change
+  // invalidates the "Saved" indicator — the stored template is the pre-edit
+  // form, and the button must not claim the edited one is saved.
+  const editName = (v) => { setName(v); setJustSaved(false); };
+  const editCwd = (v) => { setCwd(v); setJustSaved(false); };
+  const editCommand = (v) => { setCommand(v); setJustSaved(false); };
+
   const applyTemplate = (t) => {
     setName(t.name);
     setCwd(t.cwd);
@@ -231,13 +226,18 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const saveAsTemplate = () => {
     // The session name is the label — the operator already types a meaningful
     // one ("claude · agent-relay"); upsert dedupes so a re-save overwrites.
-    const label = name.trim() || 'template';
+    // Blank name -> a content-derived label (core/templates.ts), widened with
+    // path segments if it would clash with a different directory's template —
+    // only a same-cwd re-save may upsert over an existing blank-name entry.
+    const label = name.trim() || uniqueFallbackLabel(templates, cwd, command);
     const next = upsertTemplate(templates, {
       label, name: name.trim() || 'untitled', cwd, command: command.trim(),
     });
     setTemplates(next);
-    saveTemplates(next);
-    setJustSaved(true);
+    // Only claim "Saved" when the localStorage write persisted — in private
+    // mode / over quota the chip still works this session but is gone on
+    // reload, and the accent state must not promise otherwise.
+    setJustSaved(saveTemplates(next));
   };
 
   const deleteTemplate = (label) => {
@@ -324,7 +324,7 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
         <Input
           label="Session name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => editName(e.target.value)}
           placeholder="api-dev"
           autoFocus
         />
@@ -332,7 +332,7 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
           label="Working directory"
           mono
           value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
+          onChange={(e) => editCwd(e.target.value)}
           prefix={<Folder size={14} />}
         />
 
@@ -353,7 +353,7 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
               const selected = c === 'claude' ? isClaudeCommand(command) : command === c;
               const pick = () => {
                 if (selected) return;
-                setCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
+                editCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
               };
               return (
                 <button key={c} onClick={pick} style={{
@@ -371,14 +371,14 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
           </div>
           {isClaudeCommand(command) && (
             <>
-              <FlagChipRow label="model" flag="model" options={CLAUDE_MODELS} command={command} onCommand={setCommand} />
-              <FlagChipRow label="effort" flag="effort" options={CLAUDE_EFFORTS} command={command} onCommand={setCommand} />
+              <FlagChipRow label="model" flag="model" options={CLAUDE_MODELS} command={command} onCommand={editCommand} />
+              <FlagChipRow label="effort" flag="effort" options={CLAUDE_EFFORTS} command={command} onCommand={editCommand} />
             </>
           )}
           <Input
             mono
             value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            onChange={(e) => editCommand(e.target.value)}
             placeholder="npm run dev — leave blank for a plain shell"
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

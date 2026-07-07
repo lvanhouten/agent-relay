@@ -74,8 +74,36 @@ test('SPA fallback: an unknown GET path serves index.html', async t => {
   assert.strictEqual(headers['cache-control'], 'no-cache');
 });
 
+test('a missing hashed asset is a 404, never index.html (stale tab across a redeploy)', async t => {
+  // The old bundle name is gone from the new dist; 200 HTML here would be
+  // executed as JS by the still-open tab and die on an opaque syntax error.
+  const { status, body } = await request(serve(makeDist(t)), 'GET', '/assets/app.oldhash.js');
+  assert.strictEqual(status, 404);
+  assert.doesNotMatch(body, /relay-index/);
+});
+
+test('an unknown path with a file extension is a 404, not index.html', async t => {
+  const { status, body } = await request(serve(makeDist(t)), 'GET', '/favicon.ico');
+  assert.strictEqual(status, 404);
+  assert.doesNotMatch(body, /relay-index/);
+});
+
+test('a dot in a non-final segment still falls back to index.html (navigational path)', async t => {
+  const { status, body } = await request(serve(makeDist(t)), 'GET', '/v1.2/settings');
+  assert.strictEqual(status, 200);
+  assert.match(body, /relay-index/);
+});
+
 test('fallback does not shadow /api: an unknown API path stays a 404, not HTML', async t => {
   const { status, body } = await request(serve(makeDist(t)), 'GET', '/api/unknown');
+  assert.strictEqual(status, 404);
+  assert.doesNotMatch(body, /relay-index/);
+});
+
+test('reserved prefixes match case-insensitively: /API/unknown stays a 404, not HTML', async t => {
+  // Express's own mount matching is case-insensitive, so /API/x falls through
+  // the /api router into this fallback — the exclusion must match it too.
+  const { status, body } = await request(serve(makeDist(t)), 'GET', '/API/unknown');
   assert.strictEqual(status, 404);
   assert.doesNotMatch(body, /relay-index/);
 });

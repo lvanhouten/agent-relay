@@ -168,7 +168,7 @@ browser WebSocket in place of a terminal pane.
 
 `mcp-server.js` exposes the board to Claude Code (or any MCP client) as tools —
 `switchboard_new_line`, `switchboard_list_lines`, `switchboard_read_output`,
-`switchboard_wait_for_idle`, `switchboard_send_input`, `switchboard_end_line`.
+`switchboard_send_input`, `switchboard_end_line`.
 This is the same control + data pipes `sb` uses, but for an agent instead of a
 human: `sb join` opens a
 terminal tab, which is useless to an agent that can't see it, so this attaches
@@ -218,29 +218,28 @@ for a future id collision.
 
 ## Waiting on a line
 
-`wait.js` holds `waitForIdleOrExit` — one implementation, two entry points:
-`switchboard_wait_for_idle` (MCP tool) and `sb wait <id>` (plain CLI command).
-Both block until a line goes quiet (no new bytes for `idleMs`, default 12s) or
-its process exits, whichever comes first, up to `maxWaitMs` (default 10
-minutes). Neither tells you *what* happened, only *that* something did —
+`wait.js` holds `waitForIdleOrExit`, exposed as `sb wait <id>` (plain CLI
+command). It blocks until a line goes quiet (no new bytes for `idleMs`, default
+12s) or its process exits, whichever comes first, up to `maxWaitMs` (default 10
+minutes). It doesn't tell you *what* happened, only *that* something did —
 finished a turn, hit a prompt, is waiting on a decision, or is wedged all look
 identical from byte-quiet alone — so always follow up with
 `switchboard_read_output` / `sb list` + reading the line to see what actually
 happened.
 
-The point of either is to get notified instead of polling, but that only works
-if whatever's waiting can itself be run in the background:
-- `switchboard_wait_for_idle` is only backgroundable if your MCP client can run
-  an arbitrary tool call in the background — Claude Code's own tool surface
-  can background a `Bash` or `Agent` call, but not a bare MCP tool call, so
-  calling this tool directly blocks the calling turn for however long the wait
-  takes.
-- `sb wait` is a plain shell command, so it's backgroundable anywhere a shell
-  command is — including via `Bash`'s own `run_in_background: true` from
-  inside a Claude Code session, which is the actual way to get a
-  non-blocking wait today: launch `sb wait <id> ...` as a background Bash
-  task and let its exit be the notification, instead of hand-writing the same
-  idle/exit-polling loop as a one-off script.
+The point is to get notified instead of polling, which only works because
+`sb wait` is a plain shell command and therefore backgroundable anywhere a
+shell command is — including via `Bash`'s `run_in_background: true` from inside
+a Claude Code session: launch `sb wait <id> ...` as a background Bash task and
+let its exit be the notification, instead of hand-writing the same
+idle/exit-polling loop as a one-off script.
+
+There is deliberately no MCP wait tool. One existed
+(`switchboard_wait_for_idle`), but a blocking wait as an MCP tool is only
+useful if the MCP client can run an arbitrary tool call in the background, and
+Claude Code can't (only `Bash`/`Agent` calls background) — so calling it just
+wedged the calling turn for however long the wait took. Removed 2026-07-07;
+`sb wait` is the one wait entry point.
 
 ## Files
 
@@ -250,7 +249,7 @@ if whatever's waiting can itself be run in the background:
 | `patch.js`        | pane-side raw relay (runs inside the terminal pane) |
 | `sb.js`           | CLI dispatcher |
 | `mcp-server.js`   | MCP server — programmatic (non-pane) access to lines for agents |
-| `wait.js`         | shared idle/exit detection, used by both `sb wait` and `switchboard_wait_for_idle` |
+| `wait.js`         | shared idle/exit detection — `sb wait`'s engine, and the DEFAULT_IDLE_MS the session DTO's attention state reads |
 | `spawners.js`     | per-terminal pane-launch recipes + client-side detection |
 | `lib.js`          | pipe names, detached auto-start, connect-with-retry, the shared timed `rpc()` used by `sb.js`/`mcp-server.js`/`src/board-client.js`, the exit-code sentinel `EXIT_RE` |
 | `start-board.vbs` | launches the board hidden (no console) for autostart |

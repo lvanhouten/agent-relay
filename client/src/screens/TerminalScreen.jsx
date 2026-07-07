@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { KEY_CHIPS, composerBytes } from '../core/keyChips.ts';
-import { transcriptFilename } from '../core/transcript.ts';
+import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
+import { searchReadout } from '../core/searchReadout.ts';
 
 // Default the composer visible on touch/small viewports, hidden on a desktop
 // with a real keyboard (toggleable either way). Read once at mount — a device's
@@ -64,7 +65,9 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   };
 
   const downloadTranscript = () => {
-    const text = viewRef.current?.serialize() ?? '';
+    // serialize() reproduces terminal state incl. ANSI escapes; the export is
+    // a .txt, so strip them (core/transcript.ts) or Notepad shows \x1b[ noise.
+    const text = stripAnsi(viewRef.current?.serialize() ?? '');
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -76,16 +79,18 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     URL.revokeObjectURL(url);
   };
 
+  // The composer exists for flaky mobile moments — the same moments the socket
+  // is mid-reconnect and send() drops the bytes. Only clear the input when the
+  // send actually reached an open socket; the chips/Send button are also gated
+  // off connStatus below, but the return check covers the status-vs-socket race.
+  const composerReady = connStatus === 'online';
   const sendChip = (seq) => viewRef.current?.send(seq);
   const submitComposer = () => {
     if (!composerText) return;
-    viewRef.current?.send(composerBytes(composerText));
-    setComposerText('');
+    if (viewRef.current?.send(composerBytes(composerText))) setComposerText('');
   };
 
-  const matchReadout = searchResults.resultCount > 0
-    ? `${searchResults.resultIndex + 1}/${searchResults.resultCount}`
-    : searchTerm && searchResults.resultCount === 0 ? '0/0' : '';
+  const matchReadout = searchReadout(searchTerm, searchResults);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
@@ -118,7 +123,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           <IconButton label="Search output" active={showSearch} onClick={toggleSearch}>
             <Search size={15} />
           </IconButton>
-          <IconButton label="Download transcript" onClick={downloadTranscript}>
+          <IconButton label="Download transcript (may contain secrets echoed to the terminal)" onClick={downloadTranscript}>
             <Download size={15} />
           </IconButton>
           <IconButton label="Toggle composer" active={showComposer} onClick={() => setShowComposer((v) => !v)}>
@@ -149,6 +154,9 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
             value={searchTerm}
             onChange={(e) => runSearch(e.target.value)}
             onKeyDown={(e) => {
+              // A CJK/predictive-keyboard candidate confirmation arrives as
+              // Enter mid-composition — it must not run the search early.
+              if (e.nativeEvent.isComposing) return;
               if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? viewRef.current?.searchPrev(searchTerm) : viewRef.current?.searchNext(searchTerm); }
               else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
             }}
@@ -201,11 +209,14 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 title={chip.title ?? chip.label}
                 aria-label={chip.title ?? chip.label}
                 onClick={() => sendChip(chip.seq)}
+                disabled={!composerReady}
                 style={{
                   flexShrink: 0, height: 34, minWidth: 40, padding: '0 12px',
                   border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
                   background: 'var(--surface-sunken)', color: 'var(--text-strong)',
-                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
+                  cursor: composerReady ? 'pointer' : 'not-allowed',
+                  opacity: composerReady ? 1 : 0.45,
                 }}
               >
                 {chip.label}
@@ -216,7 +227,10 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
             <input
               value={composerText}
               onChange={(e) => setComposerText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitComposer(); } }}
+              // isComposing: a mobile-IME candidate confirmation must not
+              // submit half-composed text to a live agent (this input exists
+              // for exactly those keyboards).
+              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); submitComposer(); } }}
               placeholder="Type a reply, then Send…"
               enterKeyHint="send"
               autoCapitalize="off"
@@ -229,7 +243,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 fontFamily: 'var(--font-mono)', fontSize: 'var(--text-base)',
               }}
             />
-            <IconButton label="Send" bordered onClick={submitComposer} disabled={!composerText}>
+            <IconButton label="Send" bordered onClick={submitComposer} disabled={!composerText || !composerReady}>
               <SendIcon size={16} />
             </IconButton>
           </div>

@@ -26,7 +26,8 @@ param(
   [string]$Url = 'http://localhost:3017',
   [string]$Browser = 'msedge',
   [int]$WidthThreshold = 900,
-  [string[]]$DesktopClientNames = @()
+  [string[]]$DesktopClientNames = @(),
+  [string[]]$PhoneClientNames = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,12 +42,17 @@ switch ($Action) {
   'install' {
     if (-not (Test-Path $Launcher)) { throw "launcher not found: $Launcher" }
 
-    # Forward the tuning params into the launcher's argument string. -File args are
-    # positional/named just like a direct call; array params take a comma-joined list.
+    # Forward the tuning params into the launcher's argument string. Name lists
+    # travel as ONE quoted comma-joined argument — `-File` does not split "A,B"
+    # into array elements (verified), so the launcher splits on commas itself;
+    # the quotes keep a name with spaces from splitting at the argv level.
     $launcherArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Launcher`"" +
       " -Url `"$Url`" -Browser `"$Browser`" -WidthThreshold $WidthThreshold"
     if ($DesktopClientNames.Count -gt 0) {
-      $launcherArgs += " -DesktopClientNames $($DesktopClientNames -join ',')"
+      $launcherArgs += " -DesktopClientNames `"$($DesktopClientNames -join ',')`""
+    }
+    if ($PhoneClientNames.Count -gt 0) {
+      $launcherArgs += " -PhoneClientNames `"$($PhoneClientNames -join ',')`""
     }
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $launcherArgs
 

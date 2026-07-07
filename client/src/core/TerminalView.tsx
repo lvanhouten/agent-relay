@@ -48,8 +48,10 @@ export interface TerminalViewHandle {
   // Current xterm selection, for clipboard chrome outside the component.
   getSelection(): string;
   // Write raw bytes down the WS input frame — the composer bar and canned-key
-  // chips (mobile answer mode) push their sequences through here.
-  send(data: string): void;
+  // chips (mobile answer mode) push their sequences through here. Returns false
+  // when the socket isn't open (the bytes were dropped, not queued) so callers
+  // can keep the user's text rather than clear it as if delivered.
+  send(data: string): boolean;
   // The client-side buffer as text (replayed scrollback since attach, capped at
   // the board's per-line chunk limit) — for the transcript download.
   serialize(): string;
@@ -110,6 +112,13 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         if (reconnected) {
           termRef.current?.reset();
           setPillState(PILL_INIT);
+          // The reset emptied the buffer, so search decorations and the find
+          // bar's n/m readout refer to text that no longer exists — clear both
+          // (a stale "3/5" over a freshly-replayed buffer with zero highlights
+          // otherwise survives until the next keystroke).
+          searchRef.current?.clearDecorations();
+          searchRef.current?.clearActiveDecoration?.();
+          onSearchResultsRef.current?.({ resultIndex: -1, resultCount: -1 });
         }
         refitRef.current?.();
       }, [setPillState]),

@@ -78,12 +78,17 @@ function createWSHub(server, sessions, authConfig = {}) {
       try {
         const msg = JSON.parse(raw.toString());
         if (msg.type === 'input') {
+          handle.write(msg.payload);
           // The operator answered from the web terminal — clear any needs-input
           // flag immediately (the precise "cleared on next input" signal; the
           // output-based clear in sessions.list() is only the fallback for input
-          // arriving via another attach, e.g. the `sb` pane).
-          sessions.clearAttention?.(id);
-          handle.write(msg.payload);
+          // arriving via another attach, e.g. the `sb` pane). Own guard + log,
+          // after the write: a sessions store missing this method (a rename, a
+          // future non-Board implementation) must neither cost the keystroke
+          // nor vanish into the malformed-message catch below — the failure
+          // has to be greppable.
+          try { sessions.clearAttention(id); }
+          catch (e) { console.error('[ws] clearAttention failed:', e && e.message ? e.message : e); }
         }
         if (msg.type === 'resize') handle.resize(msg.cols, msg.rows);
       } catch { /* malformed message — ignore */ }

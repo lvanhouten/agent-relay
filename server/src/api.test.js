@@ -11,10 +11,10 @@ const { createAPI } = require('./api');
 const { BoardUnreachableError } = require('./sessions');
 const { errorHandler } = require('./errorHandler');
 
-function serve(sessions, notifiers = []) {
+function serve(sessions, notifiers = [], apiOpts) {
   const app = express();
   app.use(express.json());
-  app.use('/api', createAPI(sessions, notifiers));
+  app.use('/api', createAPI(sessions, notifiers, apiOpts));
   // The real handler (index.js's own), not a duplicate — W3-new: a hand-rolled
   // copy here had drifted from index.js's actual fix and gave it zero coverage.
   app.use(errorHandler);
@@ -138,6 +138,44 @@ test('POST /notify -> 503 when the cwd resolution RPC finds the board down', asy
   const app = serve(sessions);
   const { status } = await request(app, 'POST', '/api/notify', { body: { cwd: '/repo', body: 'x', needsInput: true } });
   assert.strictEqual(status, 503);
+});
+
+// --- POST /notify url policy: the deep link rides a TRUSTED push notification,
+// so it is default-deny (rejected unless AR_NOTIFY_URL_ORIGIN names the one
+// allowed origin) and compared by parsed origin, never a string prefix. ---
+
+test('POST /notify url -> 400 when no origin is configured (default-deny), sink never reached', async () => {
+  const seen = [];
+  const app = serve({}, [{ name: 'fake', notify: async (p) => { seen.push(p); } }]);
+  const { status } = await request(app, 'POST', '/api/notify', {
+    body: { body: 'x', url: 'https://evil.example/phish' },
+  });
+  assert.strictEqual(status, 400);
+  assert.deepStrictEqual(seen, [], 'a rejected url must not fan out');
+});
+
+test('POST /notify url on the configured origin passes through', async () => {
+  const seen = [];
+  const app = serve({}, [{ name: 'fake', notify: async (p) => { seen.push(p); } }],
+    { notifyUrlOrigin: 'https://relay.example' });
+  const { status } = await request(app, 'POST', '/api/notify', {
+    body: { body: 'x', url: 'https://relay.example/sessions/7' },
+  });
+  assert.strictEqual(status, 200);
+  assert.strictEqual(seen[0].url, 'https://relay.example/sessions/7');
+});
+
+test('POST /notify url on a foreign origin -> 400, including a prefix-riding lookalike host', async () => {
+  const app = serve({}, [], { notifyUrlOrigin: 'https://relay.example' });
+  for (const url of [
+    'https://evil.example/phish',
+    'https://relay.example.evil.com/phish',  // string-prefix of the allowed origin
+    'http://relay.example/downgrade',        // scheme is part of the origin
+    '/sessions/7',                           // relative: not a tappable Pushover link
+  ]) {
+    const { status } = await request(app, 'POST', '/api/notify', { body: { body: 'x', url } });
+    assert.strictEqual(status, 400, `expected 400 for ${url}`);
+  }
 });
 
 test('POST /notify -> 200 even when a sink fails (resilient; per-sink outcome reported)', async () => {
