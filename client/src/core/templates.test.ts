@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import {
-  parseTemplates, serializeTemplates, upsertTemplate, removeTemplate,
+  parseTemplates, serializeTemplates, upsertTemplate, removeTemplate, fallbackLabel,
 } from './templates.ts';
 import type { SpawnTemplate } from './templates.ts';
 
@@ -67,4 +67,19 @@ test('removeTemplate: drops the matching label only', () => {
 test('serialize -> parse round-trips a valid list', () => {
   const list = [tpl('a'), tpl('b', { command: '' })];
   assert.deepStrictEqual(parseTemplates(serializeTemplates(list)), list);
+});
+
+test('fallbackLabel: derived from command word + cwd leaf, so blank-name saves differ by content', () => {
+  assert.strictEqual(fallbackLabel('C:\\Users\\x\\dev\\agent-relay', 'claude --model opus'), 'claude · agent-relay');
+  assert.strictEqual(fallbackLabel('/repo/sub/', 'npm run dev'), 'npm · sub');
+  // Two blank-name saves of DIFFERENT templates must not collide on one label
+  // (the old literal 'template' fallback silently overwrote the first).
+  assert.notStrictEqual(
+    fallbackLabel('/repo/api', 'claude'),
+    fallbackLabel('/repo/web', 'npm run dev'),
+  );
+});
+
+test('fallbackLabel: blank command and bare cwd degrade to shell · ~', () => {
+  assert.strictEqual(fallbackLabel('~/', ''), 'shell · ~');
 });

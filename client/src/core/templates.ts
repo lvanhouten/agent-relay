@@ -66,6 +66,19 @@ export function removeTemplate(list: SpawnTemplate[], label: string): SpawnTempl
   return list.filter((t) => t.label !== label);
 }
 
+// Label fallback when the session-name field is blank: derive it from what the
+// template actually does ("claude · agent-relay") instead of a literal
+// 'template' — under which every blank-name save collided and silently
+// overwrote the previous one. Content-derived labels make genuinely different
+// templates distinct; two saves that DO produce the same label (same leading
+// command word, same directory name) still upsert, which is the intended
+// same-template re-save semantics.
+export function fallbackLabel(cwd: string, command: string): string {
+  const dir = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd.trim() || '~';
+  const cmd = command.trim().split(/\s+/)[0] || 'shell';
+  return `${cmd} · ${dir}`;
+}
+
 // --- localStorage wrappers (browser I/O over the pure ops above) ---
 
 export function loadTemplates(): SpawnTemplate[] {

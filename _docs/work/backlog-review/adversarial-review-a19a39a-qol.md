@@ -26,6 +26,7 @@ The reconnect branch calls `term.reset()` and resets the scroll pill, but never 
 **W4. Blank-name template saves collide on the literal label `'template'` and silently overwrite** — `client/src/screens/SessionsScreen.jsx:234` · confidence 50 · Saboteur
 `const label = name.trim() || 'template'` — two different blank-name saves both upsert the same label; the second silently replaces the first with no confirmation. The upsert-by-label design is sanctioned; the unhandled *fallback* path is not part of that decision.
 **Fix:** unique fallback (command/cwd/timestamp), or block when the label would overwrite an entry the user didn't pick.
+**Resolution (fixed):** content-derived fallback — `fallbackLabel(cwd, command)` in `core/templates.ts` (tested) yields e.g. `claude · agent-relay`, so different blank-name templates get distinct labels. Residual accepted: two blank-name saves with the same leading command word *and* directory name still upsert — that is the sanctioned same-template re-save semantics, not the cross-template collision this finding named. (Timestamps were rejected: they'd defeat upsert-dedupe and clutter the picker.)
 
 ### Notes
 
@@ -64,7 +65,7 @@ The pure-module extraction discipline mostly held (four new tested core modules)
 | W1 | WARNING | 70 | Composer clears text on silently-dropped send | fixed |
 | W2 | WARNING | 70 | "Saved" indicator stale after form edit | fixed |
 | W3 | WARNING | 55 | Find-bar match state survives buffer reset on reconnect | fixed |
-| W4 | WARNING | 50 | Blank-name template saves silently overwrite each other | (open) |
+| W4 | WARNING | 50 | Blank-name template saves silently overwrite each other | fixed |
 | N2 | NOTE | 55 | Transcript now a durable artifact (acceptance note) | (open) |
 | N3 | NOTE | 50 | `matchReadout` inline/untested vs core convention | (open) |
 | N1 | NOTE | 45 | `.txt` transcript contains raw ANSI escapes | (open) |
