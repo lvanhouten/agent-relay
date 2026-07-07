@@ -35,12 +35,18 @@ function createStatic(distDir = DIST_DIR) {
   }));
 
   // SPA fallback: any GET/HEAD that matched no file gets index.html — except
-  // /api (its unknown paths must stay API 404s, not HTML) and /sessions (the WS
-  // namespace; an HTTP GET there is a mistake, not a page load).
+  // /api (its unknown paths must stay API 404s, not HTML), /sessions (the WS
+  // namespace; an HTTP GET there is a mistake, not a page load), and anything
+  // that was clearly an asset request: a path under /assets/ or whose last
+  // segment carries a file extension. A tab left open across a redeploy asks
+  // for /assets/app.<oldhash>.js, which the new dist no longer has — answering
+  // 200 index.html makes the browser execute HTML as JS and die on an opaque
+  // syntax error; a clean 404 says what actually happened (reload the page).
   router.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (req.path === '/api' || req.path.startsWith('/api/')) return next();
     if (req.path === '/sessions' || req.path.startsWith('/sessions/')) return next();
+    if (req.path.startsWith('/assets/') || /\.[^/]+$/.test(req.path)) return next();
     res.sendFile('index.html', {
       root: distDir,
       headers: { 'Cache-Control': 'no-cache' },
