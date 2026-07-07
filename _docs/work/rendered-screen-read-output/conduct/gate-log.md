@@ -24,6 +24,12 @@ Append-only record of the conducted run: entry point, stage completions, gates, 
 - Spawn recipe must clear `CLAUDE_CODE_CHILD_SESSION` before `claude`, else board-spawned sessions write no transcript JSONL (kills watcher + prompt-detection).
 - `send_input {submit:true}` does not submit into the Claude TUI; every prompt/answer needs a *separate bare-Enter* send.
 
+## Mid-stage approvals (judged, non-deny-class)
+
+- **2026-07-07 · execute-briefs** — Approved: `brief-executor` (brief 01-screen-render) creating file `_spike.js` in its isolated worktree (an xterm/headless frame-tearing spike/experiment script). **Reasoning:** in-worktree file creation, no outbound/external effect, no destruction outside the worktree, no credential/secret in the action — squarely within the Conductor's judgment per the authority contract; not deny-class.
+- **2026-07-07 · execute-briefs** — Approved (full command text): `rm "C:/Users/Lukas5856/worktrees/agent-relay/rendered-screen/.claude/wt/01/server/board/_spike.js" && echo removed` — `brief-executor` (brief 01) cleaning up the spike file it just created, in its isolated worktree `.claude/wt/01/`. **Reasoning:** single explicit-path `rm` (no `-rf`), target inside the brief's own worktree, no destruction outside the feature worktree, no external/secret aspect — not deny-class.
+- **2026-07-07 · execute-briefs** — Approved: `Write` of `.claude/wt/01/server/board/screen-render.js` (brief 01's main feature file — the byte-stream→rendered-screen transform over @xterm/headless), in the brief's isolated worktree. **Reasoning:** in-worktree file write, no destruction outside the feature worktree, no external/secret aspect — not deny-class. NOTE: brief-executor Write/rm/Bash tools are not allow-listed, causing per-file-op stalls; raised with user for an allowlist fix.
+
 ## Stage completions
 
 _(appended as each stage's Marker validates)_
