@@ -21,6 +21,7 @@ Byte-for-byte the same type/length loop over a different cap table, in the same 
 **W3. `sessions.clearAttention?.(id)` optional-chains around an incomplete test double, not a real nullability** — `server/src/ws.js:85` · confidence 70 · Maintainer
 Production `sessions` is always a `BoardSessions` (which always has `clearAttention`); the `?.` exists only because `ws.test.js`'s `makeSessions()` fixture omits the method. Cost: if `clearAttention` is ever renamed or a future sessions implementation forgets it, this line silently no-ops and the needs-input flag never clears on WS input — a regression with no error to grep for.
 **Fix:** add a no-op `clearAttention` to the fixture and drop the `?.` (or comment the permissiveness as intentional).
+**Resolution (fixed):** fixture got the no-op `clearAttention` (commented as part of the real surface) and the `?.` is gone. One addition beyond the suggested fix: the call now runs *after* `handle.write` — the handler's malformed-message catch would otherwise turn a missing method into silently dropped input, which is worse than the stale flag the `?.` allowed.
 
 **W4. Hook recipe puts the bearer token in curl argv** — `README.md` (hook recipe) · confidence 55 · Security
 `-H "Authorization: Bearer $AR_TOKEN"` expands the token into the process command line, visible to any local principal with process-listing rights (Task Manager's command-line column, `Get-CimInstance Win32_Process`, EDR telemetry — relevant on a SOC2/HIPAA-context workstation). A different exposure channel than the env var itself: argv is routinely sampled by monitoring tooling. New surface introduced by this diff.
@@ -62,7 +63,7 @@ The seam design (pluggable notifiers, dumb endpoint, web-tier flag) is faithful 
 |----|----------|------|---------|--------|
 | W2 | WARNING | 80 | Copy-pasted validation loop (spawn vs notify) | fixed |
 | W1 | WARNING | 75 | Notifier failures never logged — silent-forever failure | fixed |
-| W3 | WARNING | 70 | `clearAttention?.()` masks a contract, tolerates stale fixture | (open) |
+| W3 | WARNING | 70 | `clearAttention?.()` masks a contract, tolerates stale fixture | fixed |
 | W4 | WARNING | 55 | Bearer token in curl argv (README recipe) | (open) |
 | W5 | WARNING | 55 | Unvalidated `url` → trusted-channel phishing beyond XSS ceiling | fixed |
 | N4 | NOTE | 65 | Tests assert private `_attention` representation | (open) |

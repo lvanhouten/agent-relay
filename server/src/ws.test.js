@@ -26,6 +26,9 @@ function makeSessions() {
   return {
     whenAttached,
     get: async () => ({ id: ID, status: 'running' }),
+    // Part of the real BoardSessions surface ws.js calls on input — the fixture
+    // carries it so ws.js needn't optional-chain around an incomplete double.
+    clearAttention() {},
     attach: async () => {
       resolveAttached();
       return { detach() {}, write() {}, resize() {} };
