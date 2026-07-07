@@ -16,6 +16,7 @@ Panel: Saboteur / Maintainer / Security Auditor (single isolated pass). Constrai
 **W2. Desktop reconnect after a phone session leaves the maximized app window standing** — `rdp-launcher.ps1:98-101` (no-op branch; no teardown logic anywhere) · confidence 60 · Saboteur
 Phone connects → window opens; the operator later reconnects to the *same* session from the desktop → geometry reads desktop → script correctly launches nothing — but the previously-opened maximized window is still imposed on the now-desktop workflow. Per-event evaluation is satisfied for the event's *action*, but the stated goal isn't met across the transition. The uninstall message ("any open app window stays until you close it") shows windows outliving the task was known; this in-session transition wasn't addressed.
 **Fix:** on a desktop-classified event, detect an existing app-mode window matching `$appArg` (the same check the phone path's idempotency already does) and close/minimize it.
+**Resolution (fixed):** the `$appArg` process match is now a shared `Get-AppWindowProcesses` (used by both the phone idempotency check and the new `Close-StaleAppWindow`), and every desktop-classified branch (console gate, `-DesktopClientNames` gate, geometry-desktop) closes a standing app window; the UNKNOWN branch deliberately takes no action, and `-WhatIfDecision` logs "would close" without killing. Caveat shared with the pre-existing idempotency check: if Chromium hands the `--app` window off to an existing browser process, the command-line match may miss it — same detection limits as before, now applied symmetrically. Desktop dry-run verified.
 
 ### Notes
 
@@ -51,7 +52,7 @@ The discrimination architecture matches the intent doc (geometry primary, CLIENT
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
 | W1 | WARNING | 80 | Zero-geometry read fail-opens to phone (hostile desktop launch) | fixed |
-| W2 | WARNING | 60 | Stale app window persists across phone→desktop reconnect | (open) |
+| W2 | WARNING | 60 | Stale app window persists across phone→desktop reconnect | fixed |
 | N1 | NOTE | 65 | Decision log unbounded | (open) |
 | N2 | NOTE | 55 | Installer boilerplate duplicated from autostart-task.ps1 | (open) |
 | N3 | NOTE | 55 | No `-PhoneClientNames` symmetric override | (open) |

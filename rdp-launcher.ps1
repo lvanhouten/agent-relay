@@ -4,8 +4,10 @@
   When the connecting client is the PHONE, it opens the relay dashboard as a
   maximized chromeless browser app window so the dashboard IS the screen the
   moment the phone connects. When the connection is the operator's home desktop
-  (or the local console), it is a strict no-op — auto-launching a maximized window
-  into a full-desktop workflow would be hostile.
+  (or the local console), it never launches — auto-launching a maximized window
+  into a full-desktop workflow would be hostile — and it closes any app window
+  a previous phone connect left standing, so a phone->desktop reconnect doesn't
+  inherit the phone's chromeless window.
 
   Client discrimination (per _docs/issues/2026-07-06-rdp-client-aware-relay-launcher.md):
     - PRIMARY: session geometry. A phone RDP session is portrait (height > width)
@@ -72,19 +74,53 @@ function Get-PrimaryBounds {
   return [System.Windows.Forms.Screen]::PrimaryScreen.Bounds  # last read, even if 0
 }
 
+# The phone path's idempotency check and the desktop path's stale-window
+# teardown match the same thing: an app-mode browser process for this exact URL.
+$appArg = "--app=$Url"
+function Get-AppWindowProcesses {
+  @(
+    Get-CimInstance Win32_Process -Filter "Name = '$Browser.exe'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and $_.CommandLine -like "*$appArg*" }
+  )
+}
+
+# A DESKTOP-classified connect closes the maximized app window an earlier PHONE
+# connect to this same Windows session may have left standing — a per-event
+# no-op decision is right, but the window otherwise outlives the phone session
+# across a phone->desktop reconnect and stays imposed on the desktop workflow.
+# The UNKNOWN branch deliberately does NOT call this: no evidence, no action.
+function Close-StaleAppWindow {
+  $existing = Get-AppWindowProcesses
+  if ($existing.Count -eq 0) { return }
+  if ($WhatIfDecision) {
+    Write-Log "stale app window present (pid $($existing[0].ProcessId)) -> would close (WhatIfDecision)"
+    return
+  }
+  foreach ($p in $existing) {
+    try {
+      Stop-Process -Id $p.ProcessId -ErrorAction Stop
+      Write-Log "closed stale app window from an earlier phone connect (pid $($p.ProcessId))"
+    } catch {
+      Write-Log "close FAILED for stale app window (pid $($p.ProcessId)): $($_.Exception.Message)"
+    }
+  }
+}
+
 $clientName = if ($env:CLIENTNAME) { $env:CLIENTNAME } else { '(none)' }
 $sessionName = if ($env:SESSIONNAME) { $env:SESSIONNAME } else { '(none)' }
 Write-Log "fired: SESSIONNAME=$sessionName CLIENTNAME=$clientName"
 
 # Gate 1 — a local console logon is never the phone.
 if ($sessionName -eq 'Console') {
-  Write-Log 'decision: DESKTOP/console (SESSIONNAME=Console) -> no-op'
+  Write-Log 'decision: DESKTOP/console (SESSIONNAME=Console) -> no launch'
+  Close-StaleAppWindow
   return
 }
 
 # Gate 2 — an explicitly-named desktop client forces a no-op.
 if ($DesktopClientNames -contains $env:CLIENTNAME) {
-  Write-Log "decision: DESKTOP ($clientName in -DesktopClientNames) -> no-op"
+  Write-Log "decision: DESKTOP ($clientName in -DesktopClientNames) -> no launch"
+  Close-StaleAppWindow
   return
 }
 
@@ -104,7 +140,8 @@ $isPhone = $portrait -or $narrow
 Write-Log "geometry: $($b.Width)x$($b.Height) portrait=$portrait narrow(<$WidthThreshold)=$narrow -> phone=$isPhone"
 
 if (-not $isPhone) {
-  Write-Log 'decision: DESKTOP (landscape, wide) -> no-op'
+  Write-Log 'decision: DESKTOP (landscape, wide) -> no launch'
+  Close-StaleAppWindow
   return
 }
 
@@ -115,11 +152,7 @@ if ($WhatIfDecision) {
 
 # Idempotent: don't stack windows on reconnect. Match an existing app-mode process
 # for this exact URL by its command line.
-$appArg = "--app=$Url"
-$existing = @(
-  Get-CimInstance Win32_Process -Filter "Name = '$Browser.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$appArg*" }
-)
+$existing = Get-AppWindowProcesses
 if ($existing.Count -gt 0) {
   Write-Log "decision: PHONE, but an app window for $Url already exists (pid $($existing[0].ProcessId)) -> no duplicate"
   return
