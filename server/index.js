@@ -55,8 +55,10 @@ app.use('/api', authMiddleware, createPairing({
 // Serve the built client (client/dist) from this port — the production story:
 // same origin for page, API, and WS, no Vite proxy. Unauthenticated on purpose
 // (the login page must load before there's a token). Mounted after /api so API
-// routes win; its SPA fallback excludes /api and /sessions. No build → dev mode,
-// where Vite owns the page.
+// routes win; its SPA fallback swallows every other unknown GET, excluding only
+// static.js's RESERVED_PREFIXES — a new top-level route namespace added here
+// (e.g. /healthz) MUST also be added to that list or the fallback answers its
+// unknown paths with index.html. No build → dev mode, where Vite owns the page.
 const staticRouter = createStatic();
 if (staticRouter) app.use(staticRouter);
 

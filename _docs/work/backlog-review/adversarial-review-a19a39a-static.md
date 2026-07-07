@@ -16,6 +16,7 @@ Panel: Saboteur / Maintainer / Security Auditor (single isolated pass). The revi
 **W2. Reserved-path list is a hardcoded cross-file invariant** — `server/src/static.js:42-43` (mount: `server/index.js:58-59`) · confidence 60 · Maintainer
 The fallback is an unconditional catch-all for unmatched GET/HEAD except two hand-written prefixes. Any future top-level route mounted after the static router (or omitted from this two-item list) is silently swallowed — the fallback serves HTML and never calls `next()`. Nothing at the mount site in `index.js` signals the constraint; a maintainer adding e.g. a `/healthz` route must already know to open `static.js`.
 **Fix:** derive the exclusions from a shared reserved-prefix list exported once, or at minimum add a comment at the static mount site in `index.js` pointing route additions at this constraint.
+**Resolution (fixed):** both halves — the exclusions now live in an exported `RESERVED_PREFIXES` list + `isReservedPath()` in static.js, and the mount-site comment in index.js explicitly tells a route-adder to extend that list. Also closes N1 in the same function: the check is now case-insensitive to match Express's own mount matching, with a test pinning `/API/unknown` → 404.
 
 ### Notes
 
@@ -35,6 +36,6 @@ The core design (unauthenticated static by intent, immutable hashed assets, no-c
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
 | W1 | WARNING | 70 | SPA fallback masks missing hashed assets as 200 HTML | fixed |
-| W2 | WARNING | 60 | Reserved-path list is a hardcoded cross-file invariant | (open) |
-| N1 | NOTE | 50 | `/API/…` case-mismatch serves HTML to authenticated callers | (open) |
+| W2 | WARNING | 60 | Reserved-path list is a hardcoded cross-file invariant | fixed |
+| N1 | NOTE | 50 | `/API/…` case-mismatch serves HTML to authenticated callers | fixed (with W2) |
 | N2 | NOTE | 40 | Vanishing dist mid-run → generic 500 | (open) |

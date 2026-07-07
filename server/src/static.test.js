@@ -100,6 +100,14 @@ test('fallback does not shadow /api: an unknown API path stays a 404, not HTML',
   assert.doesNotMatch(body, /relay-index/);
 });
 
+test('reserved prefixes match case-insensitively: /API/unknown stays a 404, not HTML', async t => {
+  // Express's own mount matching is case-insensitive, so /API/x falls through
+  // the /api router into this fallback — the exclusion must match it too.
+  const { status, body } = await request(serve(makeDist(t)), 'GET', '/API/unknown');
+  assert.strictEqual(status, 404);
+  assert.doesNotMatch(body, /relay-index/);
+});
+
 test('a known /api route still wins over static', async t => {
   const { status, body } = await request(serve(makeDist(t)), 'GET', '/api/known');
   assert.strictEqual(status, 200);
