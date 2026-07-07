@@ -5,7 +5,43 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline,
-  makeEndedRegistry, endedLines } = require('./board');
+  makeEndedRegistry, endedLines, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
+
+test('scrubClaudeSessionMarkers: removes every allowlisted marker and reports them', () => {
+  const env = {};
+  for (const k of CLAUDE_SESSION_MARKERS) env[k] = 'x';
+  const removed = scrubClaudeSessionMarkers(env);
+  for (const k of CLAUDE_SESSION_MARKERS) assert.ok(!(k in env), `${k} deleted`);
+  assert.deepStrictEqual(removed.sort(), [...CLAUDE_SESSION_MARKERS].sort());
+});
+
+test('scrubClaudeSessionMarkers: preserves deliberate config/preference vars (never a CLAUDE_* glob)', () => {
+  // The exact distinction the fix rests on: session-identity markers go, but
+  // user-exported knobs and API config stay — the daemon can't tell inherited
+  // from set-on-purpose, so anything not on the allowlist survives.
+  const env = {
+    CLAUDE_CODE_CHILD_SESSION: '1',   // marker -> scrubbed
+    CLAUDECODE: '1',                  // marker -> scrubbed
+    CLAUDE_EFFORT: 'high',            // preference -> survives
+    CLAUDE_AFK_TIMEOUT_MS: '600000',  // preference -> survives
+    ANTHROPIC_API_KEY: 'sk-secret',   // config -> survives
+    PATH: '/usr/bin',                 // unrelated -> survives
+  };
+  scrubClaudeSessionMarkers(env);
+  assert.ok(!('CLAUDE_CODE_CHILD_SESSION' in env));
+  assert.ok(!('CLAUDECODE' in env));
+  assert.strictEqual(env.CLAUDE_EFFORT, 'high');
+  assert.strictEqual(env.CLAUDE_AFK_TIMEOUT_MS, '600000');
+  assert.strictEqual(env.ANTHROPIC_API_KEY, 'sk-secret');
+  assert.strictEqual(env.PATH, '/usr/bin');
+});
+
+test('scrubClaudeSessionMarkers: absent markers are a no-op (nothing reported removed)', () => {
+  const env = { PATH: '/usr/bin' };
+  const removed = scrubClaudeSessionMarkers(env);
+  assert.deepStrictEqual(removed, []);
+  assert.deepStrictEqual(env, { PATH: '/usr/bin' });
+});
 
 test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   const d = paneSpawnDecision({ file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'] });
