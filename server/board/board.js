@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const pty = require('node-pty');
 const { CTRL, dataPipe, lineClosedFarewell, generateSecret, persistSecret,
   makeHandshake, makeCommandBuffer, AUTH_TIMEOUT_MS } = require('./lib');
+const { createScreen } = require('./screen-render');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -134,6 +135,40 @@ function makeEndedRegistry(cap = ENDED_MAX) {
 }
 const endedLines = makeEndedRegistry();
 
+// Per-line rendered-screen lifecycle: lazy-init (seeded from scrollback), live
+// feed, resize tracking, dispose. The emulator factory and the line's
+// size/scrollback accessors are injected, so the lifecycle — including the
+// efficiency invariant (no emulator built until the first read) — is unit-
+// testable without spawning a pty. Mirrors makeRunFeeder / makeEndedRegistry.
+//
+// Seeding replays the line's existing scrollback into a freshly-created emulator
+// so the very first read already reflects the current frame. Residual, accepted:
+// the current frame must sit within the scrollback window; every read after init
+// is exact, kept current by the live feed. feed()/resize() before the first read
+// are deliberate no-ops — a line nobody screen-reads allocates nothing.
+function makeScreenLifecycle(io) {
+  const { create, getSize, getScrollback } = io;
+  let screen = null;
+  function ensure() {
+    if (screen) return screen;
+    const { cols, rows } = getSize();
+    screen = create(cols, rows);
+    for (const chunk of getScrollback()) screen.write(chunk);
+    return screen;
+  }
+  return {
+    // Lazy-init on first read, then snapshot the current grid (a stateless read —
+    // no cursor to track, unlike the delta-based raw-output read).
+    read() { return ensure().snapshot(); },
+    // Live feed / resize: meaningful only once the emulator exists.
+    feed(bytes) { if (screen) screen.write(bytes); },
+    resize(cols, rows) { if (screen) screen.resize(cols, rows); },
+    dispose() { if (screen) { screen.dispose(); screen = null; } },
+    // Test seam: whether the emulator has been constructed yet.
+    _initialized: () => screen !== null,
+  };
+}
+
 // The per-boot access secret every connection must present as its first line
 // (see lib.js). Assigned once in the daemon-entry block below, before either
 // server starts listening — so it's always set by the time a connection arrives.
@@ -158,6 +193,16 @@ function createLine(o = {}) {
   const now = Date.now();
   const s = { pty: p, clients: new Set(), buf: [], sizes: new Map(), name: o.name || '', shell, cwd, startedAt: now, lastActivity: now };
   sessions.set(id, s);
+
+  // Rendered screen for this line: constructed lazily on the first `screen`
+  // command, sized to the live PTY dims and seeded from scrollback (see
+  // makeScreenLifecycle). Once initialized it is kept current by the live feed
+  // (p.onData below), resize tracking (applyMin), and disposed on exit.
+  s.screen = makeScreenLifecycle({
+    create: createScreen,
+    getSize: () => ({ cols: p.cols, rows: p.rows }),
+    getScrollback: () => s.buf,
+  });
 
   // Data plane: a dumb raw byte pump, broadcast to every patched-in pane — but
   // gated on the access secret first (see lib.js). Until a client sends
@@ -191,6 +236,7 @@ function createLine(o = {}) {
     s.lastActivity = Date.now();
     s.buf.push(d);
     if (s.buf.length > SCROLLBACK) s.buf.shift();
+    s.screen.feed(d);   // no-op until the line's screen is first read (lazy)
     for (const c of s.clients) c.write(d);
   });
   p.onExit(({ exitCode }) => {
@@ -201,6 +247,7 @@ function createLine(o = {}) {
     // nor the cleanup below.
     notifyClientsClosed(s.clients, lineClosedFarewell(id, exitCode));
     try { server.close(); } catch { /* ignore */ }
+    try { s.screen.dispose(); } catch { /* ignore */ }
     // Leave a tombstone so pollers can distinguish "ended" (and how) from
     // "never existed". `reason` separates an operator kill (the `end` command
     // sets endReason before the signal) from the process exiting on its own.
@@ -257,7 +304,9 @@ function applyMin(s) {
   if (!s.sizes.size) return;
   let cols = Infinity, rows = Infinity;
   for (const sz of s.sizes.values()) { cols = Math.min(cols, sz.cols); rows = Math.min(rows, sz.rows); }
-  try { s.pty.resize(cols, rows); } catch { /* line may have closed */ }
+  // Resize the PTY, then keep the rendered screen in lockstep so its grid never
+  // shears against the live dims (no-op until the screen is first read).
+  try { s.pty.resize(cols, rows); s.screen.resize(cols, rows); } catch { /* line may have closed */ }
 }
 
 // Open a fresh pane/window patched through to a line. The launch recipe comes
@@ -303,7 +352,7 @@ function openPane(id, recipe) {
   return true;
 }
 
-function handle(m, sock) {
+async function handle(m, sock) {
   switch (m.cmd) {
     case 'new': {
       const id = createLine(m);
@@ -350,6 +399,23 @@ function handle(m, sock) {
       // Dismiss one tombstone. ok:false = no such tombstone (already dismissed,
       // never existed, or cleared by a board restart).
       sock.write(JSON.stringify({ ok: endedLines.forget(m.id) }) + '\n');
+      break;
+    }
+    case 'screen': {
+      // The rendered screen of a line as a stateless snapshot. Field names are a
+      // consumed contract (mcp read-screen tool, `sb screen`): keep exact.
+      const s = sessions.get(m.id);
+      if (s) {
+        // Live line: lazy-init (seed from scrollback) if needed, then snapshot.
+        const snap = await s.screen.read();
+        sock.write(JSON.stringify({ ok: true, boot: BOOT, ...snap }) + '\n');
+      } else {
+        // Not live: distinguish an exited line (tombstone) from one that never
+        // existed. These two failure replies must be tellable apart by `ended`.
+        const tomb = endedLines.list().find(t => t.id === m.id);
+        if (tomb) sock.write(JSON.stringify({ ok: false, ended: true, exitCode: tomb.exitCode, reason: tomb.reason }) + '\n');
+        else sock.write(JSON.stringify({ ok: false, ended: false }) + '\n');
+      }
       break;
     }
     case 'resize': {
@@ -402,8 +468,15 @@ const board = net.createServer(sock => {
       // Guard the whole command dispatch: a field that doesn't match the assumed
       // shape (e.g. `args` as a non-array) must not throw uncaught here and take
       // down the daemon — and every live line with it — for one bad request.
-      try { handle(m, sock); }
-      catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
+      // handle is async (the `screen` command awaits a snapshot); sync commands
+      // still write their reply before the first await, so reply ordering holds,
+      // and an async rejection is caught here instead of crashing the daemon.
+      try {
+        const ret = handle(m, sock);
+        if (ret && typeof ret.then === 'function') {
+          ret.catch(e => log('handle error for cmd', m && m.cmd, '-', e.message));
+        }
+      } catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
     // Post-auth cap (the other half of C1): an oversized newline-less command would
     // otherwise grow unbounded until V8's RangeError crashes the daemon, with no
@@ -453,4 +526,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle };

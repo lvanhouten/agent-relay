@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline,
-  makeEndedRegistry, endedLines } = require('./board');
+  makeEndedRegistry, endedLines, makeScreenLifecycle } = require('./board');
 
 test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   const d = paneSpawnDecision({ file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'] });
@@ -241,4 +241,133 @@ test('makeRunFeeder: never writes once the line is gone', () => {
   h.kill();
   h.advance(120);               // debounce fires but the line is dead
   assert.strictEqual(h.writes.length, 0);
+});
+
+// --- makeScreenLifecycle: lazy-init/seed, live feed, resize, dispose ---
+// A fake emulator + injected size/scrollback accessors so the per-line screen
+// lifecycle is exercised without spawning a pty or constructing a real VT. The
+// factory counts constructions so the efficiency invariant (no emulator until
+// first read) is directly asserted.
+function screenHarness({ size = { cols: 80, rows: 24 }, scrollback = [] } = {}) {
+  let constructed = 0;
+  const emulator = {
+    writes: [],
+    resizes: [],
+    disposed: 0,
+    cols: size.cols,
+    rows: size.rows,
+    write(b) { this.writes.push(b); },
+    resize(c, r) { this.resizes.push([c, r]); this.cols = c; this.rows = r; },
+    snapshot() {
+      return Promise.resolve({
+        grid: this.writes.join(''),
+        cursor: { row: 0, col: 0 },
+        cols: this.cols,
+        rows: this.rows,
+      });
+    },
+    dispose() { this.disposed += 1; },
+  };
+  const createArgs = [];
+  const life = makeScreenLifecycle({
+    create: (cols, rows) => { constructed += 1; createArgs.push([cols, rows]); emulator.cols = cols; emulator.rows = rows; return emulator; },
+    getSize: () => size,
+    getScrollback: () => scrollback,
+  });
+  return { life, emulator, createArgs, constructed: () => constructed };
+}
+
+test('makeScreenLifecycle: no emulator is constructed until the first read', () => {
+  const h = screenHarness();
+  assert.strictEqual(h.constructed(), 0, 'nothing built on creation');
+  assert.strictEqual(h.life._initialized(), false);
+  // Pre-read feed/resize must not force a construction either — a line nobody
+  // screen-reads allocates nothing.
+  h.life.feed('ignored');
+  h.life.resize(10, 5);
+  assert.strictEqual(h.constructed(), 0, 'feed/resize before first read stay no-ops');
+  assert.strictEqual(h.emulator.writes.length, 0, 'pre-init feed reached no emulator');
+});
+
+test('makeScreenLifecycle: first read lazy-inits at the current size and seeds from scrollback', async () => {
+  const h = screenHarness({ size: { cols: 100, rows: 40 }, scrollback: ['aaa', 'bbb'] });
+  const snap = await h.life.read();
+  assert.strictEqual(h.constructed(), 1, 'exactly one emulator constructed on first read');
+  assert.deepStrictEqual(h.createArgs[0], [100, 40], 'sized to the live PTY dims');
+  assert.deepStrictEqual(h.emulator.writes, ['aaa', 'bbb'], 'existing scrollback replayed into the fresh emulator');
+  assert.strictEqual(snap.grid, 'aaabbb');
+  assert.strictEqual(h.life._initialized(), true);
+});
+
+test('makeScreenLifecycle: a second read reuses the same instance (no re-construction)', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  await h.life.read();
+  await h.life.read();
+  assert.strictEqual(h.constructed(), 1, 'the emulator is built once, then reused');
+});
+
+test('makeScreenLifecycle: live feed writes to the same initialized instance', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  await h.life.read();
+  h.life.feed('LIVE');
+  const snap = await h.life.read();
+  assert.strictEqual(h.constructed(), 1);
+  assert.deepStrictEqual(h.emulator.writes, ['seed', 'LIVE'], 'post-init feed reaches the emulator');
+  assert.strictEqual(snap.grid, 'seedLIVE');
+});
+
+test('makeScreenLifecycle: resize forwards to the initialized emulator', async () => {
+  const h = screenHarness();
+  await h.life.read();
+  h.life.resize(42, 12);
+  assert.deepStrictEqual(h.emulator.resizes, [[42, 12]], 'resize forwarded once initialized');
+  const snap = await h.life.read();
+  assert.strictEqual(snap.cols, 42);
+  assert.strictEqual(snap.rows, 12);
+});
+
+test('makeScreenLifecycle: dispose releases the emulator and drops the reference', async () => {
+  const h = screenHarness();
+  await h.life.read();
+  h.life.dispose();
+  assert.strictEqual(h.emulator.disposed, 1, 'the emulator was disposed');
+  assert.strictEqual(h.life._initialized(), false, 'the per-line reference was dropped');
+  // Dispose again is a harmless no-op (no double-dispose after the drop).
+  h.life.dispose();
+  assert.strictEqual(h.emulator.disposed, 1);
+});
+
+// --- handle('screen'): the two distinct failure replies (pure, no pty) ---
+// A live line's screen read needs a real emulator, so the live path is covered
+// by the e2e test; here we pin the not-live branches, which read only the
+// tombstone registry and must be tellable apart by `ended`.
+
+test("handle('screen') for an id that never existed replies ok:false, ended:false", async () => {
+  const c = capture();
+  await handle({ cmd: 'screen', id: 'ghost' }, c.sock);
+  const r = c.reply();
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.ended, false, 'never-existed is not an exit');
+});
+
+test("handle('screen') for an exited line replies ended:true with its exitCode, distinct from never-existed", async () => {
+  endedLines.record({ id: 'tomb-scr', exitCode: 7, reason: 'exited' });
+  try {
+    const c = capture();
+    await handle({ cmd: 'screen', id: 'tomb-scr' }, c.sock);
+    const dead = c.reply();
+    assert.strictEqual(dead.ok, false);
+    assert.strictEqual(dead.ended, true);
+    assert.strictEqual(dead.exitCode, 7, 'the tombstone exit code rides the reply');
+
+    const c2 = capture();
+    await handle({ cmd: 'screen', id: 'ghost' }, c2.sock);
+    const none = c2.reply();
+    assert.notDeepStrictEqual(
+      { ok: dead.ok, ended: dead.ended },
+      { ok: none.ok, ended: none.ended },
+      'the two failure replies are distinguishable, not merely both falsy');
+  } finally {
+    endedLines.forget('tomb-scr');   // module-level registry — leave it clean
+  }
 });
