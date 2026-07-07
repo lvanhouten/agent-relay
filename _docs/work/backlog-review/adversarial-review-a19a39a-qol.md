@@ -26,7 +26,8 @@ The reconnect branch calls `term.reset()` and resets the scroll pill, but never 
 **W4. Blank-name template saves collide on the literal label `'template'` and silently overwrite** — `client/src/screens/SessionsScreen.jsx:234` · confidence 50 · Saboteur
 `const label = name.trim() || 'template'` — two different blank-name saves both upsert the same label; the second silently replaces the first with no confirmation. The upsert-by-label design is sanctioned; the unhandled *fallback* path is not part of that decision.
 **Fix:** unique fallback (command/cwd/timestamp), or block when the label would overwrite an entry the user didn't pick.
-**Resolution (fixed):** content-derived fallback — `fallbackLabel(cwd, command)` in `core/templates.ts` (tested) yields e.g. `claude · agent-relay`, so different blank-name templates get distinct labels. Residual accepted: two blank-name saves with the same leading command word *and* directory name still upsert — that is the sanctioned same-template re-save semantics, not the cross-template collision this finding named. (Timestamps were rejected: they'd defeat upsert-dedupe and clutter the picker.)
+**Resolution (fixed):** content-derived fallback — `fallbackLabel(cwd, command)` in `core/templates.ts` (tested) yields e.g. `claude · agent-relay`, so different blank-name templates get distinct labels. (Timestamps were rejected: they'd defeat upsert-dedupe and clutter the picker.)
+**Post-verify amendment:** the verify pass caught that the first resolution mislabeled the distinct-cwd-same-basename clash as "same-template re-save semantics" — it isn't (verify N1). `uniqueFallbackLabel` now widens the label with path segments on a different-cwd clash; only a genuinely same-cwd re-save collapses.
 
 ### Notes
 
