@@ -23,6 +23,7 @@ The `ATTENTION` table plus its `?? { dot: 'offline', label: session.status }` fa
 **N2. `toDto()`/`relTime()` unguarded against non-finite `idleMs`** — `server/src/sessions.js:36-41,58` · confidence 30 · Saboteur
 `??` covers null/undefined only. Today `board.js` always computes a numeric `idleMs`, so this isn't reachable — but it's untested, and a future board-side regression (or malformed pipe JSON) yields silent `'idle'` (NaN comparisons are false) plus `"NaNh ago"` on the card.
 **Fix:** `Number.isFinite(line.idleMs) ? line.idleMs : 0` at the DTO boundary + a malformed-input unit test.
+**Resolution (fixed):** exactly that — `toDto` now guards with `Number.isFinite`, feeding both the status derivation and `relTime`, with a NaN-input test pinning `running` + a numeric relative time.
 
 **N3. Security assumption, for the record** — `server/src/sessions.js:51-61` · confidence 20 · Security
 No new surface: raw `idleMs` isn't exposed (only the derived status and the pre-existing rounded `lastActive`), and `GET /sessions` stays behind auth. The now-load-bearing assumption: `idleMs` derives purely from board-side PTY activity with no client-controllable input. Holds today; re-verify if any future feature lets a client report its own activity/heartbeat.
@@ -37,5 +38,5 @@ The design promise this slice makes — one idle definition, shared by `sb wait`
 |----|----------|------|---------|--------|
 | W1 | WARNING | 55 | ATTENTION map un-extracted/untested; sole vocab sync point | fixed |
 | N1 | NOTE | 35 | Unknown-status fallback inverts urgency under version skew | fixed (with W1) |
-| N2 | NOTE | 30 | Non-finite `idleMs` unguarded in `toDto`/`relTime` | (open) |
+| N2 | NOTE | 30 | Non-finite `idleMs` unguarded in `toDto`/`relTime` | fixed |
 | N3 | NOTE | 20 | Status derivation's no-client-input assumption, recorded | (open) |

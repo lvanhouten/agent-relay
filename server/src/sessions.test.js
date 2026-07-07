@@ -162,15 +162,19 @@ test('flagAttention(): a quiet line (no output since the flag) reports needs-inp
 });
 
 test('list(): output arriving after the flag clears it (stale flag dropped)', async () => {
-  // Flagged 10s before NOW, but the line's last output was only 1s ago
-  // (idleMs=1000) — output landed AFTER the flag, so the agent moved on.
-  const NOW = 1_000_000;
+  // Flag at t=990s via the public surface (mutable injected clock), then list
+  // at t=1000s with the line's last output 1s ago (idleMs=1000) — output
+  // landed AFTER the flag, so the agent moved on.
+  let now = 990_000;
   const s = new BoardSessions({
-    now: () => NOW,
+    now: () => now,
     rpc: async () => ({ ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: 1000 }] }),
   });
-  s._attention.set('1', NOW - 10_000); // lastOutputAt (NOW-1000) > flaggedAt (NOW-10000)
+  s.flagAttention('1');
+  now = 1_000_000; // lastOutputAt (NOW-1000) > flaggedAt (990_000)
   assert.strictEqual((await s.list())[0].status, 'running');
+  // Memory hygiene (the entry is deleted, not just re-evaluated false) has no
+  // public observation — the one place direct field access stays.
   assert.strictEqual(s._attention.has('1'), false, 'stale flag is pruned once cleared');
 });
 
@@ -189,15 +193,50 @@ test('list(): a flag for a line that has exited is pruned, never resurrected', a
   s.flagAttention('1');
   const list = await s.list();
   assert.strictEqual(list[0].status, 'exited', 'needs-input never overrides a tombstone');
+  // Memory hygiene — not publicly observable (see the stale-flag test above).
   assert.strictEqual(s._attention.has('1'), false, 'the dead id is pruned from the flag map');
+});
+
+test('list(): a board restart (boot nonce change) voids every attention flag', async () => {
+  // Line ids restart per board boot, so a web tier that outlives a board
+  // restart could hold a flag a REUSED id would inherit — a fresh quiet line
+  // reading needs-input. The boot nonce in the list reply is the restart signal.
+  let boot = 'boot-A';
+  const s = new BoardSessions({
+    now: () => 1_000_000,
+    rpc: async () => ({ ok: true, boot, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: 13000 }] }),
+  });
+  s.flagAttention('1');
+  assert.strictEqual((await s.list())[0].status, 'needs-input', 'first sight of a nonce is not a restart');
+  boot = 'boot-B'; // board restarted; id 1 is now a different, fresh line
+  assert.strictEqual((await s.list())[0].status, 'idle', 'the reused id must not inherit the old flag');
+});
+
+test('toDto(): a non-finite idleMs reads as just-active, never "NaNs ago"', async () => {
+  // ?? only covers null/undefined — a NaN would compare false into 'idle' and
+  // render a NaN relative time on the card.
+  const s = new BoardSessions({
+    rpc: async () => ({ ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: NaN }] }),
+  });
+  const dto = (await s.list())[0];
+  assert.strictEqual(dto.status, 'running');
+  assert.match(dto.lastActive, /^\d+s ago$/);
 });
 
 // --- flagAttentionByCwd(): the /api/notify cwd fallback (line-id bridge) ---
 
 // Build sessions whose board `list` returns the given lines; case/separator
-// normalization is exercised via the cwds themselves.
+// normalization is exercised via the cwds themselves. Fixed clock so the
+// flaggedAt vs last-output comparison in list()'s overlay is deterministic,
+// letting these tests observe flags through the public status instead of the
+// private map (N4: representation-coupled tests).
 function cwdSessions(lines) {
-  return new BoardSessions({ rpc: async () => ({ ok: true, lines }) });
+  return new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, lines }) });
+}
+
+// The public observation of "which lines are flagged": list()'s status overlay.
+async function statusById(s) {
+  return Object.fromEntries((await s.list()).map((x) => [x.id, x.status]));
 }
 
 test('flagAttentionByCwd(): flags the single line whose cwd matches', async () => {
@@ -206,8 +245,7 @@ test('flagAttentionByCwd(): flags the single line whose cwd matches', async () =
     { id: '2', cwd: '/home/b', idleMs: 0 },
   ]);
   assert.strictEqual(await s.flagAttentionByCwd('/home/b'), '2');
-  assert.strictEqual(s._attention.has('2'), true);
-  assert.strictEqual(s._attention.has('1'), false, 'only the matching line is flagged');
+  assert.deepStrictEqual(await statusById(s), { 1: 'running', 2: 'needs-input' }, 'only the matching line is flagged');
 });
 
 test('flagAttentionByCwd(): matches through path normalization (trailing slash, .., separators)', async () => {
@@ -222,20 +260,20 @@ test('flagAttentionByCwd(): on a same-dir tie, the most recently active line (mi
     { id: '3', cwd: '/repo', idleMs: 4000 },
   ]);
   assert.strictEqual(await s.flagAttentionByCwd('/repo'), '2');
-  assert.deepStrictEqual([...s._attention.keys()], ['2'], 'only the freshest match, not all three');
+  assert.deepStrictEqual(await statusById(s), { 1: 'running', 2: 'needs-input', 3: 'running' }, 'only the freshest match, not all three');
 });
 
 test('flagAttentionByCwd(): no live line matches -> null, flags nothing', async () => {
   const s = cwdSessions([{ id: '1', cwd: '/repo', idleMs: 0 }]);
   assert.strictEqual(await s.flagAttentionByCwd('/elsewhere'), null);
-  assert.strictEqual(s._attention.size, 0);
+  assert.deepStrictEqual(await statusById(s), { 1: 'running' });
 });
 
 test('flagAttentionByCwd(): an empty/whitespace cwd never matches (no home-dir over-flag)', async () => {
   const s = cwdSessions([{ id: '1', cwd: '/repo', idleMs: 0 }]);
   assert.strictEqual(await s.flagAttentionByCwd('   '), null);
   assert.strictEqual(await s.flagAttentionByCwd(''), null);
-  assert.strictEqual(s._attention.size, 0);
+  assert.deepStrictEqual(await statusById(s), { 1: 'running' });
 });
 
 test('flagAttentionByCwd(): a board-down list RPC throws BoardUnreachableError (-> 503)', async () => {

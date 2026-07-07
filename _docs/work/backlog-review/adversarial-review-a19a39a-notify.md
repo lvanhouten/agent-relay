@@ -38,6 +38,7 @@ ADR-0001 accepts "XSS can drive the API" because the blast radius was local shel
 **N1. `_attention` Map prunes only inside `list()` — grows while nobody polls, and a board-restart id reuse can inherit a stale flag** — `server/src/sessions.js:113-115, 180-183` · confidence 55 · Saboteur (demoted from WARNING: blast radius is a Map of id→timestamp — memory impact is negligible at any realistic session count, and the output-after-flag overlay self-heals most misapplications)
 The scenario is real (push exists precisely for when nobody is watching the dashboard, i.e. when `list()` isn't running), but the entries are ~tens of bytes and the first `list()` prunes. The sharper residual edge: line ids restart per board boot, so a web tier that outlives a board restart can hold a flag that a *reused* id inherits — usually cleared immediately by the new line's output, but briefly mislabeling a fresh session as needs-input.
 **Fix (optional):** reconcile `_attention` on a low-frequency interval independent of HTTP traffic, or namespace flags by the board's boot nonce the way `mcp-server.js` namespaces read cursors.
+**Resolution (fixed, id-reuse edge):** `list()` now tracks the reply's boot nonce and clears every flag on a change (first sight of a nonce is not a restart), killing the reused-id inheritance. Mutation-proven test. The grows-while-nobody-polls half stays accepted — entries are tens of bytes and the first `list()` prunes.
 
 **N2. No dedup/throttle on `POST /notify`; compounds with Pushover priority-2 auto-retry** — `server/src/api.js`, `server/src/notifiers.js` (priority 2 → `retry: 60, expire: 3600`) · confidence 45 · Saboteur (demoted per the <50 rule)
 Duplicate hook registrations or a retrying hook script firing several `needsInput, priority:2` calls each become independent Pushover messages, each re-alerting every 60s for an hour — a stacking buzz-storm with no collapse path. Untested.
@@ -49,10 +50,12 @@ Duplicate hook registrations or a retrying hook script firing several `needsInpu
 **N4. New attention tests assert on the private `_attention` Map** — `server/src/sessions.test.js` (flagAttentionByCwd tests) · confidence 65 · Maintainer
 Every pre-existing test in the file observes only the public surface (return values, issued RPCs); the new tests reach into `s._attention` directly, coupling them to the representation. Refactoring the store breaks tests that have nothing to do with behavior.
 **Fix:** assert through `list()`'s status overlay; keep direct field access only where no public observation exists.
+**Resolution (fixed):** the cwd tests now observe through a `statusById()` helper over `list()` (fixed injected clock makes the overlay deterministic); the backdated-flag setup became a mutable-clock `flagAttention()` call. Direct `_attention` access survives only in the two memory-hygiene assertions (entry deleted vs re-evaluated false), each commented as such.
 
 **N5. The needs-input clear rides an unstated timing assumption between hook POST and prompt output** — `server/src/sessions.js:157-166` · confidence 40 · Maintainer + orchestrator seam pass (converging independently, but both low-confidence — held at NOTE)
 `_applyAttention` drops the flag when `idleMs` implies output after flag-time. This works because a Notification hook fires *after* the prompt's final paint and polls are coarser than the hook's round-trip — but nothing documents or guards that ordering. A laggy hook POST racing a TUI repaint (or an attach-triggered resize repaint) silently clears a flag that should stick. Soft failure (stale UI, no corruption), zero test coverage of the ordering.
 **Fix:** document the ordering assumption at `_applyAttention`, and consider a small grace window (e.g. ignore output within ~1s after flag) if false-clears show up in practice.
+**Resolution (fixed, comment):** the ordering assumption, the racing-repaint failure mode, its soft blast radius, and the grace-window escape hatch are now stated at `_applyAttention`. No behavior change until false-clears are observed in practice, per the finding's own framing.
 
 ### Summary
 
@@ -67,8 +70,8 @@ The seam design (pluggable notifiers, dumb endpoint, web-tier flag) is faithful 
 | W3 | WARNING | 70 | `clearAttention?.()` masks a contract, tolerates stale fixture | fixed |
 | W4 | WARNING | 55 | Bearer token in curl argv (README recipe) | fixed |
 | W5 | WARNING | 55 | Unvalidated `url` → trusted-channel phishing beyond XSS ceiling | fixed |
-| N4 | NOTE | 65 | Tests assert private `_attention` representation | (open) |
-| N1 | NOTE | 55 | `_attention` prune only in `list()`; id-reuse edge | (open) |
-| N3 | NOTE | 50 | Payload discipline is prose-only | (open) |
-| N2 | NOTE | 45 | No notify dedup; priority-2 stacking | (open) |
-| N5 | NOTE | 40 | Undocumented hook-vs-output timing assumption in clear logic | (open) |
+| N4 | NOTE | 65 | Tests assert private `_attention` representation | fixed |
+| N1 | NOTE | 55 | `_attention` prune only in `list()`; id-reuse edge | fixed (id-reuse) |
+| N3 | NOTE | 50 | Payload discipline is prose-only | accepted (caps exist; discipline documented) |
+| N2 | NOTE | 45 | No notify dedup; priority-2 stacking | open (deliberate — dedup could suppress legit re-alerts; revisit if a buzz-storm occurs) |
+| N5 | NOTE | 40 | Undocumented hook-vs-output timing assumption in clear logic | fixed (comment) |
