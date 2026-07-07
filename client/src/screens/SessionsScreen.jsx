@@ -221,6 +221,13 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const [templates, setTemplates] = React.useState(loadTemplates);
   const [justSaved, setJustSaved] = React.useState(false);
 
+  // Every form edit goes through these, not the raw setters: any change
+  // invalidates the "Saved" indicator — the stored template is the pre-edit
+  // form, and the button must not claim the edited one is saved.
+  const editName = (v) => { setName(v); setJustSaved(false); };
+  const editCwd = (v) => { setCwd(v); setJustSaved(false); };
+  const editCommand = (v) => { setCommand(v); setJustSaved(false); };
+
   const applyTemplate = (t) => {
     setName(t.name);
     setCwd(t.cwd);
@@ -324,7 +331,7 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
         <Input
           label="Session name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => editName(e.target.value)}
           placeholder="api-dev"
           autoFocus
         />
@@ -332,7 +339,7 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
           label="Working directory"
           mono
           value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
+          onChange={(e) => editCwd(e.target.value)}
           prefix={<Folder size={14} />}
         />
 
@@ -353,7 +360,7 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
               const selected = c === 'claude' ? isClaudeCommand(command) : command === c;
               const pick = () => {
                 if (selected) return;
-                setCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
+                editCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
               };
               return (
                 <button key={c} onClick={pick} style={{
@@ -371,14 +378,14 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
           </div>
           {isClaudeCommand(command) && (
             <>
-              <FlagChipRow label="model" flag="model" options={CLAUDE_MODELS} command={command} onCommand={setCommand} />
-              <FlagChipRow label="effort" flag="effort" options={CLAUDE_EFFORTS} command={command} onCommand={setCommand} />
+              <FlagChipRow label="model" flag="model" options={CLAUDE_MODELS} command={command} onCommand={editCommand} />
+              <FlagChipRow label="effort" flag="effort" options={CLAUDE_EFFORTS} command={command} onCommand={editCommand} />
             </>
           )}
           <Input
             mono
             value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            onChange={(e) => editCommand(e.target.value)}
             placeholder="npm run dev — leave blank for a plain shell"
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

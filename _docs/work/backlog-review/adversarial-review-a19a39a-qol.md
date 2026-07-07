@@ -16,6 +16,7 @@ Panel: Saboteur / Maintainer / Security Auditor (single isolated pass). The e2e 
 **W2. `justSaved` template indicator goes stale after editing the form** — `client/src/screens/SessionsScreen.jsx:222,228,327,335,381` · confidence 70 · Maintainer
 `justSaved` is set on save and reset only in `applyTemplate`; none of the three field `onChange` handlers clear it. Save → edit the command → the button still shows the accent "Saved" state, implying the *edited* form is stored when the stored template is pre-edit. Nothing in the file hints at the invariant, so a future fix wired only into `applyTemplate` misses this path.
 **Fix:** reset on any field change, or derive the indicator from whether the current form matches a stored template.
+**Resolution (fixed):** every form-edit path (three Input onChanges, the quick-command pick, both FlagChipRows) now routes through `editName`/`editCwd`/`editCommand` wrappers that reset `justSaved`, with a comment stating the invariant at the wrappers so a future field can't miss it. `applyTemplate` keeps its explicit reset.
 
 **W3. Reconnect resets the buffer but leaves the find bar's match state stale** — `client/src/core/TerminalView.tsx:109-116` (`onReady`), `client/src/screens/TerminalScreen.jsx:33` · confidence 55 · Saboteur
 The reconnect branch calls `term.reset()` and resets the scroll pill, but never clears `searchRef` decorations or notifies `onSearchResultsRef`. With the find bar open across a WS drop, the readout can show "3/5" against a freshly-replayed buffer with zero highlighted matches until the next keystroke.
@@ -60,7 +61,7 @@ The pure-module extraction discipline mostly held (four new tested core modules)
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
 | W1 | WARNING | 70 | Composer clears text on silently-dropped send | fixed |
-| W2 | WARNING | 70 | "Saved" indicator stale after form edit | (open) |
+| W2 | WARNING | 70 | "Saved" indicator stale after form edit | fixed |
 | W3 | WARNING | 55 | Find-bar match state survives buffer reset on reconnect | (open) |
 | W4 | WARNING | 50 | Blank-name template saves silently overwrite each other | (open) |
 | N2 | NOTE | 55 | Transcript now a durable artifact (acceptance note) | (open) |
