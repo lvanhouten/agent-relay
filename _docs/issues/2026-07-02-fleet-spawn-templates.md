@@ -1,7 +1,7 @@
 # Spawning a real session from the phone means re-typing shell, cwd, and command every time
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — the create form is fine on a desktop and miserable on a phone; the sessions people actually spawn are the same handful of shapes every time.
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** 🟡 Phase 1 landed — 2026-07-06. Client-only `localStorage` template store (`client/src/core/templates.ts`, pure + unit-tested: parse-guard against a corrupt/foreign store, upsert-by-label, remove) wired into the create dialog (`SessionsScreen.jsx`): a preset picker (load-on-tap prefill-and-edit + per-chip delete) and a "Save as template" affordance that upserts the current `{name, cwd, command}` under the session name as label. Verified end-to-end in a real browser (save → persist across remount → load → delete). **Phase 2 (server-side `/api/templates` store so templates follow the operator across devices) remains open** — see below.
 **Kind:** Enhancement
 **Modules:** client/SessionsScreen (phase 1), server/api (phase 2)
 **Severity:** Low–Medium — small effort, turns the phone into a launcher instead of only a monitor.

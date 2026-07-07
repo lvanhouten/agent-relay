@@ -8,9 +8,10 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
+import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
-import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode } from 'lucide-react';
+import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode, Bookmark, BookmarkPlus } from 'lucide-react';
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
@@ -214,6 +215,37 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
   const [cwd, setCwd] = React.useState('~/');
   const [command, setCommand] = React.useState(() => withClaudeDefaults('claude'));
 
+  // Spawn templates (phase 1, localStorage). Loaded once on mount; the picker
+  // prefills the form (prefill-and-edit, never fires blindly — a stale cwd must
+  // be visible before spawn), and "save as template" upserts the current form.
+  const [templates, setTemplates] = React.useState(loadTemplates);
+  const [justSaved, setJustSaved] = React.useState(false);
+
+  const applyTemplate = (t) => {
+    setName(t.name);
+    setCwd(t.cwd);
+    setCommand(t.command);
+    setJustSaved(false);
+  };
+
+  const saveAsTemplate = () => {
+    // The session name is the label — the operator already types a meaningful
+    // one ("claude · agent-relay"); upsert dedupes so a re-save overwrites.
+    const label = name.trim() || 'template';
+    const next = upsertTemplate(templates, {
+      label, name: name.trim() || 'untitled', cwd, command: command.trim(),
+    });
+    setTemplates(next);
+    saveTemplates(next);
+    setJustSaved(true);
+  };
+
+  const deleteTemplate = (label) => {
+    const next = removeTemplate(templates, label);
+    setTemplates(next);
+    saveTemplates(next);
+  };
+
   const handleCreate = () => {
     onCreate({
       name: name.trim() || 'untitled',
@@ -239,6 +271,55 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
             <span style={{ fontSize: 18, lineHeight: 1, color: 'var(--text-muted)' }}>×</span>
           </IconButton>
         </div>
+
+        {templates.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+              textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
+            }}>
+              Templates
+            </span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {templates.map((t) => (
+                // Load-on-tap; the trailing × removes without loading. Each chip
+                // is one saved {name, cwd, command} shape.
+                <span key={t.label} style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full, 999px)',
+                  background: 'var(--surface-sunken)', overflow: 'hidden',
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => applyTemplate(t)}
+                    title={`${t.command || 'plain shell'} · ${t.cwd}`}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      height: 30, padding: '0 6px 0 12px', border: 'none', background: 'transparent',
+                      cursor: 'pointer', color: 'var(--text-body)',
+                      fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
+                    }}
+                  >
+                    <Bookmark size={12} /> {t.label}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete template ${t.label}`}
+                    title="Delete template"
+                    onClick={() => deleteTemplate(t.label)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      height: 30, width: 26, border: 'none', background: 'transparent',
+                      cursor: 'pointer', color: 'var(--text-faint)',
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <Input
           label="Session name"
@@ -300,11 +381,26 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
             onChange={(e) => setCommand(e.target.value)}
             placeholder="npm run dev — leave blank for a plain shell"
           />
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', color: 'var(--text-faint)',
-          }}>
-            Runs on start; the shell stays open when it exits.
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', color: 'var(--text-faint)',
+            }}>
+              Runs on start; the shell stays open when it exits.
+            </span>
+            <button
+              type="button"
+              onClick={saveAsTemplate}
+              title="Save this name, directory, and command as a reusable template"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
+                color: justSaved ? 'var(--text-accent)' : 'var(--text-muted)',
+              }}
+            >
+              <BookmarkPlus size={13} /> {justSaved ? 'Saved' : 'Save as template'}
+            </button>
+          </div>
         </div>
 
         {error && (
