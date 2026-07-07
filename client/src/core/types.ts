@@ -30,6 +30,14 @@ export interface Session {
 
 export type ConnStatus = 'connecting' | 'reconnecting' | 'online' | 'offline';
 
+// Mirrors @xterm/addon-search's onDidChangeResults payload. resultCount is -1
+// when the addon hasn't computed a count (e.g. an empty query); the find bar
+// treats that as "no readout".
+export interface SearchResults {
+  resultIndex: number;
+  resultCount: number;
+}
+
 // Server -> client frames (server/src/ws.js vocabulary).
 export interface DataFrame { type: 'data'; payload: string }
 export interface ExitFrame { type: 'exit'; code: number | null }
