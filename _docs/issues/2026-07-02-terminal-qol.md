@@ -1,7 +1,9 @@
 # Terminal quality-of-life: no search, no transcript download, no scroll-to-bottom affordance
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — grab-bag of small client-only gaps that show up the first time a session produces real volume.
-**Status:** 💡 Proposed — 2026-07-02. **Revisited 2026-07-06:** the scroll-to-bottom pill specifically is promoted by the RD-app phone path (`2026-07-06-rdp-mobile-session-recipe.md`) — touch-scrolling xterm scrollback through RDP is the worst version of the no-affordance problem; an in-page tap target fixes it for RDP and native mobile alike.
+**Status:** ✅ Landed — 2026-07-06. All three items ship in `client/src/screens/TerminalScreen.jsx` + `client/src/core/TerminalView.tsx`: **Search** via `@xterm/addon-search` (find bar with `n/m` readout from `onDidChangeResults`, next/prev/close, Ctrl+F intercepted in `TerminalView`'s data handler like Ctrl+D); **Download transcript** via `@xterm/addon-serialize` → Blob, filename from the pure `client/src/core/transcript.ts` (`<slug>-<iso>.txt`, unit-tested); **Scroll-to-bottom pill** floating over the viewport, its state a pure reducer in `client/src/core/scrollPill.ts` (unit-tested — "↓ N new" while detached, clears on re-reaching bottom). Verified end-to-end in a real browser (search `1/11`, pill `6 new`, transcript captured the full buffer). **Original notes below.**
+
+**Was:** 💡 Proposed — 2026-07-02. **Revisited 2026-07-06:** the scroll-to-bottom pill specifically is promoted by the RD-app phone path (`2026-07-06-rdp-mobile-session-recipe.md`) — touch-scrolling xterm scrollback through RDP is the worst version of the no-affordance problem; an in-page tap target fixes it for RDP and native mobile alike.
 **Kind:** Enhancement
 **Modules:** client/TerminalScreen
 **Severity:** Low — independent small items, good gap-fillers between larger features.
