@@ -27,7 +27,10 @@ function isReservedPath(reqPath) {
 // Returns a router serving the built client, or null when there is no build
 // (dev — the Vite server owns the page there). Checked once at startup, not per
 // request: a build appearing mid-run needs a server restart, which --watch does
-// anyway for any server change.
+// anyway for any server change. The same restart assumption scopes out the
+// reverse case: a dist removed/swapped mid-run degrades to sendFile ENOENT →
+// errorHandler's generic 500 per page load — deliberate, since deploys restart
+// the server and a non-atomic swap under a live one isn't a supported state.
 function createStatic(distDir = DIST_DIR) {
   const indexPath = path.join(distDir, 'index.html');
   if (!fs.existsSync(indexPath)) return null;

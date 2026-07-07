@@ -26,6 +26,7 @@ Express route matching is case-insensitive by default (repo never enables `case 
 
 **N2. dist disappearing mid-run degrades to a generic JSON 500 per page load** — `server/src/static.js:14-19,44-48` · confidence 40 · Saboteur
 The existence check runs once at startup and only reasons about a build *appearing*. If `client/dist` is removed/swapped non-atomically while the server runs, every page load hits `res.sendFile` → ENOENT → `errorHandler` → `{error}` 500. Acceptable if deploys always restart the server (matches the `--watch` story) — worth a one-line comment scoping it out, or a plainer ENOENT response.
+**Resolution (fixed, comment):** the startup-check comment now scopes the reverse case out explicitly — mid-run dist removal degrades to the generic 500 by design, because deploys restart the server.
 
 ### Summary
 
@@ -38,4 +39,4 @@ The core design (unauthenticated static by intent, immutable hashed assets, no-c
 | W1 | WARNING | 70 | SPA fallback masks missing hashed assets as 200 HTML | fixed |
 | W2 | WARNING | 60 | Reserved-path list is a hardcoded cross-file invariant | fixed |
 | N1 | NOTE | 50 | `/API/…` case-mismatch serves HTML to authenticated callers | fixed (with W2) |
-| N2 | NOTE | 40 | Vanishing dist mid-run → generic 500 | (open) |
+| N2 | NOTE | 40 | Vanishing dist mid-run → generic 500 | fixed (comment) |
