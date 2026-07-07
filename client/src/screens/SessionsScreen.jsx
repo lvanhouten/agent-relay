@@ -234,8 +234,10 @@ function NewSessionDialog({ onClose, onCreate, error, busy }) {
       label, name: name.trim() || 'untitled', cwd, command: command.trim(),
     });
     setTemplates(next);
-    saveTemplates(next);
-    setJustSaved(true);
+    // Only claim "Saved" when the localStorage write persisted — in private
+    // mode / over quota the chip still works this session but is gone on
+    // reload, and the accent state must not promise otherwise.
+    setJustSaved(saveTemplates(next));
   };
 
   const deleteTemplate = (label) => {

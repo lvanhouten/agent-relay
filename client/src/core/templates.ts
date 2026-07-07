@@ -85,6 +85,10 @@ export function loadTemplates(): SpawnTemplate[] {
   try { return parseTemplates(localStorage.getItem(KEY)); } catch { return []; }
 }
 
-export function saveTemplates(list: SpawnTemplate[]): void {
-  try { localStorage.setItem(KEY, serializeTemplates(list)); } catch { /* quota/private-mode — non-fatal */ }
+// Returns whether the write actually persisted. Quota/private-mode failures
+// are non-fatal, but the caller must know: showing "Saved" for a template
+// that's gone on reload is a lie the UI otherwise has no way to catch.
+export function saveTemplates(list: SpawnTemplate[]): boolean {
+  try { localStorage.setItem(KEY, serializeTemplates(list)); return true; }
+  catch { return false; }
 }
