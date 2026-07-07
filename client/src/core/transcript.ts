@@ -22,6 +22,9 @@ export function transcriptFilename(name: string, iso: string): string {
 // wrong for the .txt we actually ship: Notepad shows the raw \x1b[...m noise.
 // Strip CSI (colors/cursor), OSC (titles/hyperlinks, BEL- or ST-terminated),
 // and stray single-char escapes before the Blob. Text content is untouched.
+// Deliberate scope limit: DCS/APC/PM/SOS (ESC P/_/^/X … ST) payloads are NOT
+// stripped — SerializeAddon never emits them, so handling them here would be
+// dead code. If the input source ever changes, add an ESC[P_^X]…ST pass.
 export function stripAnsi(text: string): string {
   return text
     // eslint-disable-next-line no-control-regex

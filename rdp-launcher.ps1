@@ -159,6 +159,8 @@ if ($PhoneClientNames -contains $env:CLIENTNAME) {
   # to prevent; a phone missing its auto-launch just means tapping the icon by hand.
   $b = Get-PrimaryBounds
   if ($b.Width -le 0 -or $b.Height -le 0) {
+    # No teardown here on purpose: unknown is not desktop — closing a window on
+    # a failed read could yank it from a live phone session (see Close-StaleAppWindow).
     Write-Log "decision: UNKNOWN (geometry read failed: $($b.Width)x$($b.Height)) -> no-op"
     return
   }

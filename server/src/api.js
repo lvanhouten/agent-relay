@@ -55,6 +55,10 @@ function validateNotifyBody(body) {
 // origin (set it to the origin you load the relay from). Compared as parsed
 // origins, not a string prefix, so https://relay.example.evil.com can't ride
 // a prefix match on https://relay.example.
+// Standing dependency: this closes the off-device vector only while the relay
+// origin itself has no attacker-steerable redirect. If a return_to/OAuth-
+// callback style endpoint is ever added, a deep link could bounce through the
+// trusted origin onward — pin an allowed path prefix here at that point.
 function validateNotifyUrl(url, allowedOrigin) {
   if (url === undefined || url === null) return null;
   if (!allowedOrigin) return 'url is disabled (set AR_NOTIFY_URL_ORIGIN to enable deep links)';
