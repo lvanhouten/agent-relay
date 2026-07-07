@@ -95,7 +95,8 @@ Priorities: **P1** = do next, **P2** = soon, **P3** = wait for its trigger signa
 | Scrollback persistence: transcripts survive line exit / board restart | P2 | L | `_docs/issues/2026-07-02-scrollback-persistence.md` |
 | Hook-driven Web Push when a session needs attention (blocked on secure origin; Pushover covers the need meanwhile) | P3 | M | `_docs/issues/2026-07-02-hook-driven-push-notifications.md` |
 | Approve/deny prompts from notification action buttons (needs Web Push delivery — Pushover can't host approve/deny) | P3 | L | `_docs/issues/2026-07-02-notification-action-buttons.md` |
-| Claude-native lines: structured session state from transcripts/hooks | P3 | L | `_docs/issues/2026-07-02-claude-native-lines.md` |
+| Hook-beaconed session state: SessionStart/Stop beacons give Claude lines honest status (supersedes the idleMs heuristic there; captures `transcriptPath` for claude-native-lines) | P2 | M | `_docs/issues/2026-07-07-hook-beaconed-session-state.md` |
+| Claude-native lines **— narrowed 2026-07-07 to the transcript-tailing bet** (JSONL tailer + chat view; binding comes from hook-beaconed session state; grill first) | P3 | L | `_docs/issues/2026-07-02-claude-native-lines.md` |
 | Scoped tokens (read-only / per-session input; prerequisite for any multi-user or App Proxy rollout) | P3 | M | `_docs/issues/2026-07-02-scoped-tokens.md` |
 | Paired/connected device dashboard + per-device unpair | P3 | M | `_docs/issues/2026-07-06-paired-device-dashboard.md` |
 | Desktop workspace shell: two shells over one core, spectator attach, panes, palette | P3 | L | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |
