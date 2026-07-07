@@ -16,3 +16,18 @@ export function transcriptFilename(name: string, iso: string): string {
   const stamp = iso.replace(/\.\d+Z$/, 'Z').replace(/:/g, '-');
   return `${slug}-${stamp}.txt`;
 }
+
+// SerializeAddon reproduces terminal STATE — colors, attributes, cursor moves —
+// as escape sequences, which is right for replaying into another terminal and
+// wrong for the .txt we actually ship: Notepad shows the raw \x1b[...m noise.
+// Strip CSI (colors/cursor), OSC (titles/hyperlinks, BEL- or ST-terminated),
+// and stray single-char escapes before the Blob. Text content is untouched.
+export function stripAnsi(text: string): string {
+  return text
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')          // CSI ... final byte
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')  // OSC ... BEL | ST
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b[@-Z\\-_]/g, '');                     // other two-byte escapes
+}

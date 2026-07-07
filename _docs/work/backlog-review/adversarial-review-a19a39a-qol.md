@@ -32,21 +32,26 @@ The reconnect branch calls `term.reset()` and resets the scroll pill, but never 
 
 **N1. Transcript `.txt` embeds raw ANSI/SGR escapes** — `client/src/screens/TerminalScreen.jsx:66-77` · confidence 45 · Saboteur
 `SerializeAddon.serialize()` reproduces terminal state *including* color/attribute escapes; the `text/plain` `.txt` opens in Notepad full of `\x1b[...m`. Either strip SGR before the Blob or document that the export is an ANSI transcript.
+**Resolution (fixed):** `stripAnsi()` in `core/transcript.ts` (CSI, OSC — BEL- and ST-terminated — and two-byte escapes; tested incl. a plain-text-untouched case) runs over the serialized buffer before the Blob.
 
 **N2. Transcript is now a durable named artifact** — `client/src/screens/TerminalScreen.jsx:66-77` · confidence 55 · Security (acceptance note — the secrets-in-downloads caveat is stated and accepted; the increment is durability: Downloads-folder cloud sync, browser history, outliving the session)
 Optional: a tooltip on the Download button noting the file may contain anything echoed to the terminal.
+**Resolution (fixed):** the button label (rendered as tooltip + aria-label by `IconButton`) now reads "Download transcript (may contain secrets echoed to the terminal)".
 
 **N3. Find-bar match readout is untested pure logic left inline in the screen** — `client/src/screens/TerminalScreen.jsx:86-88` (`matchReadout`) · confidence 50 · Maintainer
 A real derivation (the `-1` "not computed" sentinel vs a genuine `0` no-match) inline in JSX with no coverage, while every sibling module in this same slice (`keyChips`, `scrollPill`, `transcript`) followed the extract-to-core convention. Same pattern as the attention slice's ATTENTION-table finding — see the seam doc.
 **Fix:** extract `searchReadout(term, results)` to `core/` with tests pinning `-1` vs `0`.
+**Resolution (fixed):** `core/searchReadout.ts`, tests pin `-1`-renders-nothing vs `0/0`, the 1-based position, and the no-query case. Closes the second half of seams S1.
 
 **N4. Composer/find-bar Enter handling ignores IME composition — on a mobile-keyboard feature** — `client/src/screens/TerminalScreen.jsx:151-154, 219` · confidence 35 · Saboteur
 No `e.nativeEvent.isComposing` guard: a CJK/predictive-text candidate confirmation can prematurely submit partial text to a live agent. Pre-existing repo-wide pattern (LoginScreen has it too) so not a regression — but newly load-bearing here.
 **Fix:** `if (e.nativeEvent.isComposing) return;` in both handlers.
+**Resolution (fixed):** both handlers (composer + find bar) guard on `isComposing`, each with a comment naming the mobile-IME stake. LoginScreen's pre-existing instance left as-is per the finding's own not-a-regression framing.
 
 **N5. Failed localStorage write still flips the UI to "Saved"** — `client/src/core/templates.ts:75-77`, `client/src/screens/SessionsScreen.jsx:238-240` · confidence 35 · Saboteur
 `saveTemplates` swallows quota/private-mode failures; `saveAsTemplate` sets `justSaved` unconditionally. Safari private mode: "Saved" shown, template gone on reload, no warning ever.
 **Fix:** return a success boolean from `saveTemplates`; only confirm on success.
+**Resolution (fixed):** `saveTemplates` returns whether the write persisted; `saveAsTemplate` sets `justSaved` from that return, so private-mode/quota failures leave the button un-confirmed instead of lying "Saved".
 
 **N6. Composer/find inputs hand-roll styling instead of `@ds/Input`** — `client/src/screens/TerminalScreen.jsx:147-160, 216-231` · confidence 30 · Maintainer
 `SessionsScreen` already uses `@ds/Input` for equivalent fields; low-stakes inconsistency limited to the two genuine text-entry fields (chips have hand-rolled precedent).
@@ -66,10 +71,10 @@ The pure-module extraction discipline mostly held (four new tested core modules)
 | W2 | WARNING | 70 | "Saved" indicator stale after form edit | fixed |
 | W3 | WARNING | 55 | Find-bar match state survives buffer reset on reconnect | fixed |
 | W4 | WARNING | 50 | Blank-name template saves silently overwrite each other | fixed |
-| N2 | NOTE | 55 | Transcript now a durable artifact (acceptance note) | (open) |
-| N3 | NOTE | 50 | `matchReadout` inline/untested vs core convention | (open) |
-| N1 | NOTE | 45 | `.txt` transcript contains raw ANSI escapes | (open) |
-| N4 | NOTE | 35 | No IME composition guard on Enter | (open) |
-| N5 | NOTE | 35 | Failed localStorage write still shows "Saved" | (open) |
-| N6 | NOTE | 30 | Inputs bypass `@ds/Input` | (open) |
-| N7 | NOTE | 30 | Template store has no auth-lifecycle hook | (open) |
+| N2 | NOTE | 55 | Transcript now a durable artifact (acceptance note) | fixed (tooltip) |
+| N3 | NOTE | 50 | `matchReadout` inline/untested vs core convention | fixed |
+| N1 | NOTE | 45 | `.txt` transcript contains raw ANSI escapes | fixed |
+| N4 | NOTE | 35 | No IME composition guard on Enter | fixed |
+| N5 | NOTE | 35 | Failed localStorage write still shows "Saved" | fixed |
+| N6 | NOTE | 30 | Inputs bypass `@ds/Input` | open (cosmetic; hand-rolled precedent) |
+| N7 | NOTE | 30 | Template store has no auth-lifecycle hook | open (backlogged to scoped-tokens / device dashboard) |
