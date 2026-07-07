@@ -8,6 +8,7 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
+import { attentionFor } from '../core/attention.ts';
 import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
@@ -89,25 +90,12 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
 // `list` reply and threading it into toDto(). Deferred as a feature, not a bug —
 // see _docs/issues/2026-07-01-session-card-live-preview.md.
 
-// DTO attention state -> StatusDot color + card label. 'quiet' rather than
-// 'idle'/'done' on purpose: a silent agent may be thinking (LLM latency
-// produces legitimate 30s+ silences) or waiting on a prompt — the label claims
-// only "no output lately". 'needs-input' is the honest exception: it's not
-// heuristic silence-sniffing but a Claude Code Notification hook explicitly
-// reporting the line is blocked on a prompt (server sets it via POST /api/notify;
-// cleared on next input/output). It pulses so it reads across a grid of cards.
-// Unknown states (newer server) fall back to a plain offline dot showing the
-// raw status string.
-const ATTENTION = {
-  running: { dot: 'online', label: 'running' },
-  idle: { dot: 'idle', label: 'quiet' },
-  'needs-input': { dot: 'attention', label: 'needs input', pulse: true },
-};
-
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
-  const attention = ATTENTION[session.status] ?? { dot: 'offline', label: session.status };
-  const pulse = attention.pulse ?? false;
+  // status decode lives in core/attention.ts (the vocabulary sync point with
+  // server/src/sessions.js) — see the rationale + tests there.
+  const attention = attentionFor(session.status);
+  const pulse = attention.pulse;
   return (
     <Card interactive padding="md" onClick={() => onAttach(session)}
       style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
