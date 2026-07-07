@@ -44,9 +44,9 @@ function relTime(ms) {
 // status is the attention state: 'running' (output within the shared idle
 // threshold) or 'idle' (quiet beyond it — deliberately NOT "done": an idle
 // agent may be thinking, blocked on a prompt, or finished, and PTY bytes can't
-// tell those apart). The threshold is wait.js's DEFAULT_IDLE_MS so the card,
-// `sb wait`, and switchboard_wait_for_idle can't disagree about what idle
-// means. Tombstones map via endedToDto, which overrides to 'exited'. A missing
+// tell those apart). The threshold is wait.js's DEFAULT_IDLE_MS so the card
+// and `sb wait` can't disagree about what idle means. Tombstones map via
+// endedToDto, which overrides to 'exited'. A missing
 // idleMs (older board, or the `new` reply) counts as 0 — just active.
 function toDto(line) {
   return {
