@@ -88,8 +88,16 @@ if ($DesktopClientNames -contains $env:CLIENTNAME) {
   return
 }
 
-# Primary rule — geometry.
+# Primary rule — geometry. A degenerate read (metrics never settled despite the
+# retry loop) proves nothing about the client — and a zero width would otherwise
+# classify as "narrow", i.e. phone. Unknown must fail toward the no-op: launching
+# a maximized window into a desktop session is the one outcome this script exists
+# to prevent; a phone missing its auto-launch just means tapping the icon by hand.
 $b = Get-PrimaryBounds
+if ($b.Width -le 0 -or $b.Height -le 0) {
+  Write-Log "decision: UNKNOWN (geometry read failed: $($b.Width)x$($b.Height)) -> no-op"
+  return
+}
 $portrait = $b.Height -gt $b.Width
 $narrow = $b.Width -lt $WidthThreshold
 $isPhone = $portrait -or $narrow
