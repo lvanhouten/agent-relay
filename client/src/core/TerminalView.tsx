@@ -48,8 +48,10 @@ export interface TerminalViewHandle {
   // Current xterm selection, for clipboard chrome outside the component.
   getSelection(): string;
   // Write raw bytes down the WS input frame — the composer bar and canned-key
-  // chips (mobile answer mode) push their sequences through here.
-  send(data: string): void;
+  // chips (mobile answer mode) push their sequences through here. Returns false
+  // when the socket isn't open (the bytes were dropped, not queued) so callers
+  // can keep the user's text rather than clear it as if delivered.
+  send(data: string): boolean;
   // The client-side buffer as text (replayed scrollback since attach, capped at
   // the board's per-line chunk limit) — for the transcript download.
   serialize(): string;

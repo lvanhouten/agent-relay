@@ -76,11 +76,15 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     URL.revokeObjectURL(url);
   };
 
+  // The composer exists for flaky mobile moments — the same moments the socket
+  // is mid-reconnect and send() drops the bytes. Only clear the input when the
+  // send actually reached an open socket; the chips/Send button are also gated
+  // off connStatus below, but the return check covers the status-vs-socket race.
+  const composerReady = connStatus === 'online';
   const sendChip = (seq) => viewRef.current?.send(seq);
   const submitComposer = () => {
     if (!composerText) return;
-    viewRef.current?.send(composerBytes(composerText));
-    setComposerText('');
+    if (viewRef.current?.send(composerBytes(composerText))) setComposerText('');
   };
 
   const matchReadout = searchResults.resultCount > 0
@@ -201,11 +205,14 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 title={chip.title ?? chip.label}
                 aria-label={chip.title ?? chip.label}
                 onClick={() => sendChip(chip.seq)}
+                disabled={!composerReady}
                 style={{
                   flexShrink: 0, height: 34, minWidth: 40, padding: '0 12px',
                   border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
                   background: 'var(--surface-sunken)', color: 'var(--text-strong)',
-                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
+                  cursor: composerReady ? 'pointer' : 'not-allowed',
+                  opacity: composerReady ? 1 : 0.45,
                 }}
               >
                 {chip.label}
@@ -229,7 +236,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 fontFamily: 'var(--font-mono)', fontSize: 'var(--text-base)',
               }}
             />
-            <IconButton label="Send" bordered onClick={submitComposer} disabled={!composerText}>
+            <IconButton label="Send" bordered onClick={submitComposer} disabled={!composerText || !composerReady}>
               <SendIcon size={16} />
             </IconButton>
           </div>

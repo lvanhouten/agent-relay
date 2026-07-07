@@ -11,7 +11,10 @@ export interface SessionWSHandlers {
 
 export interface SessionWS {
   connStatus: ConnStatus;
-  send: (payload: string) => void;
+  // Returns true when the frame was handed to an OPEN socket. False means the
+  // payload was dropped (connecting/reconnecting/closed) — there is no queue,
+  // so the caller must keep the user's text instead of pretending it was sent.
+  send: (payload: string) => boolean;
   resize: (cols: number, rows: number) => void;
 }
 
@@ -101,9 +104,12 @@ export function useSessionWS(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, token]);
 
-  const send = React.useCallback((payload: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN)
+  const send = React.useCallback((payload: string): boolean => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'input', payload }));
+      return true;
+    }
+    return false;
   }, []);
 
   const resize = React.useCallback((cols: number, rows: number) => {
