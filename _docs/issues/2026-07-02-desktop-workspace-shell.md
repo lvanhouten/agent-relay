@@ -1,7 +1,7 @@
 # The desktop browser gets the phone UI — real estate, keyboard, and the always-open tab are all unused
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — local-desktop and remote-phone are two products sharing a kernel; today both get the phone-shaped one: one screen at a time, tap-sized cards, a single terminal filling the viewport.
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** 📐 Sliced — 2026-07-07. This is now the umbrella/architecture doc; the buildable work lives in three slice docs (see *Slicing* below). The core-extraction prerequisite landed (client core in TypeScript under `client/src/core/`, `spectator` mode declared in `types.ts`), and the clamp analysis was verified against the board (sizes keyed per control socket, cleaned on close — a client that never sends `resize` never enters the clamp).
 **Kind:** Enhancement (architectural)
 **Modules:** client (shell split), server/ws (spectator attach)
 **Severity:** High value / medium-high effort — the desktop counterpart to the mobile line of the backlog.
@@ -16,7 +16,15 @@ The `login → sessions → terminal` navigation in `App.jsx` is the right shape
 
 **Sequencing that defuses the big-decision risk:** extract the shared core first (`2026-07-02-extract-client-core.md` — `useSessionWS`, `useSessions`, `TerminalView`, in TypeScript) as a pure refactor. The desktop shell then arrives as consumer #2 of a proven core, and the shell split stops being an upfront architecture bet — it's a second entry composition. The only piece needing genuine design before that is the spectator dims contract below, since it touches the board's `list` reply. (design)
 
-In rough build order:
+## Slicing (2026-07-07)
+
+The build order below is sliced into three independently-pipelined features:
+
+1. **`2026-07-07-desktop-shell-v1-master-detail.md`** — shell split (viewport heuristic + `localStorage` override), sidebar master–detail, Ctrl+1..9, local notifications. Client-only. The spectator ADR is *decided* during this slice's grill, built in slice 2.
+2. **`2026-07-07-desktop-spectator-panes.md`** — spectator attach (PTY dims in the board's `list`, `?mode=spectator` no-input/no-resize at the web tier, `TerminalView` spectator mode) + the pane grid. The only server-touching slice.
+3. **`2026-07-07-desktop-fleet-extras.md`** — broadcast input, local-trust conveniences, and the live-preview card tail (absorbs `2026-07-01-session-card-live-preview.md`). Items ship independently.
+
+In rough build order (kept for the reasoning; the slice docs are the actionable versions):
 
 - **Sidebar + master–detail** — persistent session list left, terminal right; no more screen-swapping. (medium)
 - **Spectator attach** — the prerequisite for anything multi-pane: the board clamps a mirrored line to its *smallest* client, so a grid of small panes would resize every session's PTY to mini dimensions and garble the layout for the agent running in it. And it's not just "don't send resize": a spectator's local xterm still has *some* column count, and if it differs from the PTY's real dims, cursor-positioning output from full-screen TUIs (Claude Code's own UI — exactly what you'd be watching) garbles locally. The clean render is thumbnail-style: set the local terminal to the PTY's actual cols/rows and CSS-scale the canvas to fit the pane. That needs the PTY dims client-side — the board knows them; the `list` reply should carry `cols`/`rows`. So the contract has two halves: server (attach that never participates in sizing, through `src/ws.js`'s `resize` path; dims in `list`) and client (`TerminalView`'s `spectator` mode — adopt reported dims + scale, declared as a type in the core extraction). Read-only scoped tokens (`2026-07-02-scoped-tokens.md`) want identical no-input/no-resize semantics — one design, two consumers. (medium)

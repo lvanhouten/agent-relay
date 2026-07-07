@@ -19,6 +19,52 @@ start, so a restart never hits `EADDRINUSE` from an orphaned process; Vite uses
 (or kill-by-port) is the reliable teardown. The server also closes its listener on
 Ctrl+C / SIGTERM (catchable stops only).
 
+### Process teardown & session cleanliness (Windows)
+
+`npm run kill` only frees the two **TCP ports** (:3017 server, :5173 Vite) via
+`scripts/free-port.js`. It does **not** touch the **board daemon** (it lives on named
+pipes, `\\.\pipe\agent-relay`, not a port — kill-by-port never sees it) or the orphaned
+**`mcp-server.js`** instances (one is spawned per Claude Code session; they accumulate —
+a dozen-plus after a week of sessions is normal, harmless but noisy). These pile up
+across restarts, so periodically enumerate and prune.
+
+Process families, via `Get-CimInstance Win32_Process -Filter "Name='node.exe'"` then a
+`CommandLine` filter:
+
+| CommandLine match | What it is |
+|---|---|
+| `node --watch index.js` | server watch wrapper — forks the real server |
+| `node index.js` (agent-relay path, no `--watch`) | the actual running server (child of the wrapper) |
+| `vite/bin/vite.js` | Vite dev server |
+| `board.js` | the board daemon — **one**, detached, outlives whoever started it |
+| `mcp-server.js` | a per-session MCP server — **many**, stale, safe to kill |
+
+Bulk-prune orphaned dev processes (board, watch wrapper, Vite, stale MCP servers) by
+CommandLine match — note `-match` uses regex, so escape `.`:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Where-Object { $_.CommandLine -match 'board\.js|--watch index\.js|agent-relay.*vite|mcp-server\.js' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+```
+
+**Restarting the board.** The board is a detached daemon and restarting it ends every
+line it owns (including any live agent session) — so this is deliberate, not routine.
+Kill its `board.js` process (or send `shutdown` over the control pipe). It re-spawns
+automatically on the next **autostart-enabled** connect — a real web session op
+(`BoardSessions` create/list) or `switchboard_new_line` — but **not** on
+`switchboard_list_lines`, which passes `autostart: false`. To force a fresh board without
+creating a line, start it directly: `node server/board/board.js` (detached).
+
+**Liveness gotcha — an empty `list` does NOT prove a live board.**
+`switchboard_list_lines` both disables autostart *and* swallows an unreachable-board
+error as `{ lines: [] }` (`.catch(() => ({ lines: [] }))` in `mcp-server.js`), so a `[]`
+reply is ambiguous: empty board *or* no board at all. To confirm a board is actually
+running, check one of the unambiguous signals instead:
+- the **secret-file mtime** — `%LOCALAPPDATA%\agent-relay\board.agent-relay.secret` is
+  rewritten on every board boot, so a just-updated timestamp proves a fresh start; or
+- the **`board.js` process** itself (see the table above).
+
 No build step is needed for development. Tests: `npm test --workspace=server` /
 `npm test --workspace=client` (Node's built-in `node --test` runner, no separate
 framework; Node's type stripping runs the client's `.test.ts` files directly).
@@ -80,7 +126,7 @@ In production the client is served statically by Express (`server/src/static.js`
 
 | Issue | Pri | Effort | File |
 |---|---|---|---|
-| Session cards have no live output preview (the dead placeholder widget was removed; wiring a real one is deferred) | P3 | M | `_docs/issues/2026-07-01-session-card-live-preview.md` |
+| Session cards have no live output preview (the dead placeholder widget was removed; absorbed 2026-07-07 into desktop shell v3 — `_docs/issues/2026-07-07-desktop-fleet-extras.md`) | P3 | M | `_docs/issues/2026-07-01-session-card-live-preview.md` |
 | Windows secret-file ACL is unverified — `mode` bits are inert on NTFS; the real boundary is the inherited profile ACL (deferred W1). Raised 2026-07-06: the persisted token + cookie-signing secret now live behind the same unverified assumption | P2 | S | `_docs/issues/2026-07-01-secret-file-acl-verification.md` |
 
 ## Feature backlog (proposed, not started)
@@ -96,7 +142,10 @@ Priorities: **P1** = do next, **P2** = soon, **P3** = wait for its trigger signa
 | Hook-driven Web Push when a session needs attention (blocked on secure origin; Pushover covers the need meanwhile) | P3 | M | `_docs/issues/2026-07-02-hook-driven-push-notifications.md` |
 | Approve/deny prompts from notification action buttons (needs Web Push delivery — Pushover can't host approve/deny) | P3 | L | `_docs/issues/2026-07-02-notification-action-buttons.md` |
 | Hook-beaconed session state: SessionStart/Stop beacons give Claude lines honest status (supersedes the idleMs heuristic there; captures `transcriptPath` for claude-native-lines) | P2 | M | `_docs/issues/2026-07-07-hook-beaconed-session-state.md` |
+| Rendered-screen `read_output`: per-Line headless VT emulator (`@xterm/headless`) so agent consumers read the current screen grid instead of raw ANSI; PTY-side complement to claude-native-lines (trigger already fired — 2026-07-02 wedge, conduct-feature's discriminator) | P1 | M | `_docs/issues/2026-07-07-rendered-screen-read-output.md` |
 | Claude-native lines **— narrowed 2026-07-07 to the transcript-tailing bet** (JSONL tailer + chat view; binding comes from hook-beaconed session state; grill first) | P3 | L | `_docs/issues/2026-07-02-claude-native-lines.md` |
 | Scoped tokens (read-only / per-session input; prerequisite for any multi-user or App Proxy rollout) | P3 | M | `_docs/issues/2026-07-02-scoped-tokens.md` |
 | Paired/connected device dashboard + per-device unpair | P3 | M | `_docs/issues/2026-07-06-paired-device-dashboard.md` |
-| Desktop workspace shell: two shells over one core, spectator attach, panes, palette | P3 | L | `_docs/issues/2026-07-02-desktop-workspace-shell.md` |
+| Desktop shell v1: shell split (viewport + manual override) + sidebar master–detail, Ctrl+1..9, local notifications — client-only; umbrella architecture in `2026-07-02-desktop-workspace-shell.md` (sliced 2026-07-07) | P1 | M | `_docs/issues/2026-07-07-desktop-shell-v1-master-detail.md` |
+| Desktop shell v2: spectator attach (PTY dims in `list`, `?mode=spectator`) + pane grid — the only server-touching slice; ADR decided in v1's grill | P3 | L | `_docs/issues/2026-07-07-desktop-spectator-panes.md` |
+| Desktop shell v3: fleet extras — broadcast input, local-trust endpoints, live-preview card tail (absorbs the 2026-07-01 preview issue); items ship independently | P3 | M | `_docs/issues/2026-07-07-desktop-fleet-extras.md` |

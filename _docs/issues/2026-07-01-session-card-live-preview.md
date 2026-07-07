@@ -1,7 +1,7 @@
 # Session cards have no live output preview
 
 **Source:** Came up while removing a dead preview widget on the sessions screen — the card used to render a small terminal-output thumbnail, but the data to fill it was never wired through the server, so it always showed a "no output yet" placeholder. The dead widget was removed; wiring a real preview is the enhancement captured here.
-**Status:** ⏸ Deferred — 2026-07-01.
+**Status:** ⏸ Deferred — 2026-07-01. **Absorbed 2026-07-07** into desktop shell slice 3 (`2026-07-07-desktop-fleet-extras.md`) — the "tail in the `list` reply" approach outlined here is carried forward there; this doc keeps the original analysis.
 **Kind:** Enhancement
 **Modules:** client/SessionsScreen, server/sessions, board
 **Severity:** Low
