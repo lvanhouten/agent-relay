@@ -21,6 +21,7 @@ Panel: Saboteur / Maintainer / Security Auditor (single isolated pass). The e2e 
 **W3. Reconnect resets the buffer but leaves the find bar's match state stale** — `client/src/core/TerminalView.tsx:109-116` (`onReady`), `client/src/screens/TerminalScreen.jsx:33` · confidence 55 · Saboteur
 The reconnect branch calls `term.reset()` and resets the scroll pill, but never clears `searchRef` decorations or notifies `onSearchResultsRef`. With the find bar open across a WS drop, the readout can show "3/5" against a freshly-replayed buffer with zero highlighted matches until the next keystroke.
 **Fix:** in the reconnect branch, `clearDecorations()` + emit a reset `SearchResults` (or re-run the current query).
+**Resolution (fixed):** the reconnect branch now clears decorations (+ active decoration) and emits `{ resultIndex: -1, resultCount: -1 }` through `onSearchResultsRef`, blanking the readout deterministically; the next keystroke re-runs the query against the replayed buffer. (No component harness — guarded path named in-code per repo convention; typecheck + suite green.)
 
 **W4. Blank-name template saves collide on the literal label `'template'` and silently overwrite** — `client/src/screens/SessionsScreen.jsx:234` · confidence 50 · Saboteur
 `const label = name.trim() || 'template'` — two different blank-name saves both upsert the same label; the second silently replaces the first with no confirmation. The upsert-by-label design is sanctioned; the unhandled *fallback* path is not part of that decision.
@@ -62,7 +63,7 @@ The pure-module extraction discipline mostly held (four new tested core modules)
 |----|----------|------|---------|--------|
 | W1 | WARNING | 70 | Composer clears text on silently-dropped send | fixed |
 | W2 | WARNING | 70 | "Saved" indicator stale after form edit | fixed |
-| W3 | WARNING | 55 | Find-bar match state survives buffer reset on reconnect | (open) |
+| W3 | WARNING | 55 | Find-bar match state survives buffer reset on reconnect | fixed |
 | W4 | WARNING | 50 | Blank-name template saves silently overwrite each other | (open) |
 | N2 | NOTE | 55 | Transcript now a durable artifact (acceptance note) | (open) |
 | N3 | NOTE | 50 | `matchReadout` inline/untested vs core convention | (open) |

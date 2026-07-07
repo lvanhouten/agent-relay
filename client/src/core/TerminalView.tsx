@@ -112,6 +112,13 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         if (reconnected) {
           termRef.current?.reset();
           setPillState(PILL_INIT);
+          // The reset emptied the buffer, so search decorations and the find
+          // bar's n/m readout refer to text that no longer exists — clear both
+          // (a stale "3/5" over a freshly-replayed buffer with zero highlights
+          // otherwise survives until the next keystroke).
+          searchRef.current?.clearDecorations();
+          searchRef.current?.clearActiveDecoration?.();
+          onSearchResultsRef.current?.({ resultIndex: -1, resultCount: -1 });
         }
         refitRef.current?.();
       }, [setPillState]),
