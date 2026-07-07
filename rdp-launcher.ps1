@@ -14,8 +14,10 @@
       or narrow (primary width below -WidthThreshold); no desktop client is. This
       is robust to device renames and needs no lookup.
     - SECONDARY: $env:CLIENTNAME. Names in -DesktopClientNames force a no-op
-      regardless of geometry (belt-and-suspenders for a known desktop). The
-      observed CLIENTNAME is always logged so the real iOS/Android values can be
+      regardless of geometry (belt-and-suspenders for a known desktop);
+      -PhoneClientNames is the symmetric override toward the launch path (for a
+      device geometry misreads, e.g. a wide landscape tablet). The observed
+      CLIENTNAME is always logged so the real iOS/Android values can be
       recorded — do NOT build the primary rule on them (they are unverified).
     - GATE: a local console logon (SESSIONNAME = 'Console') is never the phone —
       no-op immediately.
@@ -40,11 +42,27 @@ param(
   [int]$WidthThreshold = 900,
   # CLIENTNAMEs that force a desktop no-op even if geometry looks phone-like.
   [string[]]$DesktopClientNames = @(),
+  # CLIENTNAMEs that force the phone path without consulting geometry — the
+  # symmetric override for a device geometry misreads (e.g. a landscape tablet
+  # wider than -WidthThreshold). CLIENTNAME values are unverified for iOS/
+  # Android; read them from the decision log before relying on this.
+  [string[]]$PhoneClientNames = @(),
   # Log only the decision; never launch a window (dry-run for testing the rule).
   [switch]$WhatIfDecision
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Normalize the name lists: `powershell -File` binds "A,B" as ONE array element
+# (verified — it does NOT split on commas), and the scheduled task the installer
+# registers forwards names exactly that way. Splitting here makes both call
+# shapes work — a real array from a direct call, or a comma-joined string from
+# the task — and keeps names with inner spaces intact.
+function Split-Names([string[]]$names) {
+  @($names | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+$DesktopClientNames = Split-Names $DesktopClientNames
+$PhoneClientNames = Split-Names $PhoneClientNames
 
 # Log next to the board secret (owner-only profile dir) so debugging an
 # event-triggered hidden task isn't guesswork — every fire records its inputs and
@@ -55,6 +73,11 @@ $logPath = Join-Path $logDir 'rdp-launcher.log'
 function Write-Log($msg) {
   try {
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+    # Bounded like the board's tombstone ring: past ~256KB keep the newest 500
+    # lines. Truncate-in-place, no rotation siblings to manage.
+    if ((Test-Path $logPath) -and (Get-Item $logPath).Length -gt 262144) {
+      Set-Content -Path $logPath -Value (Get-Content $logPath -Tail 500)
+    }
     $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     Add-Content -Path $logPath -Value "[$stamp] $msg"
   } catch { <# logging must never take the launcher down #> }
@@ -124,25 +147,31 @@ if ($DesktopClientNames -contains $env:CLIENTNAME) {
   return
 }
 
-# Primary rule — geometry. A degenerate read (metrics never settled despite the
-# retry loop) proves nothing about the client — and a zero width would otherwise
-# classify as "narrow", i.e. phone. Unknown must fail toward the no-op: launching
-# a maximized window into a desktop session is the one outcome this script exists
-# to prevent; a phone missing its auto-launch just means tapping the icon by hand.
-$b = Get-PrimaryBounds
-if ($b.Width -le 0 -or $b.Height -le 0) {
-  Write-Log "decision: UNKNOWN (geometry read failed: $($b.Width)x$($b.Height)) -> no-op"
-  return
-}
-$portrait = $b.Height -gt $b.Width
-$narrow = $b.Width -lt $WidthThreshold
-$isPhone = $portrait -or $narrow
-Write-Log "geometry: $($b.Width)x$($b.Height) portrait=$portrait narrow(<$WidthThreshold)=$narrow -> phone=$isPhone"
+# Gate 3 — an explicitly-named phone client forces the launch path without
+# consulting geometry (the symmetric override to -DesktopClientNames).
+if ($PhoneClientNames -contains $env:CLIENTNAME) {
+  Write-Log "decision: PHONE ($clientName in -PhoneClientNames, geometry not consulted)"
+} else {
+  # Primary rule — geometry. A degenerate read (metrics never settled despite the
+  # retry loop) proves nothing about the client — and a zero width would otherwise
+  # classify as "narrow", i.e. phone. Unknown must fail toward the no-op: launching
+  # a maximized window into a desktop session is the one outcome this script exists
+  # to prevent; a phone missing its auto-launch just means tapping the icon by hand.
+  $b = Get-PrimaryBounds
+  if ($b.Width -le 0 -or $b.Height -le 0) {
+    Write-Log "decision: UNKNOWN (geometry read failed: $($b.Width)x$($b.Height)) -> no-op"
+    return
+  }
+  $portrait = $b.Height -gt $b.Width
+  $narrow = $b.Width -lt $WidthThreshold
+  $isPhone = $portrait -or $narrow
+  Write-Log "geometry: $($b.Width)x$($b.Height) portrait=$portrait narrow(<$WidthThreshold)=$narrow -> phone=$isPhone"
 
-if (-not $isPhone) {
-  Write-Log 'decision: DESKTOP (landscape, wide) -> no launch'
-  Close-StaleAppWindow
-  return
+  if (-not $isPhone) {
+    Write-Log 'decision: DESKTOP (landscape, wide) -> no launch'
+    Close-StaleAppWindow
+    return
+  }
 }
 
 if ($WhatIfDecision) {

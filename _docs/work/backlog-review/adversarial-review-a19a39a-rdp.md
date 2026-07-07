@@ -23,6 +23,7 @@ Phone connects → window opens; the operator later reconnects to the *same* ses
 **N1. Decision log grows unbounded** — `rdp-launcher.ps1:160-168` (`Write-Log`) · confidence 65 · Saboteur
 `Add-Content` appends forever; no rotation or cap — unlike the board's own tombstone ring (capped at 20), the in-repo model for exactly this.
 **Fix:** keep last N lines or cap file size before appending.
+**Resolution (fixed):** `Write-Log` truncates in place past ~256KB, keeping the newest 500 lines — the tombstone-ring principle, no rotation siblings.
 
 **N2. Install/uninstall/status boilerplate re-implemented instead of shared with `autostart-task.ps1`** — `rdp-launcher-install.ps1:43-102` vs `autostart-task.ps1:23-57` · confidence 55 · Maintainer
 The docstring correctly justifies a bespoke *trigger* (no cmdlet support for arbitrary event IDs) — but `Get-Task`, `uninstall`, and `status` are near-identical copies with no such reason. A third autostart-style script makes three drifting copies.
@@ -31,6 +32,7 @@ The docstring correctly justifies a bespoke *trigger* (no cmdlet support for arb
 **N3. No symmetric override to force a device *toward* phone** — `rdp-launcher.ps1:39-40,85-89` · confidence 55 · Maintainer
 `-DesktopClientNames` can only force *away* from phone. The intent doc names a tablet (landscape, ≥900px) as the next stress case, and the only lever today is lowering `-WidthThreshold` globally.
 **Fix:** add `-PhoneClientNames`, or state in the header that it's deferred until CLIENTNAME values are verified.
+**Resolution (fixed):** `-PhoneClientNames` added (launcher Gate 3, forces the launch path without consulting geometry; installer forwards it), with the header noting CLIENTNAME values are unverified — read them from the decision log before relying on it. Verified live via `-WhatIfDecision` with this machine's CLIENTNAME.
 
 **N4. `--app=<url> --start-maximized` is a known-flaky Chromium combination on first launch** — `rdp-launcher.ps1:122` · confidence 40 · Saboteur
 Chromium restores per-profile window bounds for `--app=` URLs; with no prior placement state, `--start-maximized` is commonly ignored. This is the concrete candidate for what fails when the unverified phone-positive path is first exercised (desktop testing never launches a window at all).
@@ -39,6 +41,7 @@ Chromium restores per-profile window bounds for `--app=` URLs; with no prior pla
 **N5. `-DesktopClientNames` forwarding breaks on a name containing a space** — `rdp-launcher-install.ps1:54-56` · confidence 40 · Maintainer
 The unquoted comma-join splits at a space in the registered task's argument string — and only surfaces when the task *fires*, not at install time.
 **Fix:** quote each name, or document the constraint next to the usage example.
+**Resolution (fixed — and the defect was worse than flagged):** testing revealed `powershell -File` binds `A,B` as ONE array element (it never splits on commas), so the installer's name forwarding had never matched *any* name, spaces or not. The launcher now splits comma-joined input itself (`Split-Names`, preserving inner spaces) and the installer quotes the joined list; verified live with `"OTHER PC,FENRIR"`.
 
 **N6. RDP-client-supplied `CLIENTNAME` is interpolated unsanitized into the decision log** — `rdp-launcher.ps1:75-77,87` · confidence 35 · Security
 Within the single-operator threat model this isn't a boundary crossing (reaching the code path requires valid RDP credentials) — but the log is the feature's *sole* forensic surface, and a spoofed value can inject misleading lines into it. No action needed unless the log is ever machine-consumed.
@@ -53,9 +56,9 @@ The discrimination architecture matches the intent doc (geometry primary, CLIENT
 |----|----------|------|---------|--------|
 | W1 | WARNING | 80 | Zero-geometry read fail-opens to phone (hostile desktop launch) | fixed |
 | W2 | WARNING | 60 | Stale app window persists across phone→desktop reconnect | fixed |
-| N1 | NOTE | 65 | Decision log unbounded | (open) |
-| N2 | NOTE | 55 | Installer boilerplate duplicated from autostart-task.ps1 | (open) |
-| N3 | NOTE | 55 | No `-PhoneClientNames` symmetric override | (open) |
-| N4 | NOTE | 40 | `--app` + `--start-maximized` flaky on first launch | (open) |
-| N5 | NOTE | 40 | Space-in-name breaks argument forwarding at fire time | (open) |
-| N6 | NOTE | 35 | CLIENTNAME log injection (threat-model-bounded) | (open) |
+| N1 | NOTE | 65 | Decision log unbounded | fixed |
+| N2 | NOTE | 55 | Installer boilerplate duplicated from autostart-task.ps1 | open (refactor cost > payoff at two scripts; revisit on a third) |
+| N3 | NOTE | 55 | No `-PhoneClientNames` symmetric override | fixed |
+| N4 | NOTE | 40 | `--app` + `--start-maximized` flaky on first launch | open (deliberately deferred to the first real phone test, per the finding) |
+| N5 | NOTE | 40 | Space-in-name breaks argument forwarding at fire time | fixed (deeper than flagged — see resolution) |
+| N6 | NOTE | 35 | CLIENTNAME log injection (threat-model-bounded) | accepted (no action per the finding itself) |
