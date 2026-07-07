@@ -79,6 +79,23 @@ test('notifyAll: one sink failing never blocks the others, and reports per-sink 
   ]);
 });
 
+test('notifyAll: a failing sink is logged server-side, not only reported in the response', async () => {
+  // The documented caller is a fire-and-forget hook curl that never reads the
+  // response body — the log line is the only visible trace of a broken sink.
+  const logged = [];
+  const bad = { name: 'bad', notify: async () => { throw new Error('pushover responded 429'); } };
+  await notifyAll([bad], { body: 'hi' }, { log: (...args) => logged.push(args.join(' ')) });
+  assert.strictEqual(logged.length, 1);
+  assert.match(logged[0], /\[notify\] sink bad failed:.*pushover responded 429/);
+});
+
+test('notifyAll: successful sinks log nothing', async () => {
+  const logged = [];
+  const good = { name: 'good', notify: async () => {} };
+  await notifyAll([good], { body: 'hi' }, { log: (...args) => logged.push(args.join(' ')) });
+  assert.strictEqual(logged.length, 0);
+});
+
 test('notifyAll: empty sink list is a clean no-op', async () => {
   assert.deepStrictEqual(await notifyAll([], { body: 'hi' }), []);
 });

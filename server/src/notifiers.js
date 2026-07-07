@@ -69,15 +69,21 @@ function resolveNotifiers(env = process.env, { fetchImpl = fetch } = {}) {
 }
 
 // Fan a payload out to every sink concurrently. One sink's rejection is captured,
-// never rethrown — the caller (a hook curl) always gets a clean response, and the
-// per-sink outcome is returned for logging/observability.
-async function notifyAll(notifiers, payload) {
+// never rethrown — the caller (a hook curl) always gets a clean response. Each
+// failure is ALSO logged here, not just returned: the documented caller is a
+// fire-and-forget hook that never reads the response body, so this log line is
+// the only place a revoked token / rate limit / outage is visible at all.
+async function notifyAll(notifiers, payload, { log = console.error } = {}) {
   const settled = await Promise.allSettled(notifiers.map((n) => n.notify(payload)));
-  return settled.map((r, i) => ({
-    name: notifiers[i].name,
-    ok: r.status === 'fulfilled',
-    ...(r.status === 'rejected' ? { error: r.reason && r.reason.message ? r.reason.message : String(r.reason) } : {}),
-  }));
+  return settled.map((r, i) => {
+    const name = notifiers[i].name;
+    if (r.status === 'rejected') {
+      const error = r.reason && r.reason.message ? r.reason.message : String(r.reason);
+      log(`[notify] sink ${name} failed:`, error);
+      return { name, ok: false, error };
+    }
+    return { name, ok: true };
+  });
 }
 
 module.exports = { resolveNotifiers, notifyAll, pushoverNotifier, PUSHOVER_URL };
