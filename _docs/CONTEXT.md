@@ -60,3 +60,30 @@ consumer actually wants when reading TUI state (which dialog option is
 highlighted, waiting vs. executing). Complements the session transcript, never
 replaces it (transcript = history + verbatim command text; screen = current UI
 state).
+
+### Beacon
+A hook-driven POST to `/api/beacon` in which a Claude Code session reports a
+lifecycle transition — `SessionStart` or `Stop` — for the line it runs in.
+Every beacon carries the full binding (`sessionId` = the board line, plus
+`claudeSessionId`, `transcriptPath`, `cwd`), so any single beacon re-establishes
+state the relay may have lost to a restart: beacons are idempotent and
+self-healing, never order-dependent. Distinct from a *notification* (`/api/notify`),
+which buzzes a phone and may flag needs-input; a beacon reports state and never
+pushes.
+
+### Claude line
+A Session (board line) whose Claude Code hooks have beaconed it — the relay has
+seen at least one `SessionStart`/`Stop` for it, so it knows the line is running
+an agent and derives that line's attention state from honest hook signals rather
+than the idleMs heuristic. A line with no beacons (a plain shell, or a repo whose
+hooks aren't configured) is not a Claude line and keeps the heuristic untouched.
+The distinction is web-tier only and dies with the relay process; a re-fired
+beacon re-establishes it.
+
+### Turn done
+The attention state of a Claude line whose agent has ended its turn (a `Stop`
+beacon) and is now waiting on the user. The process and its Session (PTY) stay
+alive — deliberately *not* "done" or "exited": a *turn* is one agent
+request/response cycle, not the session. Cleared the moment the operator answers
+(WS input) or the agent produces new output. Reads differently from an *exited*
+tombstone, which is a dead process.
