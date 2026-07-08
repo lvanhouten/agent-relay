@@ -32,4 +32,5 @@ Append-only record of the conducted run: entry point, stage completions, gates, 
 
 ## Stage completions
 
-_(appended as each stage's Marker validates)_
+- **2026-07-08 · execute-briefs → GREEN.** Committed Marker `907ec8b` validated (`git show HEAD:…/conduct/execute-briefs.done.json`, parses, `outcome: green`, no exceptions). All 4 briefs integrated across 3 waves — 01 `af8a9f6` (10/10), 02 `29b6ae6` (10/10, suite-flake noted in STATUS handoff), 03 `62e0d3d` (6/6), 04 `d3c4b46` (4/4); server suite 245/245 green. Line 5 gracefully torn down. **Held before adversarial-review at user request** (user rebooting the switchboard before Stage 2).
+  - Mid-stage friction: brief-executor worktrees at `.claude/wt/<id>/` tripped Claude Code's self-edit guard → per-write permission stalls until user whitelisted the briefs session. Future fix: place subagent worktrees under `.worktrees/` (to be applied to remediate-batch's pointer prompt; see memory `subagent-worktree-placement`).
