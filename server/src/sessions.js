@@ -181,10 +181,16 @@ class BoardSessions {
 
   // Apply a lifecycle beacon from a Claude Code hook (POST /api/beacon). Target
   // resolution MIRRORS /api/notify exactly: a present `sessionId` is acted on
-  // directly (a dumb set — no existence check; an id for an exited/unknown line is
-  // set and harmlessly pruned on the next list()); the `cwd` fallback fires ONLY
-  // when `sessionId` is absent. A present-but-unmatched `sessionId` must never
-  // fall through to `cwd` — that would beacon a DIFFERENT same-directory live line.
+  // directly (a dumb set — no existence AND no ownership/authenticity check; an id
+  // for an exited/unknown line is set and harmlessly pruned on the next list()).
+  // TRUST MODEL: any caller past the operator token can drive any live line's card
+  // state (force turn-done/running, or wipe a marker with SessionEnd). This is
+  // deliberate parity with /api/notify under ADR-0001's accepted single-operator
+  // ceiling, and the blast radius is cosmetic only — no spawn, no data exposure,
+  // no push (a beacon never pushes). Not a hole to close; a documented assumption.
+  // The `cwd` fallback fires ONLY when `sessionId` is absent. A present-but-
+  // unmatched `sessionId` must never fall through to `cwd` — that would beacon a
+  // DIFFERENT same-directory live line.
   // Events: SessionStart upserts the entry and resets turnDoneAt to null (a
   // (re)start is not a waiting state); Stop sets turnDoneAt to now, CREATING the
   // entry if absent (self-healing — a Stop alone also marks the line a Claude
