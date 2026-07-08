@@ -1,7 +1,7 @@
 # The "relay" name is aspirational: there is no built-in path from another device to this server
 
 **Source:** Feature-gap brainstorm, 2026-07-02 — same-origin made the client honest (#15), but the actual reach-it-from-my-phone story is still "set up a tunnel by hand and transcribe a token".
-**Status:** 💡 Proposed — 2026-07-02.
+**Status:** ✅ Landed — 2026-07-06 (#25). Persisted token, HttpOnly auth cookie, `AR_TUNNEL=tailscale` supervisor, fragment auto-login, and the pair-a-device dialog all shipped. Deployment note: the office network DNS-filters Tailscale, so the tunnel degrades to local-only at work by design; it's fully usable on unfiltered networks.
 **Kind:** Enhancement
 **Modules:** server/index (startup), docs; touches origin/auth posture
 **Severity:** Medium–High value — the enabler for every mobile feature in this backlog.
