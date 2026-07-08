@@ -96,6 +96,11 @@ The not-live branch does `endedLines.list().find(t => t.id === m.id)`. `makeEnde
 
 **N4. The rendered screen exposes raw-output-grade content over the control plane, gated only by the per-boot secret** — `server/board/board.js:404-411` · confidence 40
 
+**Status:** ✅ Resolved in <N4_SHA> — see below.
+**Resolution:** Accepted (A) as an acknowledgment finding — the reviewer explicitly confirms there is no new exposure surface, only an unstated assumption. Made the assumption explicit with a comment at the `screen` handler: the rendered grid is raw-output-grade content (can carry a credential, PHI, or a raw-stream-masked value rendered in plaintext) at the same sensitivity as `read_output`; the command adds no boundary (dispatched only post-handshake behind the same per-boot access secret, reply not logged); its confidentiality rests entirely on that secret gate, whose Windows secret-file ACL is the still-open, unverified assumption already tracked in CONTEXT.md and the open P2 issue — not anything this feature changed. Behavior-neutral; the closure is the stated fact at the handler (no executable change, so no test). No new security work is opened by this feature; the pre-existing ACL question is unchanged.
+
+---
+
 Security has no new *boundary* here — `screen` is dispatched only post-handshake, behind the same per-boot access secret as every other control command, and the reply is not logged (unlike `read_output`, no cursor/`seen` state is persisted either). The security-relevant assumption to state explicitly: the rendered grid can contain anything on screen — a credential typed at a prompt, PHI in a TUI, a masked-in-raw-stream value that renders in plaintext — at the same sensitivity as `read_output`, and its entire confidentiality rests on the secret gate that the CONTEXT/CLAUDE notes already flag as resting on an *unverified* Windows secret-file ACL (the open P2 issue). No change in exposure surface from this feature; it inherits the existing model and the existing open question about that model.
 
 ---

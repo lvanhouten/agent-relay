@@ -435,6 +435,15 @@ async function handle(m, sock) {
     case 'screen': {
       // The rendered screen of a line as a stateless snapshot. Field names are a
       // consumed contract (mcp read-screen tool, `sb screen`): keep exact.
+      // Confidentiality note: the grid is raw-output-grade content — it can hold
+      // anything on screen (a credential typed at a prompt, PHI in a TUI, a value
+      // masked in the raw stream that renders in plaintext), at the same
+      // sensitivity as read_output. This command adds no new boundary: it is
+      // dispatched only post-handshake behind the same per-boot access secret as
+      // every other control command, and the reply is not logged. Its entire
+      // confidentiality therefore rests on that secret gate — whose Windows
+      // secret-file ACL is the still-open, unverified assumption tracked in
+      // CONTEXT.md / the open P2 issue, not anything this feature changes.
       const s = sessions.get(m.id);
       // Live at the check — but read() awaits a flush, yielding to the event
       // loop, and p.onExit can dispose this line's screen mid-read (TOCTOU). The
