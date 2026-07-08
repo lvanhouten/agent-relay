@@ -227,6 +227,44 @@ function sendInput(id, text, opts) {
   });
 }
 
+// Fetch a line's current rendered screen — a stateless snapshot over the
+// board's `screen` control command (deliberately unlike readOutput: no cursor,
+// no tail/full, no boot-nonce bookkeeping to maintain between calls). Maps the
+// board's three-way reply into either a snapshot or a thrown, distinguishing
+// error so the tool handler can surface which failure mode occurred:
+//  - ok:true                -> the { grid, cursor, cols, rows } snapshot
+//  - ok:false, ended:true   -> the line ran and exited (message names the exit code)
+//  - ok:false, ended:false  -> no line with this id ever existed
+//  - RPC itself throws/rejects (board unreachable, timeout) -> generic failure
+async function readScreen(id) {
+  let r;
+  try {
+    r = await boardRpc({ cmd: 'screen', id });
+  } catch (e) {
+    const err = new Error(`screen read failed: ${e.message || e.code || e}`);
+    err.code = 'EREADFAILED';
+    throw err;
+  }
+  if (r && r.ok) {
+    return { grid: r.grid, cursor: r.cursor, cols: r.cols, rows: r.rows };
+  }
+  if (r && r.ended === true) {
+    const err = new Error(`line ${id} has ended (exit ${r.exitCode})`);
+    err.code = 'ELINEENDED';
+    throw err;
+  }
+  if (r && r.ended === false) {
+    const err = new Error(`no such line: ${id}`);
+    err.code = 'ENOLINE';
+    throw err;
+  }
+  // Malformed/unexpected reply shape — neither a success nor either documented
+  // failure mode. Treat the same as an RPC-level failure rather than guessing.
+  const err = new Error('screen read failed: unexpected board reply');
+  err.code = 'EREADFAILED';
+  throw err;
+}
+
 const server = new McpServer({ name: 'switchboard', version: '1.0.0' });
 
 server.registerTool('switchboard_new_line', {
@@ -301,6 +339,29 @@ server.registerTool('switchboard_read_output', {
   }
 });
 
+server.registerTool('switchboard_read_screen', {
+  title: 'Read switchboard line rendered screen',
+  description: 'Read a switchboard line\'s current rendered screen — the ' +
+    'terminal grid as it would appear right now, plus the cursor position and ' +
+    'dimensions. Unlike switchboard_read_output (which returns the raw new ' +
+    'byte-stream since the last read, letters and control codes and all), this ' +
+    'is a stateless snapshot of the whole visible screen: no cursor to track, ' +
+    'no tailChars/full, nothing kept between calls. Use this for an alt-screen ' +
+    'TUI (a full-screen editor, a menu, `claude` itself) where the raw delta is ' +
+    'mostly repaint churn and what you actually want is "what does the screen ' +
+    'show right now" — use read_output for a plain scrolling shell instead.',
+  inputSchema: {
+    id: z.string().describe('Line id, from switchboard_new_line or switchboard_list_lines'),
+  },
+}, async ({ id }) => {
+  try {
+    const snapshot = await readScreen(id);
+    return { content: [{ type: 'text', text: JSON.stringify(snapshot) }] };
+  } catch (e) {
+    return { content: [{ type: 'text', text: e.message }], isError: true };
+  }
+});
+
 server.registerTool('switchboard_send_input', {
   title: 'Type into a switchboard line',
   description: 'Send input to a switchboard line, as if typed into its shell. By ' +
@@ -357,6 +418,7 @@ module.exports = {
   observeBoot,
   forgetLine,
   endLine,
+  readScreen,
   framePayload,
   BOOT_TTL_MS,
   // test seams
