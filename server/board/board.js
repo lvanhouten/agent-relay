@@ -206,6 +206,38 @@ function makeScreenLifecycle(io) {
 // Left null when board.js is merely require()d by a test (no listeners bound).
 let SECRET = null;
 
+// Claude Code injects a set of "you are running inside a session" identity
+// markers into the env of every process it spawns. The board is often launched
+// from inside a Claude Code session (`npm start` in a session, or autostart from
+// a session-hosted web tier), so it inherits them — and because createLine spawns
+// each Line with `{ ...process.env }`, it would pass them down to every PTY. A
+// `claude` launched in such a Line then sees CLAUDE_CODE_CHILD_SESSION and treats
+// itself as a nested child session: it writes NO conversation transcript JSONL,
+// silently breaking every consumer that tails transcripts. Scrub them at daemon
+// startup, before any Line is created, so every child the daemon ever spawns
+// starts from a clean session identity.
+//
+// EXPLICIT allowlist, never a CLAUDE_* glob: deliberate machine-wide config a
+// user exports in their shell profile (CLAUDE_EFFORT, CLAUDE_AFK_TIMEOUT_MS,
+// ANTHROPIC_*, …) must survive — the daemon can't tell inherited-from-session
+// from set-on-purpose, so it removes ONLY the runtime-injected session-identity
+// markers, which no one sets by hand. (See _docs/issues/2026-07-07-board-scrub-
+// claude-session-env.md.)
+const CLAUDE_SESSION_MARKERS = [
+  'CLAUDECODE',                 // "1" — the nested-session flag Claude Code checks
+  'CLAUDE_CODE_CHILD_SESSION',  // the marker that suppresses transcript writes (the incident)
+  'CLAUDE_CODE_SESSION_ID',     // the parent session's id
+  'CLAUDE_CODE_ENTRYPOINT',     // how the parent session was entered (cli/…)
+  'CLAUDE_CODE_EXECPATH',       // the parent session's claude binary path
+];
+function scrubClaudeSessionMarkers(env = process.env) {
+  const removed = [];
+  for (const k of CLAUDE_SESSION_MARKERS) {
+    if (k in env) { delete env[k]; removed.push(k); }
+  }
+  return removed;
+}
+
 function createLine(o = {}) {
   const id = String(++seq);
   const shell = o.shell || DEFAULT_SHELL;
@@ -571,6 +603,12 @@ function bringOnline({ generate, assign, listen, persist, ready } = {}) {
 // Only bind the control pipe when run as the daemon (`node board.js`); when
 // required by a test, just expose the pure helpers below.
 if (require.main === module) {
+  // Strip inherited Claude-session identity markers before any Line is spawned
+  // (see scrubClaudeSessionMarkers). Holds for every launch path — autostart,
+  // scheduled task, or `npm start` from inside a Claude session — because the
+  // daemon is the single chokepoint every Line inherits its env from.
+  const scrubbed = scrubClaudeSessionMarkers();
+  if (scrubbed.length) log('scrubbed inherited Claude-session markers:', scrubbed.join(', '));
   bringOnline({
     generate: generateSecret,
     assign: s => { SECRET = s; },
@@ -580,4 +618,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };

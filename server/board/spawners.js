@@ -14,9 +14,15 @@ const pick = (env, keys) =>
 
 function detectSpawner(env = process.env) {
   // Multiplexers first — these put the new tab in the caller's CURRENT window.
+  // WEZTERM_PANE must ride along, not just the socket: `wezterm cli spawn`
+  // resolves the target window from the *current pane* (the --pane-id default is
+  // read from $WEZTERM_PANE), and the socket alone only says which mux server to
+  // talk to. Without WEZTERM_PANE the spawned `wezterm cli` — running under the
+  // detached board, which has no pane of its own — can't locate the current
+  // window and falls back to a NEW window instead of a tab.
   if (env.WEZTERM_PANE != null)
     return { kind: 'wezterm', file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'],
-             env: pick(env, ['WEZTERM_UNIX_SOCKET']) };
+             env: pick(env, ['WEZTERM_UNIX_SOCKET', 'WEZTERM_PANE']) };
 
   if (env.TMUX)
     return { kind: 'tmux', file: 'tmux',
