@@ -119,6 +119,15 @@ class BoardSessions {
     // it), and subject to the boot-nonce void + dead-id prune in list().
     // `claudeSessionId`/`transcriptPath` are captured for a future transcript
     // feature and never surfaced in the DTO.
+    // SECURITY — `transcriptPath` is ATTACKER-SUPPLIABLE: it arrives verbatim in
+    // the POST /api/beacon body (the endpoint authenticates the operator token,
+    // not the path's provenance) and is only length-capped, never canonicalized
+    // or allow-listed. It is stored INERTLY here — nothing reads it today. Any
+    // future consumer (the transcript-tailer this field exists for) MUST treat it
+    // as untrusted input and validate before use: canonicalize + confine to the
+    // Claude projects dir, reject `..`/UNC/symlink escapes — otherwise it is an
+    // arbitrary-file-read / path-traversal sink. "Purely additive" (ADR-0003)
+    // means the STORAGE is additive, NOT that the value is trusted when consumed.
     this._beacons = new Map();
     // The board boot nonce last seen in a list reply — a change means the board
     // restarted and every line id may be reused, so the flags above are void.
@@ -193,7 +202,7 @@ class BoardSessions {
     }
     const entry = this._beacons.get(id) || { claudeSessionId: null, transcriptPath: null, turnDoneAt: null };
     if (claudeSessionId != null) entry.claudeSessionId = claudeSessionId;
-    if (transcriptPath != null) entry.transcriptPath = transcriptPath;
+    if (transcriptPath != null) entry.transcriptPath = transcriptPath; // UNTRUSTED path — validate before any read (see _beacons comment)
     if (event === 'SessionStart') entry.turnDoneAt = null;
     else if (event === 'Stop') entry.turnDoneAt = this._now();
     this._beacons.set(id, entry);

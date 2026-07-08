@@ -50,6 +50,10 @@ function validateNotifyBody(body) {
 // Field caps for POST /beacon. All optional strings; presence of a valid `event`
 // is the only requirement. sessionId/claudeSessionId are ids; transcriptPath/cwd
 // are filesystem paths (capped like `cwd` on the other endpoints).
+// NOTE: the cap is the ONLY check on `transcriptPath` — it is not canonicalized
+// or allow-listed here, and it is stored inertly (never read) today. The path is
+// attacker-suppliable; a future consumer must validate before reading it. See the
+// SECURITY note on the `_beacons` map in sessions.js.
 const BEACON_MAX = { sessionId: 200, claudeSessionId: 200, transcriptPath: 4096, cwd: 4096 };
 const BEACON_EVENTS = new Set(['SessionStart', 'Stop', 'SessionEnd']);
 
