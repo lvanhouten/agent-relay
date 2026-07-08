@@ -130,6 +130,10 @@ function makeEndedRegistry(cap = ENDED_MAX) {
       items.splice(i, 1);
       return true;
     },
+    // Look up one tombstone by id without copying the ring — the encapsulated
+    // point lookup for callers that want a single tombstone (the `screen`
+    // not-live branch), instead of reaching through list() into the internals.
+    get: id => items.find(t => t.id === id),
     list: () => items.slice(),
   };
 }
@@ -149,21 +153,48 @@ const endedLines = makeEndedRegistry();
 function makeScreenLifecycle(io) {
   const { create, getSize, getScrollback } = io;
   let screen = null;
+  let disposed = false;   // set on the line's exit — a dead line has no screen
   function ensure() {
+    // Once the line has exited (dispose ran), refuse to (re)build a screen. This
+    // closes the first-read leg of the exit race: without it, a first read that
+    // lands after onExit's dispose would rebuild a fresh emulator from stale
+    // scrollback — returning a full grid for a line the contract says must error,
+    // and leaking that emulator (onExit is already past its dispose call).
+    if (disposed) return null;
     if (screen) return screen;
     const { cols, rows } = getSize();
     screen = create(cols, rows);
+    // One-time, first-read only: parsing up to SCROLLBACK (2000) chunks through
+    // the VT emulator is synchronous work on the board's single event loop, so a
+    // heavily-repainting line's first screen read briefly stalls I/O for every
+    // other line. Bounded by the scrollback cap and paid once — every read after
+    // init is incremental (the live p.onData feed) — but it is not free.
     for (const chunk of getScrollback()) screen.write(chunk);
     return screen;
   }
   return {
     // Lazy-init on first read, then snapshot the current grid (a stateless read —
-    // no cursor to track, unlike the delta-based raw-output read).
-    read() { return ensure().snapshot(); },
+    // no cursor to track, unlike the delta-based raw-output read). Returns null,
+    // never a torn/stale grid, when the line has exited — either before the read
+    // (ensure refuses to build) or during the awaited flush (dispose lands while
+    // snapshot() yields; the post-await disposed check discards the result and a
+    // read against the disposed emulator that threw is swallowed only then). The
+    // caller maps null to the exited-line reply.
+    async read() {
+      const scr = ensure();
+      if (!scr) return null;
+      try {
+        const snap = await scr.snapshot();
+        return disposed ? null : snap;
+      } catch (e) {
+        if (disposed) return null;   // disposed mid-flush — expected race, not an error
+        throw e;
+      }
+    },
     // Live feed / resize: meaningful only once the emulator exists.
     feed(bytes) { if (screen) screen.write(bytes); },
     resize(cols, rows) { if (screen) screen.resize(cols, rows); },
-    dispose() { if (screen) { screen.dispose(); screen = null; } },
+    dispose() { disposed = true; if (screen) { screen.dispose(); screen = null; } },
     // Test seam: whether the emulator has been constructed yet.
     _initialized: () => screen !== null,
   };
@@ -404,15 +435,29 @@ async function handle(m, sock) {
     case 'screen': {
       // The rendered screen of a line as a stateless snapshot. Field names are a
       // consumed contract (mcp read-screen tool, `sb screen`): keep exact.
+      // Confidentiality note: the grid is raw-output-grade content — it can hold
+      // anything on screen (a credential typed at a prompt, PHI in a TUI, a value
+      // masked in the raw stream that renders in plaintext), at the same
+      // sensitivity as read_output. This command adds no new boundary: it is
+      // dispatched only post-handshake behind the same per-boot access secret as
+      // every other control command, and the reply is not logged. Its entire
+      // confidentiality therefore rests on that secret gate — whose Windows
+      // secret-file ACL is the still-open, unverified assumption tracked in
+      // CONTEXT.md / the open P2 issue, not anything this feature changes.
       const s = sessions.get(m.id);
-      if (s) {
-        // Live line: lazy-init (seed from scrollback) if needed, then snapshot.
-        const snap = await s.screen.read();
+      // Live at the check — but read() awaits a flush, yielding to the event
+      // loop, and p.onExit can dispose this line's screen mid-read (TOCTOU). The
+      // lifecycle refuses a read once disposed and returns null, so a line that
+      // exits during the read falls through to the exited-line reply below
+      // instead of returning a torn/stale grid or blocking until RPC_TIMEOUT_MS.
+      const snap = s ? await s.screen.read() : null;
+      if (snap) {
         sock.write(JSON.stringify({ ok: true, boot: BOOT, ...snap }) + '\n');
       } else {
-        // Not live: distinguish an exited line (tombstone) from one that never
-        // existed. These two failure replies must be tellable apart by `ended`.
-        const tomb = endedLines.list().find(t => t.id === m.id);
+        // Not live (never existed, or exited — possibly during the read above).
+        // Distinguish an exited line (tombstone) from one that never existed;
+        // these two failure replies must be tellable apart by `ended`.
+        const tomb = endedLines.get(m.id);
         if (tomb) sock.write(JSON.stringify({ ok: false, ended: true, exitCode: tomb.exitCode, reason: tomb.reason }) + '\n');
         else sock.write(JSON.stringify({ ok: false, ended: false }) + '\n');
       }
@@ -468,9 +513,18 @@ const board = net.createServer(sock => {
       // Guard the whole command dispatch: a field that doesn't match the assumed
       // shape (e.g. `args` as a non-array) must not throw uncaught here and take
       // down the daemon — and every live line with it — for one bad request.
-      // handle is async (the `screen` command awaits a snapshot); sync commands
-      // still write their reply before the first await, so reply ordering holds,
-      // and an async rejection is caught here instead of crashing the daemon.
+      // handle is async (the `screen` command awaits a snapshot) and dispatched
+      // fire-and-forget, so this does NOT serialize commands: if a caller ever
+      // pipelined an async `screen` and a later sync command on ONE socket, the
+      // sync reply could be written first, transposing replies (the control plane
+      // is positional newline-delimited JSON, not request-id-tagged). Reply
+      // ordering therefore holds only because no caller pipelines reply-producing
+      // commands on a shared socket: rpc() (lib.js) is strictly one-shot — one
+      // command, one reply, then sock.end() — and the sole persistent-socket
+      // command is `resize`, which writes no reply. A future client that sends
+      // reply-producing commands back-to-back on a held-open socket would need
+      // this loop to await sequentially (or a per-socket dispatch queue) first.
+      // The .catch below only keeps an async rejection from crashing the daemon.
       try {
         const ret = handle(m, sock);
         if (ret && typeof ret.then === 'function') {
