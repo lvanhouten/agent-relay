@@ -87,6 +87,11 @@ The not-live branch does `endedLines.list().find(t => t.id === m.id)`. `makeEnde
 
 **N3. The load-bearing flush invariant rides on the `@xterm/headless ^6.0.0` caret range** — `server/package.json:12`, `server/board/screen-render.js:46-47` · confidence 40
 
+**Status:** ✅ Resolved in <N3_SHA> — see below.
+**Resolution:** Accepted (A) with the reviewer's own prescription: keep SPIKE 3 as the tripwire rather than pin the dep exactly (which would break the repo's `^` convention). Added a comment above SPIKE 3 in `screen-render.test.js` stating that it is a *permanent* regression guard — not a throwaway spike — for the flush-before-read invariant, which rides on `@xterm/headless`'s undocumented empty-write drain behavior under a `^6.0.0` (caret) range; a minor/patch bump that short-circuits empty writes would silently tear snapshots, and this test is what would catch it, so it must never be removed. Behavior-neutral; the closure is the guard test itself (SPIKE 3, already green) now documented as the dependency-upgrade tripwire.
+
+---
+
 `snapshot()`'s correctness depends on `term.write('', resolve)` invoking the callback only *after* all previously-queued writes have drained — an internal write-buffer behavior of xterm, not a documented API contract. The reliance is well-documented in `screen-render.js:6-14` and spike-tested (SPIKE 3), which is the mitigation. But the dep is pinned `^6.0.0`, so a minor/patch bump that short-circuits empty writes (calling the callback synchronously, before prior writes parse) would silently break flush-before-read and produce torn/stale snapshots. `^` is the repo convention, so pinning this one exactly would be inconsistent — the honest fix is to keep SPIKE 3 as the tripwire and note that it *is* the regression guard for a dependency-upgrade break, so it is never removed as "just a spike."
 
 **N4. The rendered screen exposes raw-output-grade content over the control plane, gated only by the per-boot secret** — `server/board/board.js:404-411` · confidence 40

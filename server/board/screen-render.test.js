@@ -40,6 +40,15 @@ test('SPIKE 2: an alt-screen dialog frame renders the caret intact on the active
   s.dispose();
 });
 
+// SPIKE 3 is a PERMANENT regression guard, not a throwaway spike: snapshot()'s
+// flush-before-read correctness rides on term.write('', cb) firing its callback
+// only after all previously-queued writes have drained (screen-render.js:46-47).
+// That is an internal @xterm/headless write-buffer behavior, not a documented API
+// contract, and the dep is pinned `^6.0.0` (server/package.json) — a minor/patch
+// bump that short-circuits empty writes (calling the callback before prior writes
+// parse) would silently produce torn/stale snapshots. This test is the tripwire
+// that would catch such an upgrade break, so it must never be removed as "just a
+// spike."
 test('SPIKE 3: a snapshot taken under active feed is never torn', async () => {
   const s = createScreen(80, 24);
   let torn = false;
