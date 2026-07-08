@@ -92,3 +92,20 @@ it was closed the same way (`/exit` + confirmed shell prompt) and the Line
 torn down. Stage-3 completion itself was never in doubt — the committed
 Marker (`8f893a3`) was independently re-validated against `HEAD` before
 resuming the loop.
+
+### 4. `verify` — green (CLEARED) — 2026-07-08
+
+Marker (`conduct/verify.done.json`, committed): `outcome: green`. Fresh
+session (independence from `remediate-batch`), spawned against the annotated
+doc's absolute path inside `.worktrees/r-611b4a3` and range
+`e80475b..3d26d47257eca5875ea37b82916e554021291cf6`, per the cross-worktree
+slot-fill contract. Artifact `adversarial-review-verify-e80475b..3d26d47.md` —
+verdict **CLEARED**: all 4 original findings confirmed closed (W1 drift trap
+structurally eliminated via shared `_outputLandedAfter`, 2 mutation-proven
+tests; W2 validate-before-read markers verified at all 3 boundaries,
+`transcriptPath` confirmed inert; N2 comment/code contradiction reconciled;
+N1 reject upheld — cosmetic-only, ADR-0001 parity). New-defect sweep clean, no
+CRITICALs. Server 286/286 green. Bootstrap, wait (woke on `marker-present`),
+and graceful teardown all completed without incident. No mid-stage prompts
+observed. CLEARED means this never gates (a RESIDUE/REGRESSED verdict would
+have). Advancing to `integrate`.
