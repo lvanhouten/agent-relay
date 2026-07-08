@@ -69,6 +69,11 @@ if (s) {
 
 **N1. First screen read seeds by queuing up to 2000 scrollback chunks onto the board's single event loop** — `server/board/board.js:152-158` · confidence 55
 
+**Status:** ✅ Resolved in <N1_SHA> — see below.
+**Resolution:** Accepted (A). ADR 0002 covers the seed's *truncation* exposure but not its *latency*, exactly as the reviewer notes. Added a comment at the seed loop in `makeScreenLifecycle.ensure()` acknowledging that parsing up to `SCROLLBACK` (2000) chunks through the VT emulator is synchronous work on the board's single event loop — a one-time, first-read-only stall of all lines' I/O, bounded by the scrollback cap and paid once (every read after init is the incremental live feed). Behavior-neutral clarification; closure check is the named code path (the comment at the seed loop). No test — there is no behavior to guard, only an honesty gap in the code's self-description.
+
+---
+
 `ensure()` replays the whole scrollback into a fresh emulator on first read: `for (const chunk of getScrollback()) screen.write(chunk)`. `SCROLLBACK` is 2000 chunks, and the board is single-threaded — the xterm parse work for a busy line's full window happens on the loop that serves every other line's I/O. Bounded (2000 chunks) and one-time per line (every read after init is incremental), so this is a NOTE, not a warning — but ADR 0002 discusses the seed's *truncation* exposure, not its *latency*. Worth a line acknowledging the one-time first-read parse cost, since a heavily-repainting Claude line will routinely carry a full window of large chunks. `n = 2000` chunks, one-time; realistic worst-case parse is milliseconds, but it is a synchronous stall for all lines during that window.
 
 **N2. `endedLines.list().find(...)` copies the whole ring per not-live screen read; the registry has no `get(id)`** — `server/board/board.js:415` · confidence 45

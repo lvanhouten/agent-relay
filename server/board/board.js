@@ -160,6 +160,11 @@ function makeScreenLifecycle(io) {
     if (screen) return screen;
     const { cols, rows } = getSize();
     screen = create(cols, rows);
+    // One-time, first-read only: parsing up to SCROLLBACK (2000) chunks through
+    // the VT emulator is synchronous work on the board's single event loop, so a
+    // heavily-repainting line's first screen read briefly stalls I/O for every
+    // other line. Bounded by the scrollback cap and paid once — every read after
+    // init is incremental (the live p.onData feed) — but it is not free.
     for (const chunk of getScrollback()) screen.write(chunk);
     return screen;
   }
