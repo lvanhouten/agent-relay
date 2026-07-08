@@ -189,8 +189,13 @@ class BoardSessions {
   // ceiling, and the blast radius is cosmetic only — no spawn, no data exposure,
   // no push (a beacon never pushes). Not a hole to close; a documented assumption.
   // The `cwd` fallback fires ONLY when `sessionId` is absent. A present-but-
-  // unmatched `sessionId` must never fall through to `cwd` — that would beacon a
-  // DIFFERENT same-directory live line.
+  // unmatched *non-empty* `sessionId` must never fall through to `cwd` — that
+  // would beacon a DIFFERENT same-directory live line. An EMPTY-STRING sessionId
+  // is intentionally treated as ABSENT (the falsy `if (sessionId)` below): it is
+  // the "hook couldn't resolve a line id" sentinel (e.g. AGENT_RELAY_SESSION unset
+  // on a non-board-spawned line), so falling back to `cwd` is the desired backstop,
+  // not a bug — it can match no live line by id anyway, and the fallthrough guard
+  // above governs a real, non-empty id.
   // Events: SessionStart upserts the entry and resets turnDoneAt to null (a
   // (re)start is not a waiting state); Stop sets turnDoneAt to now, CREATING the
   // entry if absent (self-healing — a Stop alone also marks the line a Claude
@@ -198,7 +203,7 @@ class BoardSessions {
   // the idleMs heuristic). Returns the resolved id, or null when nothing matched.
   async beacon({ event, sessionId, claudeSessionId, transcriptPath, cwd } = {}) {
     let id = null;
-    if (sessionId) id = sessionId;
+    if (sessionId) id = sessionId;            // '' is intentionally falsy -> absent (see header: empty = cwd-fallback sentinel)
     else if (cwd) id = await this._resolveLiveIdByCwd(cwd);
     if (!id) return null;
 
