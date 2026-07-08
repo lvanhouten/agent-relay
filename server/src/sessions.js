@@ -213,6 +213,20 @@ class BoardSessions {
     if (entry) entry.turnDoneAt = null;
   }
 
+  // The single "has this line emitted output since instant `ts`?" primitive,
+  // shared by both staleness overlays below (_applyAttention, _applyBeacon) so
+  // the check exists once, not hand-rolled twice with opposite polarity. This
+  // is deliberate: the _applyAttention comment anticipates a future grace window
+  // (ignore output within ~1s after the timestamp); extracting the primitive
+  // means that refinement lands HERE once and reaches both overlays, instead of
+  // silently drifting when a maintainer edits one copy and not the other.
+  // `lastOutputAt` reads the board's idleMs back to a wall-clock instant against
+  // the same injected clock the stored timestamps use.
+  _outputLandedAfter(line, ts) {
+    const lastOutputAt = this._now() - (line.idleMs ?? 0);
+    return lastOutputAt > ts;
+  }
+
   // Overlay the needs-input state onto a live-line DTO. A flag survives only
   // while the line has produced no output since it was set: once the board's
   // idleMs implies output (or input echo) landed AFTER flaggedAt, the agent is
@@ -225,12 +239,12 @@ class BoardSessions {
   // read as "the agent moved again" and silently clear a flag that should
   // stick — a soft failure (stale card, no corruption). If false-clears show
   // up in practice, add a small grace window (ignore output within ~1s after
-  // flaggedAt) rather than loosening the clear entirely.
+  // flaggedAt) in _outputLandedAfter rather than loosening the clear entirely —
+  // it lands once there and covers turn-done too.
   _applyAttention(dto, line) {
     const flaggedAt = this._attention.get(dto.id);
     if (flaggedAt == null) return dto;
-    const lastOutputAt = this._now() - (line.idleMs ?? 0);
-    if (lastOutputAt > flaggedAt) {
+    if (this._outputLandedAfter(line, flaggedAt)) {
       this._attention.delete(dto.id);
       return dto;
     }
@@ -245,14 +259,15 @@ class BoardSessions {
   // resets it to null but KEEPS the entry, so the line falls back to `running`,
   // never `quiet`. This clear inherits the same accepted soft-failure as
   // _applyAttention: a laggy hook racing a late TUI repaint can false-clear
-  // turn-done early — a stale card, never corruption. _applyAttention runs AFTER
-  // this in list(), so a live needs-input flag always wins over turn-done.
+  // turn-done early — a stale card, never corruption. It shares that overlay's
+  // _outputLandedAfter primitive, so a future grace window covers both at once.
+  // _applyAttention runs AFTER this in list(), so a live needs-input flag always
+  // wins over turn-done.
   _applyBeacon(dto, line) {
     const entry = this._beacons.get(dto.id);
     if (!entry) return dto;
     if (entry.turnDoneAt != null) {
-      const lastOutputAt = this._now() - (line.idleMs ?? 0);
-      if (lastOutputAt <= entry.turnDoneAt) return { ...dto, status: 'turn-done' };
+      if (!this._outputLandedAfter(line, entry.turnDoneAt)) return { ...dto, status: 'turn-done' };
       entry.turnDoneAt = null; // agent moved again; keep the marker, revert to running
     }
     return { ...dto, status: 'running' };
