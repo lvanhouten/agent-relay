@@ -122,3 +122,22 @@ the feature branch at its normal (non-worktree) path. Bootstrap, wait (woke on
 `marker-present`), and graceful teardown all completed without incident. No
 mid-stage prompts observed. Advancing to `contract-check` — the final stage;
 a DELIVERED verdict ends the run.
+
+### 6. `contract-check` — green (DELIVERED) — 2026-07-08
+
+Marker (`conduct/contract-check.done.json`, committed): `outcome: green`.
+Attested range `ccca4d6..4309003` (the full merged feature branch, base
+through post-integrate `HEAD`). Artifact
+`validation-contract-check-ccca4d6..4309003.md` — verdict **DELIVERED**: 15
+live assertions, 15 delivered, 0 undelivered, 0 superseded; no `SUPERSEDED`
+strikes to reconcile, `STATUS.md` records no-VC-n-affected for all
+deviations; every `VC-n` row cites a delivering file:symbol. Bootstrap, wait
+(woke on `marker-present`), and graceful teardown all completed without
+incident. No mid-stage prompts observed.
+
+## Run complete — DELIVERED — 2026-07-08
+
+All six registry stages (`execute-briefs` → `adversarial-review` →
+`remediate-batch` → `verify` → `integrate` → `contract-check`) completed
+green in strict sequence, ending at a DELIVERED `contract-check`. See the
+run report (`conduct/run-report.md`) for the full summary.
