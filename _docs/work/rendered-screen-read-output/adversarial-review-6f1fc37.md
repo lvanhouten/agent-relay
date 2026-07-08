@@ -12,18 +12,20 @@ A clean, additive, well-tested feature: the pure serializer (`screen-render.js`)
 
 | ID | Severity | Conf | Finding | Status |
 |----|----------|------|---------|--------|
-| W1 | WARNING | 55 | Async `handle` relaxes control-plane reply ordering; in-code justification is incomplete | (open) |
-| W2 | WARNING | 55 | Screen read racing line exit: TOCTOU between liveness check and the awaited snapshot | (open) |
-| N1 | NOTE | 55 | First screen read seeds by queuing up to 2000 scrollback chunks on the board's event loop | (open) |
-| N2 | NOTE | 45 | `endedLines.list().find(...)` copies the ring per not-live read; registry lacks `get(id)` | (open) |
-| N3 | NOTE | 40 | Load-bearing flush invariant rides on the `@xterm/headless ^6.0.0` caret range | (open) |
-| N4 | NOTE | 40 | Rendered screen exposes raw-output-grade content over the control plane; gated only by the boot secret | (open) |
+| ~~W1~~ | WARNING | 55 | Async `handle` relaxes control-plane reply ordering; in-code justification is incomplete | ✅ Resolved (B) in eaa64c7 |
+| ~~W2~~ | WARNING | 55 | Screen read racing line exit: TOCTOU between liveness check and the awaited snapshot | ✅ Resolved (A) in 118eacf |
+| ~~N1~~ | NOTE | 55 | First screen read seeds by queuing up to 2000 scrollback chunks on the board's event loop | ✅ Resolved (A) in c195500 |
+| ~~N2~~ | NOTE | 45 | `endedLines.list().find(...)` copies the ring per not-live read; registry lacks `get(id)` | ✅ Resolved (A) in 41ebcf6 |
+| ~~N3~~ | NOTE | 40 | Load-bearing flush invariant rides on the `@xterm/headless ^6.0.0` caret range | ✅ Resolved (A) in e718e31 |
+| ~~N4~~ | NOTE | 40 | Rendered screen exposes raw-output-grade content over the control plane; gated only by the boot secret | ✅ Resolved (A) in 837200b |
+
+**What's left:** 6 Resolved (W1, W2, N1, N2, N3, N4) / 0 Deferred / 0 Rejected / 0 Open. W2 landed a code fix with three red→green mutation-verified tests; N2 landed a code fix with a unit test; W1/N1/N3/N4 are behavior-neutral comment/doc clarifications. No findings parked. Remediation range for re-review: `6f1fc37..837200b` (fixes begin at eaa64c7).
 
 ### Warnings
 
 **W1. Async `handle` relaxes the control-plane reply-ordering guarantee; the in-code justification is incomplete** — `server/board/board.js:464-480` · confidence 55
 
-**Status:** ✅ Resolved in <W1_SHA> — see below.
+**Status:** ✅ Resolved in eaa64c7 — see below.
 **Resolution:** Re-framed (B). The reviewer is right that the old comment claimed a cross-command ordering guarantee the fire-and-forget dispatch no longer provides, but this is latent-only: `rpc()` is strictly one-shot (one command, one reply, then `sock.end()`) and the sole persistent-socket command is `resize`, which writes no reply — so no caller can pipeline two reply-producing commands on one socket, and there is no reachable transposition today. The honest fix within scope is to correct the comment, not to add behavior to the single most sensitive code in the diff (the shared control-plane dispatch) for an unexercised path. The comment at `board.js` now states the real contract precisely — ordering holds only because no caller pipelines reply-producing commands on a shared socket — and names what a future pipelining client would need first (sequential await in the loop, or a per-socket dispatch queue). The behavioral hardening was deliberately not applied unattended; it is a control-plane design call for the owner. Closure check: named guarded code path — the corrected comment at `board.js:469-483`; there is no behavioral defect to test because the relaxation is unreachable by any current caller (the finding's own "latent, not live" conclusion).
 
 ---
@@ -43,7 +45,7 @@ The defect is that the code documents a guarantee it no longer provides. The `re
 
 **W2. Screen read racing a line's exit: TOCTOU between the liveness check and the awaited snapshot** — `server/board/board.js:404-419` · confidence 55
 
-**Status:** ✅ Resolved in <W2_SHA> — see below.
+**Status:** ✅ Resolved in 118eacf — see below.
 **Resolution:** Accepted (A); the race is real on both interleavings the reviewer describes. Fixed at the lifecycle rather than by a handler re-check, because the lifecycle is directly unit-testable and puts the guard at the source. `makeScreenLifecycle` now tracks a `disposed` flag set by `dispose()` (called from `p.onExit`): `ensure()` refuses to (re)build an emulator once disposed — closing the first-read/lazy-init leg (no stale rebuilt grid, no leaked emulator) — and `read()` re-checks `disposed` after the awaited flush and swallows a disposed-terminal throw only then, returning `null` instead of a torn/stale grid or a rejection that hangs the client to `RPC_TIMEOUT_MS`. The `screen` handler maps a `null` snapshot to the not-live branch, so a line that exits mid-read now yields the intended `ended:true`/exit-code reply (VC-9) rather than a generic 10 s "screen read failed". Closure check: three red→green unit tests in `board.test.js` — read-after-dispose refuses to rebuild (constructed stays 1, returns null), first-read-after-dispose builds nothing (constructed stays 0), and a dispose during an in-flight read discards the grid (returns null). All three verified red under mutation (both guards disabled) and green with the fix; full server suite 248/248.
 
 ---
@@ -69,7 +71,7 @@ if (s) {
 
 **N1. First screen read seeds by queuing up to 2000 scrollback chunks onto the board's single event loop** — `server/board/board.js:152-158` · confidence 55
 
-**Status:** ✅ Resolved in <N1_SHA> — see below.
+**Status:** ✅ Resolved in c195500 — see below.
 **Resolution:** Accepted (A). ADR 0002 covers the seed's *truncation* exposure but not its *latency*, exactly as the reviewer notes. Added a comment at the seed loop in `makeScreenLifecycle.ensure()` acknowledging that parsing up to `SCROLLBACK` (2000) chunks through the VT emulator is synchronous work on the board's single event loop — a one-time, first-read-only stall of all lines' I/O, bounded by the scrollback cap and paid once (every read after init is the incremental live feed). Behavior-neutral clarification; closure check is the named code path (the comment at the seed loop). No test — there is no behavior to guard, only an honesty gap in the code's self-description.
 
 ---
@@ -78,7 +80,7 @@ if (s) {
 
 **N2. `endedLines.list().find(...)` copies the whole ring per not-live screen read; the registry has no `get(id)`** — `server/board/board.js:415` · confidence 45
 
-**Status:** ✅ Resolved in <N2_SHA> — see below.
+**Status:** ✅ Resolved in 41ebcf6 — see below.
 **Resolution:** Accepted (A). Added `get(id)` to `makeEndedRegistry` (a direct `items.find` — no ring copy) and switched the `screen` not-live branch from `endedLines.list().find(t => t.id === m.id)` to `endedLines.get(m.id)`, so a not-live screen read no longer allocates a full copy of up to 20 tombstones just to `.find` one, and the tombstone lookup stays encapsulated in the registry rather than reaching through `list()` into the ring's internals. Behavior-preserving. Closure check: red→green unit test in `board.test.js` (`get(id)` returns the matching tombstone, `undefined` for an unknown id); the existing `handle('screen')` not-live tests and the e2e exited-line path continue to pass through the new lookup (full suite 249/249).
 
 ---
@@ -87,7 +89,7 @@ The not-live branch does `endedLines.list().find(t => t.id === m.id)`. `makeEnde
 
 **N3. The load-bearing flush invariant rides on the `@xterm/headless ^6.0.0` caret range** — `server/package.json:12`, `server/board/screen-render.js:46-47` · confidence 40
 
-**Status:** ✅ Resolved in <N3_SHA> — see below.
+**Status:** ✅ Resolved in e718e31 — see below.
 **Resolution:** Accepted (A) with the reviewer's own prescription: keep SPIKE 3 as the tripwire rather than pin the dep exactly (which would break the repo's `^` convention). Added a comment above SPIKE 3 in `screen-render.test.js` stating that it is a *permanent* regression guard — not a throwaway spike — for the flush-before-read invariant, which rides on `@xterm/headless`'s undocumented empty-write drain behavior under a `^6.0.0` (caret) range; a minor/patch bump that short-circuits empty writes would silently tear snapshots, and this test is what would catch it, so it must never be removed. Behavior-neutral; the closure is the guard test itself (SPIKE 3, already green) now documented as the dependency-upgrade tripwire.
 
 ---
@@ -96,7 +98,7 @@ The not-live branch does `endedLines.list().find(t => t.id === m.id)`. `makeEnde
 
 **N4. The rendered screen exposes raw-output-grade content over the control plane, gated only by the per-boot secret** — `server/board/board.js:404-411` · confidence 40
 
-**Status:** ✅ Resolved in <N4_SHA> — see below.
+**Status:** ✅ Resolved in 837200b — see below.
 **Resolution:** Accepted (A) as an acknowledgment finding — the reviewer explicitly confirms there is no new exposure surface, only an unstated assumption. Made the assumption explicit with a comment at the `screen` handler: the rendered grid is raw-output-grade content (can carry a credential, PHI, or a raw-stream-masked value rendered in plaintext) at the same sensitivity as `read_output`; the command adds no boundary (dispatched only post-handshake behind the same per-boot access secret, reply not logged); its confidentiality rests entirely on that secret gate, whose Windows secret-file ACL is the still-open, unverified assumption already tracked in CONTEXT.md and the open P2 issue — not anything this feature changed. Behavior-neutral; the closure is the stated fact at the handler (no executable change, so no test). No new security work is opened by this feature; the pre-existing ACL question is unchanged.
 
 ---
