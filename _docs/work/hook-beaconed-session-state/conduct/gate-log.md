@@ -109,3 +109,16 @@ CRITICALs. Server 286/286 green. Bootstrap, wait (woke on `marker-present`),
 and graceful teardown all completed without incident. No mid-stage prompts
 observed. CLEARED means this never gates (a RESIDUE/REGRESSED verdict would
 have). Advancing to `integrate`.
+
+### 5. `integrate` — green — 2026-07-08
+
+Marker (`conduct/integrate.done.json`, committed): `outcome: green`. Merged
+`remediate/hook-beaconed-session-state/611b4a3` into
+`features/hook-beaconed-session-state` at merge commit `c96fef8` — clean,
+disjoint file sets, no conflicts. Rebuild-and-retest gate green on the merged
+branch: server 286/286, client tests pass, client typecheck pass. Remediation
+worktree removed and its branch deleted; the annotated findings doc now rides
+the feature branch at its normal (non-worktree) path. Bootstrap, wait (woke on
+`marker-present`), and graceful teardown all completed without incident. No
+mid-stage prompts observed. Advancing to `contract-check` — the final stage;
+a DELIVERED verdict ends the run.
