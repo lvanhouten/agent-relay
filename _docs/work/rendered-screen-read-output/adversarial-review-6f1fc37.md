@@ -78,6 +78,11 @@ if (s) {
 
 **N2. `endedLines.list().find(...)` copies the whole ring per not-live screen read; the registry has no `get(id)`** — `server/board/board.js:415` · confidence 45
 
+**Status:** ✅ Resolved in <N2_SHA> — see below.
+**Resolution:** Accepted (A). Added `get(id)` to `makeEndedRegistry` (a direct `items.find` — no ring copy) and switched the `screen` not-live branch from `endedLines.list().find(t => t.id === m.id)` to `endedLines.get(m.id)`, so a not-live screen read no longer allocates a full copy of up to 20 tombstones just to `.find` one, and the tombstone lookup stays encapsulated in the registry rather than reaching through `list()` into the ring's internals. Behavior-preserving. Closure check: red→green unit test in `board.test.js` (`get(id)` returns the matching tombstone, `undefined` for an unknown id); the existing `handle('screen')` not-live tests and the e2e exited-line path continue to pass through the new lookup (full suite 249/249).
+
+---
+
 The not-live branch does `endedLines.list().find(t => t.id === m.id)`. `makeEndedRegistry` (`board.js:123`) exposes `record`/`forget`/`list` only, and `list()` returns `items.slice()` — a full copy of up to 20 tombstones allocated on every screen read of a non-live id, just to `.find` one. `forget` already does an internal `findIndex`; a `get(id)` method on the registry would be the reuse target and would keep the tombstone lookup encapsulated (the handler currently reaches through `list()` into the ring's internals). Small blast radius (cap 20), so low confidence — an efficiency + encapsulation nit, not a correctness issue.
 
 **N3. The load-bearing flush invariant rides on the `@xterm/headless ^6.0.0` caret range** — `server/package.json:12`, `server/board/screen-render.js:46-47` · confidence 40

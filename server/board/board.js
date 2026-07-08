@@ -130,6 +130,10 @@ function makeEndedRegistry(cap = ENDED_MAX) {
       items.splice(i, 1);
       return true;
     },
+    // Look up one tombstone by id without copying the ring — the encapsulated
+    // point lookup for callers that want a single tombstone (the `screen`
+    // not-live branch), instead of reaching through list() into the internals.
+    get: id => items.find(t => t.id === id),
     list: () => items.slice(),
   };
 }
@@ -444,7 +448,7 @@ async function handle(m, sock) {
         // Not live (never existed, or exited — possibly during the read above).
         // Distinguish an exited line (tombstone) from one that never existed;
         // these two failure replies must be tellable apart by `ended`.
-        const tomb = endedLines.list().find(t => t.id === m.id);
+        const tomb = endedLines.get(m.id);
         if (tomb) sock.write(JSON.stringify({ ok: false, ended: true, exitCode: tomb.exitCode, reason: tomb.reason }) + '\n');
         else sock.write(JSON.stringify({ ok: false, ended: false }) + '\n');
       }

@@ -79,6 +79,14 @@ test('makeEndedRegistry: forget removes exactly one tombstone, reports unknown i
   assert.strictEqual(reg.forget('nope'), false, 'never existed');
 });
 
+test('makeEndedRegistry: get(id) returns the tombstone by id, undefined for an unknown id', () => {
+  const reg = makeEndedRegistry();
+  reg.record({ id: '1', exitCode: 0 });
+  reg.record({ id: '2', exitCode: 5 });
+  assert.strictEqual(reg.get('2').exitCode, 5, 'returns the matching tombstone');
+  assert.strictEqual(reg.get('nope'), undefined, 'unknown id → undefined');
+});
+
 test('makeEndedRegistry: list() returns a copy, not the live ring', () => {
   const reg = makeEndedRegistry();
   reg.record({ id: '1' });
