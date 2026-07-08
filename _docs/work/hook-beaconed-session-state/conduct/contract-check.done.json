@@ -1,6 +1,0 @@
-{ "stage": "contract-check",
-  "outcome": "green",
-  "artifact": "_docs/work/hook-beaconed-session-state/validation-contract-check-ccca4d6..4309003.md",
-  "summary": "DELIVERED — coverage ledger attests ccca4d6..4309003 (merged feature branch): 15 live assertions, 15 delivered, 0 undelivered, 0 superseded. No SUPERSEDED strikes to reconcile; STATUS.md records no-VC-n-affected for all deviations. Each VC-n row cites a delivering file:symbol. Text-based coverage gate, not behavioral.",
-  "asserted": false,
-  "exceptions": [] }

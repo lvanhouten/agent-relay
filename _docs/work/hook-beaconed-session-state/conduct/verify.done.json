@@ -1,6 +1,0 @@
-{ "stage": "verify",
-  "outcome": "green",
-  "artifact": "_docs/work/hook-beaconed-session-state/adversarial-review-verify-e80475b..3d26d47.md",
-  "summary": "CLEARED — all 4 original findings hold: W1 confirmed closed (drift trap structurally eliminated via shared _outputLandedAfter, 2 mutation-proven tests), W2 confirmed closed (validate-before-read markers at all 3 boundaries; transcriptPath verified inert), N2 confirmed closed (code/comment contradiction reconciled, alternatives correctly rejected as backstop-killing), N1 reject upheld (cosmetic-only confirmed, ADR-0001 parity). New-defect sweep clean — no CRITICALs, no new findings. Server 286/286 green.",
-  "asserted": false,
-  "exceptions": [] }

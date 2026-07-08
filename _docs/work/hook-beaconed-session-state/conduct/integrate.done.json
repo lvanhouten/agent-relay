@@ -1,6 +1,0 @@
-{ "stage": "integrate",
-  "outcome": "green",
-  "artifact": "_docs/work/hook-beaconed-session-state/adversarial-review-ccca4d6..e80475b.md",
-  "summary": "Merged remediate/hook-beaconed-session-state/611b4a3 into features/hook-beaconed-session-state at merge commit c96fef8 (clean, disjoint file sets, no conflicts). Rebuild-and-retest gate green on the merged branch: server 286/286, client tests pass, client typecheck pass. Remediation worktree torn down (worktree removed + branch deleted). Annotated findings doc now rides the feature branch at its normal path.",
-  "asserted": false,
-  "exceptions": [] }

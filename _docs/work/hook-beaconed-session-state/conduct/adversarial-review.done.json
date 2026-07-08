@@ -1,6 +1,0 @@
-{ "stage": "adversarial-review",
-  "outcome": "green",
-  "artifact": "_docs/work/hook-beaconed-session-state/adversarial-review-ccca4d6..e80475b.md",
-  "summary": "Review committed — verdict CONCERNS: W1 duplicated output-after-timestamp staleness check (drift trap), W2 unvalidated transcriptPath stored for future consumption; 2 notes. All 15 VC assertions delivered + tested, server 284/284 green.",
-  "asserted": false,
-  "exceptions": [] }

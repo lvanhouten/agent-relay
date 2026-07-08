@@ -1,7 +1,0 @@
-{ "stage": "remediate-batch",
-  "outcome": "green",
-  "artifact": "C:/Users/zaken/worktrees/agent-relay/hook-beaconed-session-state/.worktrees/r-611b4a3/_docs/work/hook-beaconed-session-state/adversarial-review-ccca4d6..e80475b.md",
-  "summary": "completed — 4 findings, all reached a verdict, none parked. W1 accepted (extracted shared _outputLandedAfter helper + 2 mutation-proven closure tests), W2 accepted (validate-before-read markers on the attacker-suppliable transcriptPath at both boundaries), N2 accepted (comment reconciled to the empty-sessionId cwd-fallback behavior), N1 rejected as a reviewer-conceded non-defect (ADR-0001 single-operator ceiling, cosmetic-only) with a durable trust-model comment. Server 286/286 green (was 284). E-count 1/4 mechanically trips the >20% smell but is benign — the sole E is a NOTE the reviewer itself called 'not a defect to fix'; no substantive finding was flattened.",
-  "asserted": false,
-  "exceptions": [],
-  "worktree": { "path": "C:/Users/zaken/worktrees/agent-relay/hook-beaconed-session-state/.worktrees/r-611b4a3", "branch": "remediate/hook-beaconed-session-state/611b4a3", "head": "3d26d47257eca5875ea37b82916e554021291cf6" } }
