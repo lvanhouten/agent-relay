@@ -1,1 +1,0 @@
-{"stage":"adversarial-review","outcome":"green","artifact":"_docs/work/rendered-screen-read-output/adversarial-review-6f1fc37.md","summary":"CONCERNS — 2 grounded warnings (async-dispatch reply ordering W1; screen-read/exit TOCTOU W2), no criticals; all VC-1..VC-11 delivered","asserted":false,"exceptions":[]}
