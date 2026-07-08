@@ -38,3 +38,22 @@ Append-only record of the conducted run: entry point, stage completions, gates, 
 - **2026-07-08 · remediate-batch → GREEN.** Committed Marker `b219f58` validated, parses, `outcome: green`, **0 parked** (no exception gate). All 6 findings resolved in the isolated worktree — W1 (verdict B), W2 (A), N1–N4 (A); 0 parked, 0 rejects; test gate 249/249 green. Cross-worktree coords: annotated doc `.worktrees/r-6f1fc37/…/adversarial-review-6f1fc37.md`, branch `remediate/rendered-screen/6f1fc37`, fix-head `125b784`. Worktree placed under `.worktrees/` (user fix) — no `.claude/wt/` stalls this stage. Worktree left intact for verify + merge. Line 8 gracefully torn down. Auto-advanced to verify with range `6f1fc37..125b784`.
   - Note: ~22-min transcript freeze mid-stage was a long Opus-high planning think (worktree-placement + git-exclude deliberation), NOT a wedge — `idleMs` (236ms) confirmed liveness; no gate fired. Lesson: trust `idleMs` over an empty `read_output` (a continuously-animating spinner defeats read_output's quiet-wait and returns empty).
 - **2026-07-08 · verify → GREEN (CLEARED).** Committed Marker `b7510d5` validated, parses, `outcome: green`. Doc-level verdict **CLEARED** — all 6 original findings confirmed closed; new-defect sweep raised 1 NOTE (disposed-buffer read side effect), no criticals (NOTE-level ≠ not-cleared); 249/249 green. Verification doc `adversarial-review-verify-6f1fc37..125b784.md`. Range re-reviewed: `6f1fc37..125b784`. Line 10 gracefully torn down. Auto-advanced to contract-check with full-feature range `44f6ab1..125b784`.
+- **2026-07-08 · contract-check → GREEN (DELIVERED).** Committed Marker `146e172` validated, parses, `outcome: green`. Ledger verdict **DELIVERED** — 11/11 live VC-n delivered, 0 undelivered, 0 superseded. Coverage ledger `validation-contract-check-44f6ab1..125b784.md`. Attested range `44f6ab1..125b784` (full feature + fixes). Line 11 gracefully torn down.
+
+## Run outcome — DELIVERED (2026-07-08)
+
+Conducted run complete. All five stages green; **no Exception gate ever fired** (0 blocked/partial briefs, 0 parked verdicts, verify CLEARED, contract DELIVERED, no wedge, no deny-class prompt).
+
+| Stage | Verdict | Marker |
+|---|---|---|
+| execute-briefs | GREEN — 4/4 briefs integrated, 245/245 | `907ec8b` |
+| adversarial-review | GREEN — CONCERNS (2 warnings, no criticals), all VC swept | `4574b35` |
+| remediate-batch | GREEN — 6/6 resolved, 0 parked, 249/249 | `b219f58` |
+| verify | GREEN — CLEARED (6/6 closed, 1 new NOTE) | `b7510d5` |
+| contract-check | GREEN — DELIVERED (11/11 VC) | `146e172` |
+
+**Mid-stage approvals (judged, non-deny-class):** 3, all during execute-briefs (spike-file create, spike-file `rm`, `screen-render.js` write) — all in-worktree, non-deny-class, logged above. **Deny-class prompts:** 0. **Exception gates:** 0.
+
+**Operational notes:** (1) brief-executor `.claude/wt/` writes tripped Claude Code's self-edit guard → user whitelisted the briefs session; future fix = place worktrees under `.worktrees/` (applied to remediate-batch, honored). (2) remediate-batch's ~22-min transcript freeze was a long Opus-high think, not a wedge (`idleMs` confirmed liveness). (3) Two LINE-OPS.md corrections found+applied at FIRST-USE: clear `CLAUDE_CODE_CHILD_SESSION` at spawn; `send_input` submit quirk (bare-Enter follow-up).
+
+**Not done (deliberately, per skill boundaries):** the remediation worktree `.worktrees/r-6f1fc37` (branch `remediate/rendered-screen/6f1fc37`, head `125b784`) is left **intact and unmerged** — merging the fixes and opening the PR is `finish-feature`'s job, a separate human-initiated step. The conducted run ends here.
