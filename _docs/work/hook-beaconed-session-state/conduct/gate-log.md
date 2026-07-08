@@ -39,3 +39,16 @@ Artifact `briefs/STATUS.md` — "Wave 1 {01-server-beacon-plumbing,
 graceful teardown (`/exit` confirmed shell prompt returned, then `end_line`)
 all completed without incident. No mid-stage prompts observed. Advancing to
 `adversarial-review`.
+
+### 2. `adversarial-review` — green — 2026-07-08
+
+Marker (`conduct/adversarial-review.done.json`, committed): `outcome: green`.
+Artifact `adversarial-review-ccca4d6..e80475b.md` — verdict **CONCERNS**: W1
+(duplicated output-after-timestamp staleness check, a drift trap) and W2
+(unvalidated `transcriptPath` stored for future consumption); 2 additional
+notes. All 15 `VC-n` assertions delivered and tested; server 284/284 green.
+Bootstrap, wait (woke on `marker-present`), and graceful teardown all
+completed without incident. No mid-stage prompts observed. A CONCERNS verdict
+is a normal green completion for this stage (STAGES.md: this stage never
+gates on verdict severity) — the findings feed `remediate-batch` next.
+Advancing to `remediate-batch`.
