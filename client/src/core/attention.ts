@@ -22,7 +22,7 @@
 // Recently-exited section; one rendering live is a bug worth seeing loudly.)
 
 export interface AttentionView {
-  dot: 'online' | 'idle' | 'attention' | 'error';
+  dot: 'online' | 'idle' | 'attention' | 'error' | 'done';
   label: string;
   pulse: boolean;
 }
@@ -31,6 +31,12 @@ const ATTENTION: Record<string, AttentionView> = {
   running: { dot: 'online', label: 'running', pulse: false },
   idle: { dot: 'idle', label: 'quiet', pulse: false },
   'needs-input': { dot: 'attention', label: 'needs input', pulse: true },
+  // Turn ended, process still alive (a Claude line's agent finished its turn —
+  // see ADR-0003). Distinct from needs-input by COLOR (its own dot variant +
+  // --status-done token), not motion: the pulse must not be the only signal,
+  // since prefers-reduced-motion disables it and a static screenshot never
+  // shows it.
+  'turn-done': { dot: 'done', label: 'turn done', pulse: false },
 };
 
 // Warn once per unknown value, not once per render — a 5s poll re-renders the
@@ -45,4 +51,17 @@ export function attentionFor(status: string): AttentionView {
     console.warn(`[attention] unknown session status ${JSON.stringify(status)} — is this bundle older than the server?`);
   }
   return { dot: 'error', label: status, pulse: true };
+}
+
+// Sort precedence for the live grid: needs-input (a blocked prompt) outranks
+// turn-done (a finished turn, still worth a look) outranks everything else,
+// which sorts as one tier so the poll's existing order is left alone within
+// it. Lower number sorts first — use as a comparator key, not a display value.
+const RANK: Record<string, number> = {
+  'needs-input': 0,
+  'turn-done': 1,
+};
+
+export function attentionRank(status: string): number {
+  return RANK[status] ?? 2;
 }

@@ -16,9 +16,12 @@ export interface Session {
   // thinking, blocked on a prompt, or finished; PTY bytes can't tell), or
   // 'needs-input' when a Claude Code Notification hook has explicitly reported
   // the line as blocked on a prompt (server sets it via POST /api/notify,
-  // clears it on next input/output). 'exited' is a recently-ended tombstone
-  // from the board's capped ring. Kept string (not a union) so an older/newer
-  // server can't type-error the client; render unknown values as-is.
+  // clears it on next input/output). 'turn-done' is a beaconed Claude line
+  // whose agent ended its turn — the process is still alive and waiting on
+  // the user, distinct from 'exited' (see ADR-0003). 'exited' is a
+  // recently-ended tombstone from the board's capped ring. Kept string (not a
+  // union) so an older/newer server can't type-error the client; render
+  // unknown values as-is.
   status: string;
   lastActive: string;
   // Present only on status 'exited' (sessions.js endedToDto): the process's

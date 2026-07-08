@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-export type SessionStatus = 'online' | 'idle' | 'offline' | 'error';
+export type SessionStatus = 'online' | 'idle' | 'offline' | 'error' | 'attention' | 'done';
 
 export interface StatusDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   /** Connection state. @default 'offline' */
