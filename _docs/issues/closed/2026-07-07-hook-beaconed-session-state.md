@@ -1,7 +1,7 @@
 # Claude lines guess their state from idleMs when hooks could just say it
 
 **Source:** Split out of `2026-07-02-claude-native-lines.md`, 2026-07-07 — that doc's own "hooks-only alternative" promoted to a standalone issue, because it has different risks, consumers, and trigger signals than the transcript-tailing bet it was bundled with.
-**Status:** 💡 Proposed — 2026-07-07.
+**Status:** ✅ Landed — 2026-07-08 (`features/hook-beaconed-session-state`; ADR-0003, `_docs/CONTEXT.md` *Beacon*/*Claude line*/*Turn done*).
 **Kind:** Enhancement
 **Modules:** server/sessions, server/api, client/SessionsScreen, README (hook recipe)
 **Severity:** Medium — small effort, and it finishes the attention-state story the heuristic can't.

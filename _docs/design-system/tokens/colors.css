@@ -43,6 +43,9 @@
   --blue-400:  #5aa6f0;
   --blue-500:  #2f86e0;
   --blue-600:  #1f6bc0;
+  --purple-400: #a78bfa;
+  --purple-500: #8b5cf6;
+  --purple-600: #7040d9;
 
   /* --- Semantic aliases · LIGHT --------------------------------------- */
   /* Surfaces */
@@ -93,6 +96,7 @@
   --status-offline: var(--gray-400);
   --status-error:   var(--red-500);
   --status-attention: var(--blue-500);  /* needs-input: distinct from idle(amber)/error(red)/running(green) */
+  --status-done:    var(--purple-500);  /* turn-done: distinct from attention(blue) — color carries the distinction, not the (absent) pulse */
 
   /* Semantic feedback */
   --success: var(--relay-600);
@@ -152,6 +156,7 @@
   --status-offline: var(--gray-600);
   --status-error:   var(--red-400);
   --status-attention: var(--blue-400);
+  --status-done:    var(--purple-400);
 
   --success: var(--relay-400);
   --success-soft: rgba(31, 206, 138, 0.12);

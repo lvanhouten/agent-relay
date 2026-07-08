@@ -8,7 +8,7 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
-import { attentionFor } from '../core/attention.ts';
+import { attentionFor, attentionRank } from '../core/attention.ts';
 import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
@@ -576,14 +576,15 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
   );
   // The list carries live sessions and recently-ended tombstones in one array
   // (both come from GET /sessions); the tombstones render in their own
-  // collapsed section, and the header count stays live-only. needs-input cards
-  // float to the top — the whole point of the state is "which session needs me?",
-  // so a blocked session shouldn't hide below a screen of running ones. Stable
-  // otherwise (only needs-input is lifted; the poll order is preserved within
-  // each group).
+  // collapsed section, and the header count stays live-only. needs-input and
+  // turn-done cards float to the top via core/attention.ts's attentionRank —
+  // the whole point of those states is "which session needs me?", so a
+  // blocked or finished session shouldn't hide below a screen of running
+  // ones. Array#sort is stable, so the poll order is preserved within each
+  // rank tier.
   const live = filtered
     .filter((s) => s.status !== 'exited')
-    .sort((a, b) => (b.status === 'needs-input' ? 1 : 0) - (a.status === 'needs-input' ? 1 : 0));
+    .sort((a, b) => attentionRank(a.status) - attentionRank(b.status));
   const ended = filtered.filter((s) => s.status === 'exited');
   const liveCount = sessions.filter((s) => s.status !== 'exited').length;
 

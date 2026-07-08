@@ -108,6 +108,27 @@ class BoardSessions {
     // would end every line). Lost on a web-tier restart (a re-fired hook re-flags);
     // that's acceptable per the issue doc's pragmatism.
     this._attention = new Map();
+    // Beacon state for Claude lines: board line id -> { claudeSessionId,
+    // transcriptPath, turnDoneAt }. PRESENCE OF AN ENTRY IS THE DEFINITION OF A
+    // "CLAUDE LINE" — a line a Claude Code hook has beaconed via POST /api/beacon.
+    // `turnDoneAt` is the wall-clock ms of the last Stop (the agent ended its turn
+    // and is waiting) or null (working). Separate from `_attention` on purpose: a
+    // needs-input flag and a turn-done state are independent overlays. Like
+    // `_attention`, web-tier only (the board owns no such notion), lost on a
+    // web-tier restart (a re-fired hook carries the full binding and re-establishes
+    // it), and subject to the boot-nonce void + dead-id prune in list().
+    // `claudeSessionId`/`transcriptPath` are captured for a future transcript
+    // feature and never surfaced in the DTO.
+    // SECURITY — `transcriptPath` is ATTACKER-SUPPLIABLE: it arrives verbatim in
+    // the POST /api/beacon body (the endpoint authenticates the operator token,
+    // not the path's provenance) and is only length-capped, never canonicalized
+    // or allow-listed. It is stored INERTLY here — nothing reads it today. Any
+    // future consumer (the transcript-tailer this field exists for) MUST treat it
+    // as untrusted input and validate before use: canonicalize + confine to the
+    // Claude projects dir, reject `..`/UNC/symlink escapes — otherwise it is an
+    // arbitrary-file-read / path-traversal sink. "Purely additive" (ADR-0003)
+    // means the STORAGE is additive, NOT that the value is trusted when consumed.
+    this._beacons = new Map();
     // The board boot nonce last seen in a list reply — a change means the board
     // restarted and every line id may be reused, so the flags above are void.
     this._boardBoot = null;
@@ -130,30 +151,100 @@ class BoardSessions {
   // live line matches (a gone/typo'd cwd just flags nothing). Board-down throws
   // BoardUnreachableError like the other RPC paths (-> 503, not a silent no-op).
   async flagAttentionByCwd(cwd) {
+    const id = await this._resolveLiveIdByCwd(cwd);
+    if (id) this.flagAttention(id);
+    return id;
+  }
+
+  // Resolve the live line id whose cwd matches `cwd` (the shared basis for the
+  // /api/notify and /api/beacon cwd fallbacks). Normalizes both sides, and on a
+  // same-dir tie the most recently active line (smallest idleMs) wins — over-
+  // matching every same-dir line would be worse than picking the one the operator
+  // is most likely staring at. Returns the id, or null for an empty/unmatched cwd.
+  // Board-down throws BoardUnreachableError (-> 503), never a silent no-op.
+  async _resolveLiveIdByCwd(cwd) {
     const target = normalizeCwdForMatch(cwd);
     if (!target) return null;
     let r;
     try {
       r = await this._rpc({ cmd: 'list' });
     } catch (e) {
-      console.error('[sessions] board list RPC failed (flagAttentionByCwd):', e.message);
+      console.error('[sessions] board list RPC failed (cwd resolution):', e.message);
       throw new BoardUnreachableError(e);
     }
     if (!r || !r.ok) throw new BoardUnreachableError();
     const matches = r.lines
       .filter((l) => normalizeCwdForMatch(l.cwd) === target)
       .sort((a, b) => (a.idleMs ?? 0) - (b.idleMs ?? 0)); // most recently active first
-    if (!matches.length) return null;
-    this.flagAttention(matches[0].id);
-    return matches[0].id;
+    return matches.length ? matches[0].id : null;
+  }
+
+  // Apply a lifecycle beacon from a Claude Code hook (POST /api/beacon). Target
+  // resolution MIRRORS /api/notify exactly: a present `sessionId` is acted on
+  // directly (a dumb set — no existence AND no ownership/authenticity check; an id
+  // for an exited/unknown line is set and harmlessly pruned on the next list()).
+  // TRUST MODEL: any caller past the operator token can drive any live line's card
+  // state (force turn-done/running, or wipe a marker with SessionEnd). This is
+  // deliberate parity with /api/notify under ADR-0001's accepted single-operator
+  // ceiling, and the blast radius is cosmetic only — no spawn, no data exposure,
+  // no push (a beacon never pushes). Not a hole to close; a documented assumption.
+  // The `cwd` fallback fires ONLY when `sessionId` is absent. A present-but-
+  // unmatched *non-empty* `sessionId` must never fall through to `cwd` — that
+  // would beacon a DIFFERENT same-directory live line. An EMPTY-STRING sessionId
+  // is intentionally treated as ABSENT (the falsy `if (sessionId)` below): it is
+  // the "hook couldn't resolve a line id" sentinel (e.g. AGENT_RELAY_SESSION unset
+  // on a non-board-spawned line), so falling back to `cwd` is the desired backstop,
+  // not a bug — it can match no live line by id anyway, and the fallthrough guard
+  // above governs a real, non-empty id.
+  // Events: SessionStart upserts the entry and resets turnDoneAt to null (a
+  // (re)start is not a waiting state); Stop sets turnDoneAt to now, CREATING the
+  // entry if absent (self-healing — a Stop alone also marks the line a Claude
+  // line); SessionEnd deletes the entry (drop the marker -> the line reverts to
+  // the idleMs heuristic). Returns the resolved id, or null when nothing matched.
+  async beacon({ event, sessionId, claudeSessionId, transcriptPath, cwd } = {}) {
+    let id = null;
+    if (sessionId) id = sessionId;            // '' is intentionally falsy -> absent (see header: empty = cwd-fallback sentinel)
+    else if (cwd) id = await this._resolveLiveIdByCwd(cwd);
+    if (!id) return null;
+
+    if (event === 'SessionEnd') {
+      this._beacons.delete(id);
+      return id;
+    }
+    const entry = this._beacons.get(id) || { claudeSessionId: null, transcriptPath: null, turnDoneAt: null };
+    if (claudeSessionId != null) entry.claudeSessionId = claudeSessionId;
+    if (transcriptPath != null) entry.transcriptPath = transcriptPath; // UNTRUSTED path — validate before any read (see _beacons comment)
+    if (event === 'SessionStart') entry.turnDoneAt = null;
+    else if (event === 'Stop') entry.turnDoneAt = this._now();
+    this._beacons.set(id, entry);
+    return id;
   }
 
   // Clear a flag explicitly — the WS hub calls this the instant it sees an
   // `input` frame (the operator answered from the web terminal), which is the
   // precise "cleared on next input" signal. The output-based clear in list() is
   // the fallback for input arriving via another attach (e.g. the `sb` pane).
+  // Also resets a Claude line's turn-done state (keeping the marker), so one
+  // input frame clears both waiting states at once — the line falls back to
+  // `running`, never `quiet`.
   clearAttention(id) {
     this._attention.delete(id);
+    const entry = this._beacons.get(id);
+    if (entry) entry.turnDoneAt = null;
+  }
+
+  // The single "has this line emitted output since instant `ts`?" primitive,
+  // shared by both staleness overlays below (_applyAttention, _applyBeacon) so
+  // the check exists once, not hand-rolled twice with opposite polarity. This
+  // is deliberate: the _applyAttention comment anticipates a future grace window
+  // (ignore output within ~1s after the timestamp); extracting the primitive
+  // means that refinement lands HERE once and reaches both overlays, instead of
+  // silently drifting when a maintainer edits one copy and not the other.
+  // `lastOutputAt` reads the board's idleMs back to a wall-clock instant against
+  // the same injected clock the stored timestamps use.
+  _outputLandedAfter(line, ts) {
+    const lastOutputAt = this._now() - (line.idleMs ?? 0);
+    return lastOutputAt > ts;
   }
 
   // Overlay the needs-input state onto a live-line DTO. A flag survives only
@@ -168,16 +259,38 @@ class BoardSessions {
   // read as "the agent moved again" and silently clear a flag that should
   // stick — a soft failure (stale card, no corruption). If false-clears show
   // up in practice, add a small grace window (ignore output within ~1s after
-  // flaggedAt) rather than loosening the clear entirely.
+  // flaggedAt) in _outputLandedAfter rather than loosening the clear entirely —
+  // it lands once there and covers turn-done too.
   _applyAttention(dto, line) {
     const flaggedAt = this._attention.get(dto.id);
     if (flaggedAt == null) return dto;
-    const lastOutputAt = this._now() - (line.idleMs ?? 0);
-    if (lastOutputAt > flaggedAt) {
+    if (this._outputLandedAfter(line, flaggedAt)) {
       this._attention.delete(dto.id);
       return dto;
     }
     return { ...dto, status: 'needs-input' };
+  }
+
+  // Overlay beacon state onto a live-line DTO, establishing the Claude-line base
+  // that supersedes the idleMs heuristic (ADR-0003). A line with no `_beacons`
+  // entry is not a Claude line — pass through unchanged (the heuristic stays the
+  // floor). A Claude line reads `running` unless a LIVE `turnDoneAt` (no output
+  // landed after the Stop) makes it `turn-done`. Output arriving after turnDoneAt
+  // resets it to null but KEEPS the entry, so the line falls back to `running`,
+  // never `quiet`. This clear inherits the same accepted soft-failure as
+  // _applyAttention: a laggy hook racing a late TUI repaint can false-clear
+  // turn-done early — a stale card, never corruption. It shares that overlay's
+  // _outputLandedAfter primitive, so a future grace window covers both at once.
+  // _applyAttention runs AFTER this in list(), so a live needs-input flag always
+  // wins over turn-done.
+  _applyBeacon(dto, line) {
+    const entry = this._beacons.get(dto.id);
+    if (!entry) return dto;
+    if (entry.turnDoneAt != null) {
+      if (!this._outputLandedAfter(line, entry.turnDoneAt)) return { ...dto, status: 'turn-done' };
+      entry.turnDoneAt = null; // agent moved again; keep the marker, revert to running
+    }
+    return { ...dto, status: 'running' };
   }
 
   async list() {
@@ -199,18 +312,22 @@ class BoardSessions {
     // the same signal mcp-server.js namespaces its read cursors by — so drop
     // every flag when it changes.
     if (r.boot !== this._boardBoot) {
-      if (this._boardBoot !== null) this._attention.clear();
+      if (this._boardBoot !== null) {
+        this._attention.clear();
+        this._beacons.clear();
+      }
       this._boardBoot = r.boot;
     }
-    // Prune attention flags whose line is no longer live (it exited) so the Map
-    // can't leak entries for dead ids or resurrect a flag onto a reused id.
+    // Prune web-tier state whose line is no longer live (it exited) so neither Map
+    // can leak entries for dead ids or resurrect state onto a reused id.
     const liveIds = new Set(r.lines.map((l) => l.id));
     for (const id of this._attention.keys()) if (!liveIds.has(id)) this._attention.delete(id);
-    // Live lines first (with the needs-input overlay), then recently-ended
-    // tombstones (`ended` is absent from an older board's reply — treat that as
-    // none, not an error).
+    for (const id of this._beacons.keys()) if (!liveIds.has(id)) this._beacons.delete(id);
+    // Live lines first (beacon base, then the needs-input overlay on top so
+    // needs-input outranks turn-done), then recently-ended tombstones (`ended` is
+    // absent from an older board's reply — treat that as none, not an error).
     return [
-      ...r.lines.map((line) => this._applyAttention(toDto(line), line)),
+      ...r.lines.map((line) => this._applyAttention(this._applyBeacon(toDto(line), line), line)),
       ...(r.ended || []).map(endedToDto),
     ];
   }
