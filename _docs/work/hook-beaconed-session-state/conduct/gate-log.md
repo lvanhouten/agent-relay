@@ -79,3 +79,16 @@ committed inside the worktree (`3d26d47`). **E-count 1/4 mechanically trips the
 a defect to fix"; no substantive finding was flattened into a reject. Worktree
 left intact for the independent `verify` pass. Advancing to `verify` (fresh
 session, non-negotiable independence).
+
+**Conductor-side interruption note:** the Conductor hit a usage limit right
+after this stage's Marker validated green (the backgrounded watcher was
+killed, not completed). On resume, Line 3's graceful `/exit` had already
+landed (confirmed via the "Resume this session with: claude --resume
+bc9f1fa1..." message), but the Line itself was still alive and showed a
+second, fresh Claude session (v2.1.205, 0 tokens, empty prompt) plus 3 joined
+panes — origin unclear, possibly a manual check-in via PSReadLine re-running
+the last shell command. No work was in progress in it (empty input box), so
+it was closed the same way (`/exit` + confirmed shell prompt) and the Line
+torn down. Stage-3 completion itself was never in doubt — the committed
+Marker (`8f893a3`) was independently re-validated against `HEAD` before
+resuming the loop.
