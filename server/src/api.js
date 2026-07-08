@@ -47,6 +47,23 @@ function validateNotifyBody(body) {
   return null;
 }
 
+// Field caps for POST /beacon. All optional strings; presence of a valid `event`
+// is the only requirement. sessionId/claudeSessionId are ids; transcriptPath/cwd
+// are filesystem paths (capped like `cwd` on the other endpoints).
+const BEACON_MAX = { sessionId: 200, claudeSessionId: 200, transcriptPath: 4096, cwd: 4096 };
+const BEACON_EVENTS = new Set(['SessionStart', 'Stop', 'SessionEnd']);
+
+// Validate POST /beacon. Returns an error string, or null if valid. `event` must
+// be one of the three recognized lifecycle events; every other field is an
+// optional capped string (validateFieldCaps). No title/body — a beacon never
+// pushes, so it carries none.
+function validateBeaconBody(body) {
+  const capError = validateFieldCaps(body, BEACON_MAX);
+  if (capError) return capError;
+  if (!BEACON_EVENTS.has(body.event)) return 'event must be one of SessionStart, Stop, SessionEnd';
+  return null;
+}
+
 // `url` renders as a tap-through deep link inside a TRUSTED push notification
 // on the operator's phone — a phishing surface nothing else on this API has
 // (ADR-0001's accepted XSS ceiling covers local shell spawn, not off-device
@@ -139,6 +156,31 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
         title: body.title, body: body.body, url: body.url, priority: body.priority,
       });
       res.json({ notified });
+    } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
+  });
+
+  // Apply a Claude Code lifecycle beacon (SessionStart / Stop / SessionEnd) to the
+  // session store, giving Claude lines an honest attention state on their card.
+  // Unlike /notify this NEVER pushes — a beacon carries no title/body and does not
+  // touch the notifier sinks; it is pure state. Target resolution mirrors /notify:
+  // `sessionId` (exact — the board injects AGENT_RELAY_SESSION) or, absent that,
+  // `cwd` matched against the board's live lines. Same 415 JSON-content-type guard
+  // as /sessions and /notify (a cross-site text/plain POST skips CORS preflight); a
+  // board-down beacon is a transient 503, not a 500.
+  r.post('/beacon', async (req, res, next) => {
+    try {
+      if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
+      const body = req.body ?? {};
+      const invalid = validateBeaconBody(body);
+      if (invalid) return res.status(400).json({ error: invalid });
+      const id = await sessions.beacon({
+        event: body.event,
+        sessionId: body.sessionId,
+        claudeSessionId: body.claudeSessionId,
+        transcriptPath: body.transcriptPath,
+        cwd: body.cwd,
+      });
+      res.json({ ok: true, id: id ?? null });
     } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 

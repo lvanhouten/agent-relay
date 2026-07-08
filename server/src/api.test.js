@@ -186,6 +186,71 @@ test('POST /notify -> 200 even when a sink fails (resilient; per-sink outcome re
   assert.deepStrictEqual(JSON.parse(body), { notified: [{ name: 'bad', ok: false, error: 'boom' }] });
 });
 
+// --- POST /beacon: lifecycle state, never a push ---
+
+test('POST /beacon -> 200 and calls sessions.beacon for each valid event', async () => {
+  const calls = [];
+  const sessions = { beacon: async (b) => { calls.push(b); return '7'; } };
+  const app = serve(sessions);
+  for (const event of ['SessionStart', 'Stop', 'SessionEnd']) {
+    const { status, body } = await request(app, 'POST', '/api/beacon', { body: { event, sessionId: '7' } });
+    assert.strictEqual(status, 200, event);
+    assert.deepStrictEqual(JSON.parse(body), { ok: true, id: '7' });
+  }
+  assert.deepStrictEqual(calls.map(c => c.event), ['SessionStart', 'Stop', 'SessionEnd']);
+});
+
+test('POST /beacon passes the full binding through to sessions.beacon', async () => {
+  let seen;
+  const app = serve({ beacon: async (b) => { seen = b; return '1'; } });
+  await request(app, 'POST', '/api/beacon', {
+    body: { event: 'SessionStart', sessionId: '1', claudeSessionId: 'abc', transcriptPath: '/t.jsonl', cwd: '/r' },
+  });
+  assert.deepStrictEqual(seen, { event: 'SessionStart', sessionId: '1', claudeSessionId: 'abc', transcriptPath: '/t.jsonl', cwd: '/r' });
+});
+
+test('POST /beacon -> 200 with id: null when nothing matched', async () => {
+  const app = serve({ beacon: async () => null });
+  const { status, body } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', cwd: '/nowhere' } });
+  assert.strictEqual(status, 200);
+  assert.deepStrictEqual(JSON.parse(body), { ok: true, id: null });
+});
+
+test('POST /beacon never invokes the push notifiers (VC-10)', async () => {
+  const seen = [];
+  const notifier = { name: 'fake', notify: async (p) => { seen.push(p); } };
+  const app = serve({ beacon: async () => '1' }, [notifier]);
+  const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', sessionId: '1' } });
+  assert.strictEqual(status, 200);
+  assert.deepStrictEqual(seen, [], 'a beacon carries no push');
+});
+
+test('POST /beacon -> 415 on a non-JSON content type (VC-11)', async () => {
+  const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
+  const { status } = await request(app, 'POST', '/api/beacon', { contentType: 'text/plain' });
+  assert.strictEqual(status, 415);
+});
+
+test('POST /beacon -> 400 on an unrecognized or missing event (VC-11)', async () => {
+  const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
+  for (const body of [{ event: 'PreToolUse', sessionId: '1' }, { sessionId: '1' }]) {
+    const { status } = await request(app, 'POST', '/api/beacon', { body });
+    assert.strictEqual(status, 400, JSON.stringify(body));
+  }
+});
+
+test('POST /beacon -> 400 on an oversized field (VC-11)', async () => {
+  const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
+  const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', sessionId: 'x'.repeat(201) } });
+  assert.strictEqual(status, 400);
+});
+
+test('POST /beacon -> 503 when beacon() throws BoardUnreachableError (VC-13)', async () => {
+  const app = serve({ beacon: async () => { throw new BoardUnreachableError(); } });
+  const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', cwd: '/r' } });
+  assert.strictEqual(status, 503);
+});
+
 // Direct unit tests against the real handler (W3-new: the branch below had no
 // coverage under either the old duplicate or the new shared version until now).
 test('errorHandler: delegates to next(err) when headers are already sent, does not double-respond', () => {
