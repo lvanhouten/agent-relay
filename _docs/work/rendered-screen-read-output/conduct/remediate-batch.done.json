@@ -1,0 +1,13 @@
+{
+  "stage": "remediate-batch",
+  "outcome": "green",
+  "artifact": "C:/Users/Lukas5856/worktrees/agent-relay/rendered-screen/.worktrees/r-6f1fc37/_docs/work/rendered-screen-read-output/adversarial-review-6f1fc37.md",
+  "summary": "All 6 findings (W1 B, W2 A, N1-N4 A) resolved in worktree; 0 parked, 0 rejects; gate 249/249 green (exit 0 confirmed).",
+  "asserted": false,
+  "exceptions": [],
+  "worktree": {
+    "path": "C:/Users/Lukas5856/worktrees/agent-relay/rendered-screen/.worktrees/r-6f1fc37",
+    "branch": "remediate/rendered-screen/6f1fc37",
+    "head": "125b784ae188aaaa9b0fc2ecde9951c0390743f7"
+  }
+}
