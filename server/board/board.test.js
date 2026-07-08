@@ -337,6 +337,47 @@ test('makeScreenLifecycle: dispose releases the emulator and drops the reference
   assert.strictEqual(h.emulator.disposed, 1);
 });
 
+// The line-exit race (W2): a screen read can be in flight, or arrive, while
+// p.onExit disposes the emulator. A disposed lifecycle must never rebuild from
+// stale scrollback or serve a grid from a terminal being torn down — it returns
+// null so the handler reports the exited line instead of a stale/torn frame.
+
+test('makeScreenLifecycle: a read after dispose refuses to rebuild and returns null (W2)', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  await h.life.read();               // build the emulator on the first read
+  h.life.dispose();
+  const snap = await h.life.read();  // first read landing after the line exited
+  assert.strictEqual(snap, null, 'a disposed screen refuses the read');
+  assert.strictEqual(h.constructed(), 1, 'no second emulator built for a dead line (no leak)');
+});
+
+test('makeScreenLifecycle: a first read after dispose builds nothing at all (W2, lazy-init leg)', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  h.life.dispose();                  // line exited before it was ever screen-read
+  const snap = await h.life.read();
+  assert.strictEqual(snap, null, 'disposed-before-first-read yields null');
+  assert.strictEqual(h.constructed(), 0, 'no emulator ever constructed for a line that exited unread');
+});
+
+test('makeScreenLifecycle: a dispose during an in-flight read discards the grid (W2, mid-flush)', async () => {
+  let resolveSnap;
+  const emulator = {
+    write() {}, resize() {},
+    // snapshot() parks until we release it, standing in for the awaited flush.
+    snapshot() { return new Promise(r => { resolveSnap = () => r({ grid: 'STALE', cursor: { row: 0, col: 0 }, cols: 80, rows: 24 }); }); },
+    dispose() {},
+  };
+  const life = makeScreenLifecycle({
+    create: () => emulator,
+    getSize: () => ({ cols: 80, rows: 24 }),
+    getScrollback: () => [],
+  });
+  const reading = life.read();       // starts snapshot(), now awaiting the flush
+  life.dispose();                    // onExit fires mid-flush
+  resolveSnap();                     // the flush resolves AFTER dispose
+  assert.strictEqual(await reading, null, 'a grid produced after dispose is discarded, not returned');
+});
+
 // --- handle('screen'): the two distinct failure replies (pure, no pty) ---
 // A live line's screen read needs a real emulator, so the live path is covered
 // by the e2e test; here we pin the not-live branches, which read only the

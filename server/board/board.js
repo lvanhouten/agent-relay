@@ -149,7 +149,14 @@ const endedLines = makeEndedRegistry();
 function makeScreenLifecycle(io) {
   const { create, getSize, getScrollback } = io;
   let screen = null;
+  let disposed = false;   // set on the line's exit — a dead line has no screen
   function ensure() {
+    // Once the line has exited (dispose ran), refuse to (re)build a screen. This
+    // closes the first-read leg of the exit race: without it, a first read that
+    // lands after onExit's dispose would rebuild a fresh emulator from stale
+    // scrollback — returning a full grid for a line the contract says must error,
+    // and leaking that emulator (onExit is already past its dispose call).
+    if (disposed) return null;
     if (screen) return screen;
     const { cols, rows } = getSize();
     screen = create(cols, rows);
@@ -158,12 +165,27 @@ function makeScreenLifecycle(io) {
   }
   return {
     // Lazy-init on first read, then snapshot the current grid (a stateless read —
-    // no cursor to track, unlike the delta-based raw-output read).
-    read() { return ensure().snapshot(); },
+    // no cursor to track, unlike the delta-based raw-output read). Returns null,
+    // never a torn/stale grid, when the line has exited — either before the read
+    // (ensure refuses to build) or during the awaited flush (dispose lands while
+    // snapshot() yields; the post-await disposed check discards the result and a
+    // read against the disposed emulator that threw is swallowed only then). The
+    // caller maps null to the exited-line reply.
+    async read() {
+      const scr = ensure();
+      if (!scr) return null;
+      try {
+        const snap = await scr.snapshot();
+        return disposed ? null : snap;
+      } catch (e) {
+        if (disposed) return null;   // disposed mid-flush — expected race, not an error
+        throw e;
+      }
+    },
     // Live feed / resize: meaningful only once the emulator exists.
     feed(bytes) { if (screen) screen.write(bytes); },
     resize(cols, rows) { if (screen) screen.resize(cols, rows); },
-    dispose() { if (screen) { screen.dispose(); screen = null; } },
+    dispose() { disposed = true; if (screen) { screen.dispose(); screen = null; } },
     // Test seam: whether the emulator has been constructed yet.
     _initialized: () => screen !== null,
   };
@@ -405,13 +427,18 @@ async function handle(m, sock) {
       // The rendered screen of a line as a stateless snapshot. Field names are a
       // consumed contract (mcp read-screen tool, `sb screen`): keep exact.
       const s = sessions.get(m.id);
-      if (s) {
-        // Live line: lazy-init (seed from scrollback) if needed, then snapshot.
-        const snap = await s.screen.read();
+      // Live at the check — but read() awaits a flush, yielding to the event
+      // loop, and p.onExit can dispose this line's screen mid-read (TOCTOU). The
+      // lifecycle refuses a read once disposed and returns null, so a line that
+      // exits during the read falls through to the exited-line reply below
+      // instead of returning a torn/stale grid or blocking until RPC_TIMEOUT_MS.
+      const snap = s ? await s.screen.read() : null;
+      if (snap) {
         sock.write(JSON.stringify({ ok: true, boot: BOOT, ...snap }) + '\n');
       } else {
-        // Not live: distinguish an exited line (tombstone) from one that never
-        // existed. These two failure replies must be tellable apart by `ended`.
+        // Not live (never existed, or exited — possibly during the read above).
+        // Distinguish an exited line (tombstone) from one that never existed;
+        // these two failure replies must be tellable apart by `ended`.
         const tomb = endedLines.list().find(t => t.id === m.id);
         if (tomb) sock.write(JSON.stringify({ ok: false, ended: true, exitCode: tomb.exitCode, reason: tomb.reason }) + '\n');
         else sock.write(JSON.stringify({ ok: false, ended: false }) + '\n');

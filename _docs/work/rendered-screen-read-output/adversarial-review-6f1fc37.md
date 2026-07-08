@@ -43,6 +43,11 @@ The defect is that the code documents a guarantee it no longer provides. The `re
 
 **W2. Screen read racing a line's exit: TOCTOU between the liveness check and the awaited snapshot** — `server/board/board.js:404-419` · confidence 55
 
+**Status:** ✅ Resolved in <W2_SHA> — see below.
+**Resolution:** Accepted (A); the race is real on both interleavings the reviewer describes. Fixed at the lifecycle rather than by a handler re-check, because the lifecycle is directly unit-testable and puts the guard at the source. `makeScreenLifecycle` now tracks a `disposed` flag set by `dispose()` (called from `p.onExit`): `ensure()` refuses to (re)build an emulator once disposed — closing the first-read/lazy-init leg (no stale rebuilt grid, no leaked emulator) — and `read()` re-checks `disposed` after the awaited flush and swallows a disposed-terminal throw only then, returning `null` instead of a torn/stale grid or a rejection that hangs the client to `RPC_TIMEOUT_MS`. The `screen` handler maps a `null` snapshot to the not-live branch, so a line that exits mid-read now yields the intended `ended:true`/exit-code reply (VC-9) rather than a generic 10 s "screen read failed". Closure check: three red→green unit tests in `board.test.js` — read-after-dispose refuses to rebuild (constructed stays 1, returns null), first-read-after-dispose builds nothing (constructed stays 0), and a dispose during an in-flight read discards the grid (returns null). All three verified red under mutation (both guards disabled) and green with the fix; full server suite 248/248.
+
+---
+
 The `screen` handler checks liveness, then `await`s the snapshot:
 
 ```js
