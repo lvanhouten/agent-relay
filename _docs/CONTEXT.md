@@ -63,22 +63,27 @@ state).
 
 ### Beacon
 A hook-driven POST to `/api/beacon` in which a Claude Code session reports a
-lifecycle transition — `SessionStart` or `Stop` — for the line it runs in.
-Every beacon carries the full binding (`sessionId` = the board line, plus
-`claudeSessionId`, `transcriptPath`, `cwd`), so any single beacon re-establishes
-state the relay may have lost to a restart: beacons are idempotent and
-self-healing, never order-dependent. Distinct from a *notification* (`/api/notify`),
-which buzzes a phone and may flag needs-input; a beacon reports state and never
-pushes.
+lifecycle transition — `SessionStart`, `Stop`, or `SessionEnd` — for the line it
+runs in. Every beacon carries the full binding (`sessionId` = the board line,
+plus `claudeSessionId`, `transcriptPath`, `cwd`). The *binding* is self-healing
+and order-independent: any single beacon re-establishes the identity the relay
+may have lost to a restart, regardless of which beacon arrives. *State
+transitions* are not commutative — they follow event semantics (a `Stop` marks
+turn-done, a later `SessionStart`/`SessionEnd` moves past it), so "order-
+independent" describes the binding, not the state machine. Distinct from a
+*notification* (`/api/notify`), which buzzes a phone and may flag needs-input; a
+beacon reports state and never pushes.
 
 ### Claude line
 A Session (board line) whose Claude Code hooks have beaconed it — the relay has
-seen at least one `SessionStart`/`Stop` for it, so it knows the line is running
-an agent and derives that line's attention state from honest hook signals rather
-than the idleMs heuristic. A line with no beacons (a plain shell, or a repo whose
-hooks aren't configured) is not a Claude line and keeps the heuristic untouched.
-The distinction is web-tier only and dies with the relay process; a re-fired
-beacon re-establishes it.
+seen a `SessionStart` (or, self-healing, any `Stop`) for it, so it knows the line
+is running an agent and derives that line's attention state from honest hook
+signals rather than the idleMs heuristic. A `SessionEnd` beacon removes the
+marker: the agent exited and the line (now a plain shell) reverts to the
+heuristic. A line with no beacons (a plain shell, or a repo whose hooks aren't
+configured) is not a Claude line and keeps the heuristic untouched. The
+distinction is web-tier only and dies with the relay process; a re-fired beacon
+re-establishes it.
 
 ### Turn done
 The attention state of a Claude line whose agent has ended its turn (a `Stop`

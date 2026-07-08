@@ -36,9 +36,12 @@ case changes, not just an overlay.
 
 **For a Claude line — one the relay has beaconed (a `_beacons` entry) — the
 beacon-driven state supersedes the idleMs heuristic.** A new `POST /api/beacon`
-endpoint receives `SessionStart`/`Stop` events; `BoardSessions` keeps a web-tier
-`_beacons` map (`sessionId → { claudeSessionId, transcriptPath, turnDoneAt }`),
-and `list()`'s overlay resolves, in precedence order:
+endpoint receives `SessionStart` / `Stop` / `SessionEnd` events; `BoardSessions`
+keeps a web-tier `_beacons` map (`sessionId → { claudeSessionId, transcriptPath,
+turnDoneAt }`). `SessionStart` establishes the marker (and resets `turnDoneAt` —
+a session (re)start is not a waiting state); `Stop` sets `turnDoneAt`;
+`SessionEnd` removes the entry, reverting the line to the heuristic (the agent
+exited back to a plain shell). `list()`'s overlay resolves, in precedence order:
 
 1. **needs-input** flag live → `needs-input` (a blocked tool call outranks
    everything; the existing `_attention` map is untouched).
@@ -53,13 +56,17 @@ output landing after `turnDoneAt`), but clearing resets only `turnDoneAt` and
 quiet. The `_beacons` map inherits the same board-boot-nonce void and
 live-line pruning as `_attention`.
 
-The **stale-`running` risk is explicitly accepted by the owner**: a Claude line
-that crashes or hangs between `SessionStart` and `Stop` shows `running` forever,
-because no `Stop` fires to correct it — a confident lie where the heuristic would
-have honestly said *quiet*. This is judged rare and self-healing: `SessionStart`
-firing at all *proves* the hooks work, so `Stop` normally does fire on turn end;
-the only gap is a hard crash/hang, and any output re-confirms `running` legitimately.
-The honest-fleet-view payoff outweighs the narrow failure window.
+The **stale-`running` risk is explicitly accepted by the owner**, and `SessionEnd`
+narrows it to genuine crashes only: a clean `claude` exit fires `SessionEnd`,
+which removes the marker and reverts the line to the heuristic, so an ordinary
+exit-to-shell is *not* stranded. The residual accepted case is a hard crash/kill
+where **no** hook fires at all — the line then shows its last beacon state
+(`running` or `turn-done`) forever, a confident lie where the heuristic would have
+honestly said *quiet*. This is judged rare and self-healing: `SessionStart` firing
+at all *proves* the hooks work, so `Stop`/`SessionEnd` normally fire; the only gap
+is a process that dies without running a hook, and any output re-confirms
+`running` legitimately. The honest-fleet-view payoff outweighs the narrow failure
+window.
 
 ## Consequences
 
