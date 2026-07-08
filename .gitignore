@@ -6,3 +6,4 @@ dist/
 .playwright-mcp/
 .playwright-cli/
 .playwright/
+_docs/.pruned/

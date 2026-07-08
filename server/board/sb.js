@@ -27,6 +27,7 @@ usage:
   sb list           list active lines
   sb join <id>      join a new tab to an existing line
   sb end <id>       end a line
+  sb screen <id>    print a line's current rendered screen
   sb wait <id> [idleMs] [maxWaitMs]
                     block until the line goes quiet or exits (default 12s idle,
                     10min cap) — backgroundable via your shell's own job control,
@@ -97,6 +98,16 @@ async function main() {
       if (!arg) { console.error('usage: sb end <id>'); process.exit(1); }
       const r = await rpc({ cmd: 'end', id: arg });
       console.log(r.ok ? `line ${arg} ended` : `no such line: ${arg}`);
+      break;
+    }
+    case 'screen': {
+      if (!arg) { console.error('usage: sb screen <id>'); process.exit(1); }
+      const r = await rpc({ cmd: 'screen', id: arg });
+      if (!r.ok) {
+        console.log(r.ended ? `line ${arg} has ended (exit ${r.exitCode})` : `no such line: ${arg}`);
+        break;
+      }
+      console.log(r.grid);
       break;
     }
     case 'wait': {

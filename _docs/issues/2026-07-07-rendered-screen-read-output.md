@@ -1,7 +1,7 @@
 # read_output hands agents a raw PTY stream when they need the rendered screen
 
 **Source:** conduct-feature LINE-OPS hardening session, 2026-07-07 — the Conductor's permission-prompt detection was rebuilt transcript-first precisely because `read_output` is unreliable for TUI state; this issue is the switchboard-side fix that makes the PTY half of that procedure trustworthy.
-**Status:** 💡 Proposed — 2026-07-07.
+**Status:** ✅ Delivered — 2026-07-08 (`feat/rendered-screen-read-output`). Board-side placement chosen (ADR 0002); shipped as a `screen` control command over a per-line `@xterm/headless` emulator, consumed by `switchboard_read_screen`, `sb screen <id>`, and the board render (`screen-render.js`). Landed as a new `read_screen` tool (not a `read_output` param); `read_output` unchanged. Proposed 2026-07-07.
 **Kind:** Enhancement
 **Modules:** server/sessions (per-Line VT screen), server/api (`read_output` / MCP tool surface), client (optional: card preview reuse)
 **Severity:** Medium-high — every agent-driven consumer of `read_output` against a Claude line is currently parsing noise; this is the single seam that makes those reads deterministic.

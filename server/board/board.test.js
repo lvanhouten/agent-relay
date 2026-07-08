@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline,
-  makeEndedRegistry, endedLines, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
+  makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
 
 test('scrubClaudeSessionMarkers: removes every allowlisted marker and reports them', () => {
   const env = {};
@@ -113,6 +113,14 @@ test('makeEndedRegistry: forget removes exactly one tombstone, reports unknown i
   assert.deepStrictEqual(reg.list().map(t => t.id), ['2']);
   assert.strictEqual(reg.forget('1'), false, 'already dismissed');
   assert.strictEqual(reg.forget('nope'), false, 'never existed');
+});
+
+test('makeEndedRegistry: get(id) returns the tombstone by id, undefined for an unknown id', () => {
+  const reg = makeEndedRegistry();
+  reg.record({ id: '1', exitCode: 0 });
+  reg.record({ id: '2', exitCode: 5 });
+  assert.strictEqual(reg.get('2').exitCode, 5, 'returns the matching tombstone');
+  assert.strictEqual(reg.get('nope'), undefined, 'unknown id → undefined');
 });
 
 test('makeEndedRegistry: list() returns a copy, not the live ring', () => {
@@ -277,4 +285,174 @@ test('makeRunFeeder: never writes once the line is gone', () => {
   h.kill();
   h.advance(120);               // debounce fires but the line is dead
   assert.strictEqual(h.writes.length, 0);
+});
+
+// --- makeScreenLifecycle: lazy-init/seed, live feed, resize, dispose ---
+// A fake emulator + injected size/scrollback accessors so the per-line screen
+// lifecycle is exercised without spawning a pty or constructing a real VT. The
+// factory counts constructions so the efficiency invariant (no emulator until
+// first read) is directly asserted.
+function screenHarness({ size = { cols: 80, rows: 24 }, scrollback = [] } = {}) {
+  let constructed = 0;
+  const emulator = {
+    writes: [],
+    resizes: [],
+    disposed: 0,
+    cols: size.cols,
+    rows: size.rows,
+    write(b) { this.writes.push(b); },
+    resize(c, r) { this.resizes.push([c, r]); this.cols = c; this.rows = r; },
+    snapshot() {
+      return Promise.resolve({
+        grid: this.writes.join(''),
+        cursor: { row: 0, col: 0 },
+        cols: this.cols,
+        rows: this.rows,
+      });
+    },
+    dispose() { this.disposed += 1; },
+  };
+  const createArgs = [];
+  const life = makeScreenLifecycle({
+    create: (cols, rows) => { constructed += 1; createArgs.push([cols, rows]); emulator.cols = cols; emulator.rows = rows; return emulator; },
+    getSize: () => size,
+    getScrollback: () => scrollback,
+  });
+  return { life, emulator, createArgs, constructed: () => constructed };
+}
+
+test('makeScreenLifecycle: no emulator is constructed until the first read', () => {
+  const h = screenHarness();
+  assert.strictEqual(h.constructed(), 0, 'nothing built on creation');
+  assert.strictEqual(h.life._initialized(), false);
+  // Pre-read feed/resize must not force a construction either — a line nobody
+  // screen-reads allocates nothing.
+  h.life.feed('ignored');
+  h.life.resize(10, 5);
+  assert.strictEqual(h.constructed(), 0, 'feed/resize before first read stay no-ops');
+  assert.strictEqual(h.emulator.writes.length, 0, 'pre-init feed reached no emulator');
+});
+
+test('makeScreenLifecycle: first read lazy-inits at the current size and seeds from scrollback', async () => {
+  const h = screenHarness({ size: { cols: 100, rows: 40 }, scrollback: ['aaa', 'bbb'] });
+  const snap = await h.life.read();
+  assert.strictEqual(h.constructed(), 1, 'exactly one emulator constructed on first read');
+  assert.deepStrictEqual(h.createArgs[0], [100, 40], 'sized to the live PTY dims');
+  assert.deepStrictEqual(h.emulator.writes, ['aaa', 'bbb'], 'existing scrollback replayed into the fresh emulator');
+  assert.strictEqual(snap.grid, 'aaabbb');
+  assert.strictEqual(h.life._initialized(), true);
+});
+
+test('makeScreenLifecycle: a second read reuses the same instance (no re-construction)', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  await h.life.read();
+  await h.life.read();
+  assert.strictEqual(h.constructed(), 1, 'the emulator is built once, then reused');
+});
+
+test('makeScreenLifecycle: live feed writes to the same initialized instance', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  await h.life.read();
+  h.life.feed('LIVE');
+  const snap = await h.life.read();
+  assert.strictEqual(h.constructed(), 1);
+  assert.deepStrictEqual(h.emulator.writes, ['seed', 'LIVE'], 'post-init feed reaches the emulator');
+  assert.strictEqual(snap.grid, 'seedLIVE');
+});
+
+test('makeScreenLifecycle: resize forwards to the initialized emulator', async () => {
+  const h = screenHarness();
+  await h.life.read();
+  h.life.resize(42, 12);
+  assert.deepStrictEqual(h.emulator.resizes, [[42, 12]], 'resize forwarded once initialized');
+  const snap = await h.life.read();
+  assert.strictEqual(snap.cols, 42);
+  assert.strictEqual(snap.rows, 12);
+});
+
+test('makeScreenLifecycle: dispose releases the emulator and drops the reference', async () => {
+  const h = screenHarness();
+  await h.life.read();
+  h.life.dispose();
+  assert.strictEqual(h.emulator.disposed, 1, 'the emulator was disposed');
+  assert.strictEqual(h.life._initialized(), false, 'the per-line reference was dropped');
+  // Dispose again is a harmless no-op (no double-dispose after the drop).
+  h.life.dispose();
+  assert.strictEqual(h.emulator.disposed, 1);
+});
+
+// The line-exit race (W2): a screen read can be in flight, or arrive, while
+// p.onExit disposes the emulator. A disposed lifecycle must never rebuild from
+// stale scrollback or serve a grid from a terminal being torn down — it returns
+// null so the handler reports the exited line instead of a stale/torn frame.
+
+test('makeScreenLifecycle: a read after dispose refuses to rebuild and returns null (W2)', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  await h.life.read();               // build the emulator on the first read
+  h.life.dispose();
+  const snap = await h.life.read();  // first read landing after the line exited
+  assert.strictEqual(snap, null, 'a disposed screen refuses the read');
+  assert.strictEqual(h.constructed(), 1, 'no second emulator built for a dead line (no leak)');
+});
+
+test('makeScreenLifecycle: a first read after dispose builds nothing at all (W2, lazy-init leg)', async () => {
+  const h = screenHarness({ scrollback: ['seed'] });
+  h.life.dispose();                  // line exited before it was ever screen-read
+  const snap = await h.life.read();
+  assert.strictEqual(snap, null, 'disposed-before-first-read yields null');
+  assert.strictEqual(h.constructed(), 0, 'no emulator ever constructed for a line that exited unread');
+});
+
+test('makeScreenLifecycle: a dispose during an in-flight read discards the grid (W2, mid-flush)', async () => {
+  let resolveSnap;
+  const emulator = {
+    write() {}, resize() {},
+    // snapshot() parks until we release it, standing in for the awaited flush.
+    snapshot() { return new Promise(r => { resolveSnap = () => r({ grid: 'STALE', cursor: { row: 0, col: 0 }, cols: 80, rows: 24 }); }); },
+    dispose() {},
+  };
+  const life = makeScreenLifecycle({
+    create: () => emulator,
+    getSize: () => ({ cols: 80, rows: 24 }),
+    getScrollback: () => [],
+  });
+  const reading = life.read();       // starts snapshot(), now awaiting the flush
+  life.dispose();                    // onExit fires mid-flush
+  resolveSnap();                     // the flush resolves AFTER dispose
+  assert.strictEqual(await reading, null, 'a grid produced after dispose is discarded, not returned');
+});
+
+// --- handle('screen'): the two distinct failure replies (pure, no pty) ---
+// A live line's screen read needs a real emulator, so the live path is covered
+// by the e2e test; here we pin the not-live branches, which read only the
+// tombstone registry and must be tellable apart by `ended`.
+
+test("handle('screen') for an id that never existed replies ok:false, ended:false", async () => {
+  const c = capture();
+  await handle({ cmd: 'screen', id: 'ghost' }, c.sock);
+  const r = c.reply();
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.ended, false, 'never-existed is not an exit');
+});
+
+test("handle('screen') for an exited line replies ended:true with its exitCode, distinct from never-existed", async () => {
+  endedLines.record({ id: 'tomb-scr', exitCode: 7, reason: 'exited' });
+  try {
+    const c = capture();
+    await handle({ cmd: 'screen', id: 'tomb-scr' }, c.sock);
+    const dead = c.reply();
+    assert.strictEqual(dead.ok, false);
+    assert.strictEqual(dead.ended, true);
+    assert.strictEqual(dead.exitCode, 7, 'the tombstone exit code rides the reply');
+
+    const c2 = capture();
+    await handle({ cmd: 'screen', id: 'ghost' }, c2.sock);
+    const none = c2.reply();
+    assert.notDeepStrictEqual(
+      { ok: dead.ok, ended: dead.ended },
+      { ok: none.ok, ended: none.ended },
+      'the two failure replies are distinguishable, not merely both falsy');
+  } finally {
+    endedLines.forget('tomb-scr');   // module-level registry — leave it clean
+  }
 });

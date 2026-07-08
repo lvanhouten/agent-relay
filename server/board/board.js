@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const pty = require('node-pty');
 const { CTRL, dataPipe, lineClosedFarewell, generateSecret, persistSecret,
   makeHandshake, makeCommandBuffer, AUTH_TIMEOUT_MS } = require('./lib');
+const { createScreen } = require('./screen-render');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -129,10 +130,75 @@ function makeEndedRegistry(cap = ENDED_MAX) {
       items.splice(i, 1);
       return true;
     },
+    // Look up one tombstone by id without copying the ring — the encapsulated
+    // point lookup for callers that want a single tombstone (the `screen`
+    // not-live branch), instead of reaching through list() into the internals.
+    get: id => items.find(t => t.id === id),
     list: () => items.slice(),
   };
 }
 const endedLines = makeEndedRegistry();
+
+// Per-line rendered-screen lifecycle: lazy-init (seeded from scrollback), live
+// feed, resize tracking, dispose. The emulator factory and the line's
+// size/scrollback accessors are injected, so the lifecycle — including the
+// efficiency invariant (no emulator built until the first read) — is unit-
+// testable without spawning a pty. Mirrors makeRunFeeder / makeEndedRegistry.
+//
+// Seeding replays the line's existing scrollback into a freshly-created emulator
+// so the very first read already reflects the current frame. Residual, accepted:
+// the current frame must sit within the scrollback window; every read after init
+// is exact, kept current by the live feed. feed()/resize() before the first read
+// are deliberate no-ops — a line nobody screen-reads allocates nothing.
+function makeScreenLifecycle(io) {
+  const { create, getSize, getScrollback } = io;
+  let screen = null;
+  let disposed = false;   // set on the line's exit — a dead line has no screen
+  function ensure() {
+    // Once the line has exited (dispose ran), refuse to (re)build a screen. This
+    // closes the first-read leg of the exit race: without it, a first read that
+    // lands after onExit's dispose would rebuild a fresh emulator from stale
+    // scrollback — returning a full grid for a line the contract says must error,
+    // and leaking that emulator (onExit is already past its dispose call).
+    if (disposed) return null;
+    if (screen) return screen;
+    const { cols, rows } = getSize();
+    screen = create(cols, rows);
+    // One-time, first-read only: parsing up to SCROLLBACK (2000) chunks through
+    // the VT emulator is synchronous work on the board's single event loop, so a
+    // heavily-repainting line's first screen read briefly stalls I/O for every
+    // other line. Bounded by the scrollback cap and paid once — every read after
+    // init is incremental (the live p.onData feed) — but it is not free.
+    for (const chunk of getScrollback()) screen.write(chunk);
+    return screen;
+  }
+  return {
+    // Lazy-init on first read, then snapshot the current grid (a stateless read —
+    // no cursor to track, unlike the delta-based raw-output read). Returns null,
+    // never a torn/stale grid, when the line has exited — either before the read
+    // (ensure refuses to build) or during the awaited flush (dispose lands while
+    // snapshot() yields; the post-await disposed check discards the result and a
+    // read against the disposed emulator that threw is swallowed only then). The
+    // caller maps null to the exited-line reply.
+    async read() {
+      const scr = ensure();
+      if (!scr) return null;
+      try {
+        const snap = await scr.snapshot();
+        return disposed ? null : snap;
+      } catch (e) {
+        if (disposed) return null;   // disposed mid-flush — expected race, not an error
+        throw e;
+      }
+    },
+    // Live feed / resize: meaningful only once the emulator exists.
+    feed(bytes) { if (screen) screen.write(bytes); },
+    resize(cols, rows) { if (screen) screen.resize(cols, rows); },
+    dispose() { disposed = true; if (screen) { screen.dispose(); screen = null; } },
+    // Test seam: whether the emulator has been constructed yet.
+    _initialized: () => screen !== null,
+  };
+}
 
 // The per-boot access secret every connection must present as its first line
 // (see lib.js). Assigned once in the daemon-entry block below, before either
@@ -191,6 +257,16 @@ function createLine(o = {}) {
   const s = { pty: p, clients: new Set(), buf: [], sizes: new Map(), name: o.name || '', shell, cwd, startedAt: now, lastActivity: now };
   sessions.set(id, s);
 
+  // Rendered screen for this line: constructed lazily on the first `screen`
+  // command, sized to the live PTY dims and seeded from scrollback (see
+  // makeScreenLifecycle). Once initialized it is kept current by the live feed
+  // (p.onData below), resize tracking (applyMin), and disposed on exit.
+  s.screen = makeScreenLifecycle({
+    create: createScreen,
+    getSize: () => ({ cols: p.cols, rows: p.rows }),
+    getScrollback: () => s.buf,
+  });
+
   // Data plane: a dumb raw byte pump, broadcast to every patched-in pane — but
   // gated on the access secret first (see lib.js). Until a client sends
   // `<secret>\n`, it is added to nothing and receives no scrollback, so a foreign
@@ -223,6 +299,7 @@ function createLine(o = {}) {
     s.lastActivity = Date.now();
     s.buf.push(d);
     if (s.buf.length > SCROLLBACK) s.buf.shift();
+    s.screen.feed(d);   // no-op until the line's screen is first read (lazy)
     for (const c of s.clients) c.write(d);
   });
   p.onExit(({ exitCode }) => {
@@ -233,6 +310,7 @@ function createLine(o = {}) {
     // nor the cleanup below.
     notifyClientsClosed(s.clients, lineClosedFarewell(id, exitCode));
     try { server.close(); } catch { /* ignore */ }
+    try { s.screen.dispose(); } catch { /* ignore */ }
     // Leave a tombstone so pollers can distinguish "ended" (and how) from
     // "never existed". `reason` separates an operator kill (the `end` command
     // sets endReason before the signal) from the process exiting on its own.
@@ -289,7 +367,9 @@ function applyMin(s) {
   if (!s.sizes.size) return;
   let cols = Infinity, rows = Infinity;
   for (const sz of s.sizes.values()) { cols = Math.min(cols, sz.cols); rows = Math.min(rows, sz.rows); }
-  try { s.pty.resize(cols, rows); } catch { /* line may have closed */ }
+  // Resize the PTY, then keep the rendered screen in lockstep so its grid never
+  // shears against the live dims (no-op until the screen is first read).
+  try { s.pty.resize(cols, rows); s.screen.resize(cols, rows); } catch { /* line may have closed */ }
 }
 
 // Open a fresh pane/window patched through to a line. The launch recipe comes
@@ -335,7 +415,7 @@ function openPane(id, recipe) {
   return true;
 }
 
-function handle(m, sock) {
+async function handle(m, sock) {
   switch (m.cmd) {
     case 'new': {
       const id = createLine(m);
@@ -382,6 +462,37 @@ function handle(m, sock) {
       // Dismiss one tombstone. ok:false = no such tombstone (already dismissed,
       // never existed, or cleared by a board restart).
       sock.write(JSON.stringify({ ok: endedLines.forget(m.id) }) + '\n');
+      break;
+    }
+    case 'screen': {
+      // The rendered screen of a line as a stateless snapshot. Field names are a
+      // consumed contract (mcp read-screen tool, `sb screen`): keep exact.
+      // Confidentiality note: the grid is raw-output-grade content — it can hold
+      // anything on screen (a credential typed at a prompt, PHI in a TUI, a value
+      // masked in the raw stream that renders in plaintext), at the same
+      // sensitivity as read_output. This command adds no new boundary: it is
+      // dispatched only post-handshake behind the same per-boot access secret as
+      // every other control command, and the reply is not logged. Its entire
+      // confidentiality therefore rests on that secret gate — whose Windows
+      // secret-file ACL is the still-open, unverified assumption tracked in
+      // CONTEXT.md / the open P2 issue, not anything this feature changes.
+      const s = sessions.get(m.id);
+      // Live at the check — but read() awaits a flush, yielding to the event
+      // loop, and p.onExit can dispose this line's screen mid-read (TOCTOU). The
+      // lifecycle refuses a read once disposed and returns null, so a line that
+      // exits during the read falls through to the exited-line reply below
+      // instead of returning a torn/stale grid or blocking until RPC_TIMEOUT_MS.
+      const snap = s ? await s.screen.read() : null;
+      if (snap) {
+        sock.write(JSON.stringify({ ok: true, boot: BOOT, ...snap }) + '\n');
+      } else {
+        // Not live (never existed, or exited — possibly during the read above).
+        // Distinguish an exited line (tombstone) from one that never existed;
+        // these two failure replies must be tellable apart by `ended`.
+        const tomb = endedLines.get(m.id);
+        if (tomb) sock.write(JSON.stringify({ ok: false, ended: true, exitCode: tomb.exitCode, reason: tomb.reason }) + '\n');
+        else sock.write(JSON.stringify({ ok: false, ended: false }) + '\n');
+      }
       break;
     }
     case 'resize': {
@@ -434,8 +545,24 @@ const board = net.createServer(sock => {
       // Guard the whole command dispatch: a field that doesn't match the assumed
       // shape (e.g. `args` as a non-array) must not throw uncaught here and take
       // down the daemon — and every live line with it — for one bad request.
-      try { handle(m, sock); }
-      catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
+      // handle is async (the `screen` command awaits a snapshot) and dispatched
+      // fire-and-forget, so this does NOT serialize commands: if a caller ever
+      // pipelined an async `screen` and a later sync command on ONE socket, the
+      // sync reply could be written first, transposing replies (the control plane
+      // is positional newline-delimited JSON, not request-id-tagged). Reply
+      // ordering therefore holds only because no caller pipelines reply-producing
+      // commands on a shared socket: rpc() (lib.js) is strictly one-shot — one
+      // command, one reply, then sock.end() — and the sole persistent-socket
+      // command is `resize`, which writes no reply. A future client that sends
+      // reply-producing commands back-to-back on a held-open socket would need
+      // this loop to await sequentially (or a per-socket dispatch queue) first.
+      // The .catch below only keeps an async rejection from crashing the daemon.
+      try {
+        const ret = handle(m, sock);
+        if (ret && typeof ret.then === 'function') {
+          ret.catch(e => log('handle error for cmd', m && m.cmd, '-', e.message));
+        }
+      } catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
     // Post-auth cap (the other half of C1): an oversized newline-less command would
     // otherwise grow unbounded until V8's RangeError crashes the daemon, with no
@@ -491,4 +618,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };

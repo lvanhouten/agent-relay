@@ -43,3 +43,20 @@ and origin gates still apply).
 The client's reachability rule: you reach a relay by loading the page *from*
 it (directly or through a tunnel) — page, API, and WS stream all target the
 page's own origin. There is no typed "relay host".
+
+### Raw output
+The unmodified PTY byte stream a line produces: text interleaved with ANSI
+escapes, cursor moves, and repaint frames. What `read_output` / the data pipe
+have always returned. For a plain shell it *is* the meaningful artifact; for an
+alt-screen TUI it is churn. The stable default — rendered mode never replaces
+it.
+
+### Rendered screen
+The current terminal grid of a line — rows × cols of plain characters as a
+human would see them on `sb join`, with no escapes and no duplicate frames —
+produced by feeding the raw output through a headless VT emulator. Bounded in
+size regardless of how much churn the stream carried. The artifact an agent
+consumer actually wants when reading TUI state (which dialog option is
+highlighted, waiting vs. executing). Complements the session transcript, never
+replaces it (transcript = history + verbatim command text; screen = current UI
+state).
