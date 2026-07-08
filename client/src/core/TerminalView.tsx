@@ -159,6 +159,7 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       term.loadAddon(search);
       term.loadAddon(serialize);
       term.open(containerRef.current!);
+      term.focus();
       termRef.current = term;
       searchRef.current = search;
       serializeRef.current = serialize;
