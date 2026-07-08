@@ -5,7 +5,7 @@
 | 01-screen-render | integrated | 1 | af8a9f6 | 10/10 | |
 | 02-board-screen-command | integrated | 2 | 29b6ae6 | 10/10 | exclusive; suite flake noted below |
 | 03-read-screen-mcp-tool | integrated | 3 | 62e0d3d | 6/6 | |
-| 04-sb-screen-command | pending | 3 | — | — | |
+| 04-sb-screen-command | integrated | 3 | d3c4b46 | 4/4 | |
 
 Dependency graph: 01 → 02 → {03, 04}. Waves: W1={01}, W2={02, exclusive}, W3={03, 04}.
 
