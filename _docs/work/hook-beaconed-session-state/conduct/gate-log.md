@@ -52,3 +52,30 @@ completed without incident. No mid-stage prompts observed. A CONCERNS verdict
 is a normal green completion for this stage (STAGES.md: this stage never
 gates on verdict severity) — the findings feed `remediate-batch` next.
 Advancing to `remediate-batch`.
+
+### 3. `remediate-batch` — green — 2026-07-08
+
+Marker (`conduct/remediate-batch.done.json`, committed): `outcome: green`,
+`exceptions: []`. Ran as the **direct shape** (this Stage session did the work
+itself in an isolated worktree — no subagent). Worktree
+`.worktrees/r-611b4a3` on branch `remediate/hook-beaconed-session-state/611b4a3`,
+based off the review head (`611b4a3`, whose code == review head `e80475b`);
+remediation head `3d26d47`. All 4 findings reached a verdict, none parked
+(`completed`):
+- **W1** (A) — extracted the shared `_outputLandedAfter` primitive so the
+  duplicated staleness check can't drift; 2 mutation-proven closure tests
+  (`e3a6497`).
+- **W2** (A) — validate-before-read `SECURITY` markers on the attacker-suppliable
+  `transcriptPath` at both boundaries; comment-only, correct architecture is
+  validate-at-read (`7e97b4b`).
+- **N1** (E) — rejected as a reviewer-conceded non-defect (ADR-0001 single-operator
+  ceiling, cosmetic-only VC-10); durable trust-model comment (`c1218ab`).
+- **N2** (A) — reconciled the beacon comment with the intended empty-`sessionId`
+  cwd-fallback behavior; rejecting empty would regress the backstop (`895b68d`).
+
+Closure gate: server 286/286 green (was 284; +2 W1 tests), exit 0. Annotated doc
+committed inside the worktree (`3d26d47`). **E-count 1/4 mechanically trips the
+>20% smell but is benign** — the sole E is a NOTE the reviewer itself called "not
+a defect to fix"; no substantive finding was flattened into a reject. Worktree
+left intact for the independent `verify` pass. Advancing to `verify` (fresh
+session, non-negotiable independence).
