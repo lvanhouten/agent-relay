@@ -401,3 +401,38 @@ test('beacon(): a board-down cwd resolution throws BoardUnreachableError (-> 503
     e => e instanceof BoardUnreachableError && e.boardUnreachable === true,
   );
 });
+
+// --- W1 (remediation): both staleness overlays route through the one
+//     _outputLandedAfter primitive, so a future grace window can't drift
+//     between them. Override the shared primitive and confirm EACH overlay
+//     obeys it — if either _applyAttention or _applyBeacon re-inlined its own
+//     `now - idleMs` check, the override wouldn't reach it and the paired
+//     kept/cleared assertions would diverge from the stub. Mutation-checked:
+//     re-inlining either copy fails the matching case below.
+const overlayLine = [{ id: '1', cwd: '/r', idleMs: 0 }];
+const overlaySessions = () =>
+  new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, boot: 'b', lines: overlayLine }) });
+
+test('W1: _applyBeacon consults the shared _outputLandedAfter primitive', async () => {
+  const kept = overlaySessions();
+  kept._outputLandedAfter = () => false;                       // "no output landed after the Stop"
+  await kept.beacon({ event: 'Stop', sessionId: '1' });
+  assert.strictEqual((await kept.list())[0].status, 'turn-done', 'primitive says not-stale -> turn-done kept');
+
+  const cleared = overlaySessions();
+  cleared._outputLandedAfter = () => true;                     // "output landed after the Stop"
+  await cleared.beacon({ event: 'Stop', sessionId: '1' });
+  assert.strictEqual((await cleared.list())[0].status, 'running', 'primitive says stale -> reverts to running');
+});
+
+test('W1: _applyAttention consults the shared _outputLandedAfter primitive', async () => {
+  const kept = overlaySessions();
+  kept._outputLandedAfter = () => false;                       // "no output landed after the flag"
+  kept.flagAttention('1');
+  assert.strictEqual((await kept.list())[0].status, 'needs-input', 'primitive says not-stale -> needs-input kept');
+
+  const cleared = overlaySessions();
+  cleared._outputLandedAfter = () => true;                     // "output landed after the flag"
+  cleared.flagAttention('1');
+  assert.strictEqual((await cleared.list())[0].status, 'running', 'primitive says stale -> flag dropped');
+});
