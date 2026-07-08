@@ -468,9 +468,18 @@ const board = net.createServer(sock => {
       // Guard the whole command dispatch: a field that doesn't match the assumed
       // shape (e.g. `args` as a non-array) must not throw uncaught here and take
       // down the daemon — and every live line with it — for one bad request.
-      // handle is async (the `screen` command awaits a snapshot); sync commands
-      // still write their reply before the first await, so reply ordering holds,
-      // and an async rejection is caught here instead of crashing the daemon.
+      // handle is async (the `screen` command awaits a snapshot) and dispatched
+      // fire-and-forget, so this does NOT serialize commands: if a caller ever
+      // pipelined an async `screen` and a later sync command on ONE socket, the
+      // sync reply could be written first, transposing replies (the control plane
+      // is positional newline-delimited JSON, not request-id-tagged). Reply
+      // ordering therefore holds only because no caller pipelines reply-producing
+      // commands on a shared socket: rpc() (lib.js) is strictly one-shot — one
+      // command, one reply, then sock.end() — and the sole persistent-socket
+      // command is `resize`, which writes no reply. A future client that sends
+      // reply-producing commands back-to-back on a held-open socket would need
+      // this loop to await sequentially (or a per-socket dispatch queue) first.
+      // The .catch below only keeps an async rejection from crashing the daemon.
       try {
         const ret = handle(m, sock);
         if (ret && typeof ret.then === 'function') {

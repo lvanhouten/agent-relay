@@ -23,6 +23,11 @@ A clean, additive, well-tested feature: the pure serializer (`screen-render.js`)
 
 **W1. Async `handle` relaxes the control-plane reply-ordering guarantee; the in-code justification is incomplete** — `server/board/board.js:464-480` · confidence 55
 
+**Status:** ✅ Resolved in <W1_SHA> — see below.
+**Resolution:** Re-framed (B). The reviewer is right that the old comment claimed a cross-command ordering guarantee the fire-and-forget dispatch no longer provides, but this is latent-only: `rpc()` is strictly one-shot (one command, one reply, then `sock.end()`) and the sole persistent-socket command is `resize`, which writes no reply — so no caller can pipeline two reply-producing commands on one socket, and there is no reachable transposition today. The honest fix within scope is to correct the comment, not to add behavior to the single most sensitive code in the diff (the shared control-plane dispatch) for an unexercised path. The comment at `board.js` now states the real contract precisely — ordering holds only because no caller pipelines reply-producing commands on a shared socket — and names what a future pipelining client would need first (sequential await in the loop, or a per-socket dispatch queue). The behavioral hardening was deliberately not applied unattended; it is a control-plane design call for the owner. Closure check: named guarded code path — the corrected comment at `board.js:469-483`; there is no behavioral defect to test because the relaxation is unreachable by any current caller (the finding's own "latent, not live" conclusion).
+
+---
+
 Making `handle` `async` (to `await` the `screen` snapshot) changed the dispatch contract. The loop dispatches every command in a chunk without awaiting:
 
 ```js
