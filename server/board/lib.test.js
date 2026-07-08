@@ -9,7 +9,7 @@ const assert = require('node:assert');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { writeBootSecret, readSecret, secretEqual, makeHandshake, makeCommandBuffer, MAX_PREAUTH_BYTES } = require('./lib');
+const { writeBootSecret, readSecret, secretEqual, sendSecret, makeHandshake, makeCommandBuffer, MAX_PREAUTH_BYTES } = require('./lib');
 
 function scratch() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ar-secret-'));
@@ -29,6 +29,36 @@ test('writeBootSecret generates a fresh secret each boot', () => {
 
 test('readSecret returns null when no secret file exists (board not up)', () => {
   assert.strictEqual(readSecret(path.join(os.tmpdir(), 'ar-nonexistent-' + process.pid)), null);
+});
+
+// sendSecret gates the handshake on the secret being READY on disk. The board
+// persists its secret just after binding the pipe (C2 ordering), so a client can
+// connect in the gap before the file exists — or catch it empty, since
+// writeFileSync truncates to 0 bytes before writing. Presenting an empty secret
+// there gets the socket rejected+destroyed ("board closed the connection before
+// replying") — the concurrent-load e2e flake. sendSecret must return false (and
+// write nothing) so the caller retries instead.
+function fakeSock() {
+  const writes = [];
+  return { writes, write(s) { writes.push(s); } };
+}
+
+test('sendSecret: absent secret (null) -> false, writes nothing (caller retries)', () => {
+  const sock = fakeSock();
+  assert.strictEqual(sendSecret(sock, () => null), false);
+  assert.deepStrictEqual(sock.writes, []);
+});
+
+test('sendSecret: empty secret file (mid-write, "") -> false, writes nothing', () => {
+  const sock = fakeSock();
+  assert.strictEqual(sendSecret(sock, () => ''), false);
+  assert.deepStrictEqual(sock.writes, []);
+});
+
+test('sendSecret: a present secret -> true, written with a trailing newline', () => {
+  const sock = fakeSock();
+  assert.strictEqual(sendSecret(sock, () => 'abc123'), true);
+  assert.deepStrictEqual(sock.writes, ['abc123\n']);
 });
 
 test('secretEqual: exact match only, constant-time-safe on type/length', () => {
