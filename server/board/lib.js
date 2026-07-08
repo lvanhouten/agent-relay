@@ -180,9 +180,23 @@ const TRANSIENT = ['ENOENT', 'ECONNREFUSED', 'EBUSY'];
 // The socket stays paused (no 'data' listener added here) so any server output —
 // e.g. a data pipe's scrollback replay — is buffered until the caller starts
 // reading, never dropped in the gap.
-function sendSecret(sock) {
-  const secret = readSecret();
-  try { sock.write((secret || '') + '\n'); } catch { /* socket already closed */ }
+//
+// Returns false when the secret file isn't on disk yet. The board persists its
+// secret just AFTER binding the pipe (the C2 ordering: a bind-race loser must not
+// reach persist and clobber the winner's on-disk secret), so there's a narrow
+// window — widened under concurrent load — where the pipe accepts a connection
+// before the secret exists. Writing an empty secret there gets the socket rejected
+// and destroyed ("board closed the connection before replying"), so instead the
+// caller treats a false return as not-ready-yet and retries the connect.
+function sendSecret(sock, read = readSecret) {
+  const secret = read();
+  // Falsy covers both windows: the file absent yet (readSecret -> null) AND the
+  // file existing but empty because writeFileSync truncates to 0 bytes before
+  // writing (readSecret -> ''). Either way the board isn't ready; return false so
+  // the caller retries rather than presenting an empty secret and being rejected.
+  if (!secret) return false;
+  try { sock.write(secret + '\n'); } catch { /* socket already closed */ }
+  return true;
 }
 
 // Connect to an arbitrary named pipe, retrying through transient errors
@@ -194,7 +208,11 @@ function connectPipe(pipePath, { retries = 30, delay = 100 } = {}) {
       sock.once('connect', () => {
         sock.removeAllListeners('error');
         sock.on('error', () => {});
-        sendSecret(sock);
+        if (!sendSecret(sock)) {   // board up but secret not persisted yet — retry
+          sock.destroy();
+          if (n <= 0) return reject(new Error('board secret unavailable after retries'));
+          return setTimeout(() => attempt(n - 1), delay);
+        }
         resolve(sock);
       });
       sock.once('error', err => {
@@ -215,7 +233,11 @@ function connectControl({ autostart = true, retries = 30, delay = 100 } = {}) {
       sock.once('connect', () => {
         sock.removeAllListeners('error');
         sock.on('error', () => {});
-        sendSecret(sock);
+        if (!sendSecret(sock)) {   // board bound the pipe but hasn't persisted its secret yet — retry
+          sock.destroy();
+          if (n <= 0) return reject(new Error('board secret unavailable after retries'));
+          return setTimeout(() => attempt(n - 1), delay);
+        }
         resolve(sock);
       });
       sock.once('error', err => {
@@ -275,5 +297,6 @@ module.exports = {
   CTRL, dataPipe, startBoard, connectPipe, connectControl, rpc, RPC_TIMEOUT_MS,
   lineClosedFarewell, EXIT_RE,
   generateSecret, persistSecret, writeBootSecret, readSecret, secretEqual, secretPath,
+  sendSecret,
   AUTH_TIMEOUT_MS, MAX_PREAUTH_BYTES, MAX_CMD_BYTES, makeHandshake, makeCommandBuffer,
 };
