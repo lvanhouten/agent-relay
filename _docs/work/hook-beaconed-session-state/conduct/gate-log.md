@@ -27,3 +27,15 @@
   AskUserQuestion, 2026-07-08.
 
 No approvals or exceptions logged yet.
+
+## Stage completions
+
+### 1. `execute-briefs` — green — 2026-07-08
+
+Marker (`conduct/execute-briefs.done.json`, committed): `outcome: green`.
+Artifact `briefs/STATUS.md` — "Wave 1 {01-server-beacon-plumbing,
+02-client-turn-done-rendering} both integrated; server 284/284, client
+103/103, typecheck clean." Bootstrap, wait (woke on `marker-present`), and
+graceful teardown (`/exit` confirmed shell prompt returned, then `end_line`)
+all completed without incident. No mid-stage prompts observed. Advancing to
+`adversarial-review`.
