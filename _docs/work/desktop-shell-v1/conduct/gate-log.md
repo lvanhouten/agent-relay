@@ -38,4 +38,10 @@ Written and committed only between stages (never while a Stage session runs).
 - **Decision:** approved (dialog option 1). Prompted on "Contains simple_expansion" (`$TMP`).
 - **Reasoning:** standard wave-integration merge+gate; brief 02's gate already came back green.
 
+### 2026-07-09 17:20 — stage: execute-briefs — APPROVED
+- **Command:** `git merge 1b3cf93eee9bcb2951bf326d0d8e4971fcd44159 -m "integrate(desktop-shell-v1): 04-find-bar-extraction (wave 1)" 2>&1 | tail -6; echo "===GATE 04==="; npm test --workspace=client > "$TMP/gate-04.log" 2>&1; echo "TEST_EXIT=$?"; npm run typecheck --workspace=client > "$TMP/tc-04.log" 2>&1; echo "TC_EXIT=$?"`
+- **Classification:** NOT deny-class — local git merge of brief 04's worktree commit + rebuild/retest gate. Same-repo, no outbound/destruction/credential surface.
+- **Decision:** approved (dialog option 1). Prompted on "Contains simple_expansion" (`$TMP`).
+- **Reasoning:** wave-integration merge+gate; briefs 01 and 02 gates already green.
+
 ## Stage timeline
