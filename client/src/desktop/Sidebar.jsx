@@ -5,7 +5,7 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { attentionFor } from '../core/attention.ts';
-import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone } from 'lucide-react';
+import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
 // One live session row. Attention dot uses the SAME decode as the mobile cards
@@ -61,12 +61,22 @@ function TombstoneRow({ session, onDismiss }) {
   );
 }
 
+// Bell affordance state, keyed off the notifications hook's resolved view.
+const NOTIFY = {
+  on: { icon: Bell, label: 'Disable notifications', active: true, disabled: false },
+  off: { icon: BellOff, label: 'Enable notifications', active: false, disabled: false },
+  blocked: { icon: BellOff, label: 'Notifications blocked in browser settings', active: false, disabled: true },
+  unsupported: { icon: BellOff, label: 'Notifications unavailable', active: false, disabled: true },
+};
+
 export function Sidebar({
   liveSessions, endedSessions, liveCount, selectedId,
   query, onQuery, onSelect, onKill, onDismiss, onNewSession,
-  theme, onToggleTheme, onToggleShell,
+  theme, onToggleTheme, onToggleShell, notifyView, onToggleNotify,
 }) {
   const [showEnded, setShowEnded] = React.useState(false);
+  const bell = NOTIFY[notifyView] ?? NOTIFY.off;
+  const BellIcon = bell.icon;
 
   return (
     <aside className={styles.sidebar}>
@@ -128,6 +138,15 @@ export function Sidebar({
       <div className={styles.footer}>
         <IconButton label="Switch to mobile layout" onClick={onToggleShell}>
           <Smartphone size={16} />
+        </IconButton>
+        <IconButton
+          label={bell.label}
+          active={bell.active}
+          disabled={bell.disabled}
+          aria-pressed={bell.active}
+          onClick={onToggleNotify}
+        >
+          <BellIcon size={16} />
         </IconButton>
         <span className={styles.footerSpacer} />
         <IconButton label="Toggle theme" onClick={onToggleTheme}>

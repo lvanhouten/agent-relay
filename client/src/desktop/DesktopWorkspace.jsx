@@ -1,5 +1,6 @@
 import React from 'react';
 import { useSessions } from '../core/useSessions.ts';
+import { useDesktopNotifications } from '../core/useDesktopNotifications.ts';
 import { jumpIndexFromKey } from '../core/jumpKeys.ts';
 import { pickMostRecentLive } from '../core/recency.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
@@ -19,6 +20,11 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
   const [selectedId, setSelectedId] = React.useState(null);
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');
+
+  // Local browser notifications. Fires off the same poll data (transition-based,
+  // via the tested reducer); a notification click routes selection through this
+  // root's setSelectedId — the sidebar never owns selection.
+  const notify = useDesktopNotifications(sessions, setSelectedId);
 
   // Visible (post-filter) partition, poll order preserved. Alt+N and the
   // sidebar render from the SAME liveSessions array, so the chord always lands
@@ -108,6 +114,8 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
         theme={theme}
         onToggleTheme={onToggleTheme}
         onToggleShell={onToggleShell}
+        notifyView={notify.view}
+        onToggleNotify={notify.toggle}
       />
       <DetailPane
         session={selected}
