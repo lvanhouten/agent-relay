@@ -2,6 +2,7 @@ import React from 'react';
 import { Badge } from '@ds/Badge.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
+import { OverflowMenu } from '@ds/OverflowMenu.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import {
   ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Minimize2, Sun, Moon,
@@ -21,12 +22,46 @@ function prefersComposer() {
     && window.matchMedia('(pointer: coarse)').matches;
 }
 
+// Every action button is the same fixed square (see IconButton's --md size) plus
+// the row's own gap, so "how many fit" is a single division - no per-element
+// measurement needed.
+const ACTION_SLOT_PX = 36 + 8;
+
+// How many trailing action buttons fit in the space CSS flex-grow actually
+// hands the actions row (see the layout below: the row has flex:'1 1 0' and
+// minWidth:0, with a fixed-width slot always reserved for the "…" trigger, so
+// its resolved clientWidth already IS "room for buttons" - no inference or
+// subtraction needed, and it's correct in both directions (shrinking AND
+// growing back) since flex-grow, not the row's own content, drives its size.
+// An earlier version tried to back this out of the header's scrollWidth, which
+// only reflects true content width while overflowing - once things fit,
+// scrollWidth just collapses to clientWidth and the signal is lost.
+function useVisibleActionCount(actionsRowRef, totalActions) {
+  const [visibleCount, setVisibleCount] = React.useState(totalActions);
+
+  React.useLayoutEffect(() => {
+    const el = actionsRowRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const next = Math.max(0, Math.min(totalActions, Math.floor(el.clientWidth / ACTION_SLOT_PX)));
+      setVisibleCount((prev) => (prev === next ? prev : next));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [actionsRowRef, totalActions]);
+
+  return visibleCount;
+}
+
 // Chrome around the terminal: header, footer, status dot, find bar, and the
 // mobile composer (input + canned-key chips). The terminal itself — xterm, the
 // WS lifecycle, the mount dance, the scroll-to-bottom pill — lives in
 // core/TerminalView; this screen drives it through the imperative handle.
 export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack }) {
   const viewRef = React.useRef(null);
+  const actionsRowRef = React.useRef(null);
   const [connStatus, setConnStatus] = React.useState('connecting');
 
   const [showSearch, setShowSearch] = React.useState(false);
@@ -106,6 +141,21 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
 
   const matchReadout = searchReadout(searchTerm, searchResults);
 
+  // Priority order - the last entries are the first pushed into the overflow
+  // menu when the header runs out of room (download is the one operators are
+  // least likely to reach for on a phone).
+  const actions = [
+    { key: 'search', label: 'Search output', menuLabel: 'Search output', active: showSearch, onClick: toggleSearch, icon: <Search size={15} /> },
+    { key: 'composer', label: 'Toggle composer', menuLabel: 'Toggle composer', active: showComposer, onClick: () => setShowComposer((v) => !v), icon: <Keyboard size={15} /> },
+    { key: 'copy', label: 'Copy selection', menuLabel: 'Copy selection', onClick: () => navigator.clipboard?.writeText(viewRef.current?.getSelection() ?? ''), icon: <Copy size={15} /> },
+    { key: 'fullscreen', label: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', menuLabel: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', active: isFullscreen, onClick: toggleFullscreen, icon: isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} /> },
+    { key: 'theme', label: 'Toggle theme', menuLabel: 'Toggle theme', onClick: onToggleTheme, icon: theme === 'dark' ? <Sun size={15} /> : <Moon size={15} /> },
+    { key: 'download', label: 'Download transcript (may contain secrets echoed to the terminal)', menuLabel: 'Download transcript', onClick: downloadTranscript, icon: <Download size={15} /> },
+  ];
+  const visibleActionCount = useVisibleActionCount(actionsRowRef, actions.length);
+  const visibleActions = actions.slice(0, visibleActionCount);
+  const overflowActions = actions.slice(visibleActionCount);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
       {/* session header */}
@@ -125,33 +175,38 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           {session.name}
         </span>
         <Badge variant="accent">{shellLabel}</Badge>
+        {/* Shrink-only (no grow) - it gives up room under pressure but doesn't
+            compete with the actions row below for surplus space, so slack
+            goes to buttons rather than padding out an already-fitting path. */}
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
           color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          minWidth: 0, flex: '0 1 auto',
         }}>
           {session.cwd}
         </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <StatusDot status={dotStatus} size="sm" label={statusLabel} />
-          <span style={{ width: 1, height: 22, background: 'var(--border-subtle)', margin: '0 4px' }} />
-          <IconButton label="Search output" active={showSearch} onClick={toggleSearch}>
-            <Search size={15} />
-          </IconButton>
-          <IconButton label="Toggle composer" active={showComposer} onClick={() => setShowComposer((v) => !v)}>
-            <Keyboard size={15} />
-          </IconButton>
-          <IconButton label="Copy selection" onClick={() => navigator.clipboard?.writeText(viewRef.current?.getSelection() ?? '')}>
-            <Copy size={15} />
-          </IconButton>
-          <IconButton label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} active={isFullscreen} onClick={toggleFullscreen}>
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </IconButton>
-          <IconButton label="Toggle theme" onClick={onToggleTheme}>
-            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-          </IconButton>
-          <IconButton label="Download transcript (may contain secrets echoed to the terminal)" onClick={downloadTranscript}>
-            <Download size={15} />
-          </IconButton>
+        <StatusDot status={dotStatus} size="sm" label={statusLabel} style={{ flexShrink: 0 }} />
+        <span style={{ width: 1, height: 22, background: 'var(--border-subtle)', margin: '0 4px', flexShrink: 0 }} />
+        {/* The only flex-grow item in the row - a direct header child, not
+            nested, so it actually receives a definite width from header's own
+            flex layout. Its resolved clientWidth IS "room CSS gave the
+            buttons" - see useVisibleActionCount above for why that's the
+            thing to measure. */}
+        <div ref={actionsRowRef} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          gap: 'var(--space-2)', flex: '1 1 0', minWidth: 0, overflow: 'hidden',
+        }}>
+          {visibleActions.map((a) => (
+            <IconButton key={a.key} label={a.label} active={a.active} onClick={a.onClick}>
+              {a.icon}
+            </IconButton>
+          ))}
+        </div>
+        {/* Always reserved, whether or not the menu has anything in it - a
+            conditionally-present trigger would change the row's fixed cost
+            between renders and throw off the flex-grow measurement above. */}
+        <div style={{ width: 36, flexShrink: 0 }}>
+          <OverflowMenu items={overflowActions} />
         </div>
       </header>
 
