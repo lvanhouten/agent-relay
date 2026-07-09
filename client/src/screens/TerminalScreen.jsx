@@ -12,6 +12,8 @@ import { TerminalView } from '../core/TerminalView.tsx';
 import { KEY_CHIPS, composerBytes } from '../core/keyChips.ts';
 import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { searchReadout } from '../core/searchReadout.ts';
+import { useFullscreen } from '../core/useFullscreen.ts';
+import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
 
 // Default the composer visible on touch/small viewports, hidden on a desktop
 // with a real keyboard (toggleable either way). Read once at mount — a device's
@@ -20,39 +22,6 @@ function prefersComposer() {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse)').matches;
-}
-
-// Every action button is the same fixed square (see IconButton's --md size) plus
-// the row's own gap, so "how many fit" is a single division - no per-element
-// measurement needed.
-const ACTION_SLOT_PX = 36 + 8;
-
-// How many trailing action buttons fit in the space CSS flex-grow actually
-// hands the actions row (see the layout below: the row has flex:'1 1 0' and
-// minWidth:0, with a fixed-width slot always reserved for the "…" trigger, so
-// its resolved clientWidth already IS "room for buttons" - no inference or
-// subtraction needed, and it's correct in both directions (shrinking AND
-// growing back) since flex-grow, not the row's own content, drives its size.
-// An earlier version tried to back this out of the header's scrollWidth, which
-// only reflects true content width while overflowing - once things fit,
-// scrollWidth just collapses to clientWidth and the signal is lost.
-function useVisibleActionCount(actionsRowRef, totalActions) {
-  const [visibleCount, setVisibleCount] = React.useState(totalActions);
-
-  React.useLayoutEffect(() => {
-    const el = actionsRowRef.current;
-    if (!el) return;
-    const recompute = () => {
-      const next = Math.max(0, Math.min(totalActions, Math.floor(el.clientWidth / ACTION_SLOT_PX)));
-      setVisibleCount((prev) => (prev === next ? prev : next));
-    };
-    recompute();
-    const ro = new ResizeObserver(recompute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [actionsRowRef, totalActions]);
-
-  return visibleCount;
 }
 
 // Chrome around the terminal: header, footer, status dot, find bar, and the
@@ -72,19 +41,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   const [showComposer, setShowComposer] = React.useState(prefersComposer);
   const [composerText, setComposerText] = React.useState('');
 
-  // Tracks the actual browser state, not just our button — fullscreen can also
-  // be left via Esc or the browser's own UI, which fires fullscreenchange but
-  // never calls our handler.
-  const [isFullscreen, setIsFullscreen] = React.useState(() => !!document.fullscreenElement);
-  React.useEffect(() => {
-    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) document.exitFullscreen?.();
-    else document.documentElement.requestFullscreen?.();
-  };
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
 
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const hostLabel = host.replace(/^https?:\/\//, '');
