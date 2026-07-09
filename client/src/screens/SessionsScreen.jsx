@@ -5,6 +5,7 @@ import { Card } from '@ds/Card.jsx';
 import { Badge } from '@ds/Badge.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
+import { OverflowMenu } from '@ds/OverflowMenu.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
@@ -12,7 +13,9 @@ import { attentionFor, attentionRank } from '../core/attention.ts';
 import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
-import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode, Bookmark, BookmarkPlus } from 'lucide-react';
+import { useFullscreen } from '../core/useFullscreen.ts';
+import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
+import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode, Bookmark, BookmarkPlus, Maximize2, Minimize2 } from 'lucide-react';
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
@@ -545,6 +548,8 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');
   const [pairOpen, setPairOpen] = React.useState(false);
+  const { isFullscreen, toggleFullscreen } = useFullscreen();
+  const actionsRowRef = React.useRef(null);
 
   const handleCreate = async (opts) => {
     // Keep the dialog open until the create actually succeeds — create()
@@ -588,6 +593,18 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
   const ended = filtered.filter((s) => s.status === 'exited');
   const liveCount = sessions.filter((s) => s.status !== 'exited').length;
 
+  // Same priority-order + overflow pattern as TerminalScreen's header actions —
+  // settings is the one operators reach for least, so it's first into the menu.
+  const actions = [
+    { key: 'pair', label: 'Pair a device', menuLabel: 'Pair a device', onClick: () => setPairOpen(true), icon: <QrCode size={16} /> },
+    { key: 'fullscreen', label: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', menuLabel: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', active: isFullscreen, onClick: toggleFullscreen, icon: isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} /> },
+    { key: 'theme', label: 'Toggle theme', menuLabel: 'Toggle theme', onClick: onToggleTheme, icon: theme === 'dark' ? <Sun size={16} /> : <Moon size={16} /> },
+    { key: 'settings', label: 'Settings', menuLabel: 'Settings', onClick: () => {}, icon: <Settings size={16} /> },
+  ];
+  const visibleActionCount = useVisibleActionCount(actionsRowRef, actions.length);
+  const visibleActions = actions.slice(0, visibleActionCount);
+  const overflowActions = actions.slice(visibleActionCount);
+
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
       <header style={{
@@ -607,14 +624,23 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
           }}>▸</span>
           agent-relay
         </span>
-        <span style={{ flex: 1 }} />
-        <IconButton label="Pair a device" onClick={() => setPairOpen(true)}>
-          <QrCode size={16} />
-        </IconButton>
-        <IconButton label="Toggle theme" onClick={onToggleTheme}>
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </IconButton>
-        <IconButton label="Settings"><Settings size={16} /></IconButton>
+        {/* The only flex-grow item in the row - see TerminalScreen's header for
+            why its resolved clientWidth is exactly "room CSS gave the buttons". */}
+        <div ref={actionsRowRef} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          gap: 'var(--space-2)', flex: '1 1 0', minWidth: 0, overflow: 'hidden',
+        }}>
+          {visibleActions.map((a) => (
+            <IconButton key={a.key} label={a.label} active={a.active} onClick={a.onClick}>
+              {a.icon}
+            </IconButton>
+          ))}
+        </div>
+        {/* Always reserved, whether or not the menu has anything in it - see
+            TerminalScreen's header for why. */}
+        <div style={{ width: 36, flexShrink: 0 }}>
+          <OverflowMenu items={overflowActions} />
+        </div>
       </header>
 
       <main style={{
