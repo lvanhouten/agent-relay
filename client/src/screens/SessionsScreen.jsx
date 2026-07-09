@@ -7,80 +7,11 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
-import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
 import { attentionFor } from '../core/attention.ts';
-import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
-import { Terminal, Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, X, ChevronRight, ChevronDown, QrCode, Bookmark, BookmarkPlus } from 'lucide-react';
-
-const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
-
-// Suggestions, not validation: the command field stays the escape hatch for any
-// model/effort name these chips don't know — the CLI is the validator, and a
-// hardcoded list must never refuse what the CLI would accept (see
-// _docs/issues/2026-07-02-claude-model-effort-selection.md).
-const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
-const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-// Operator-wide defaults for Claude sessions: last-used values persist on a
-// successful spawn (no separate settings UI) and prefill the next claude
-// command. localStorage for now; migrates into the server-side store when
-// spawn-templates phase 2 lands so the two share one persistence story.
-function withClaudeDefaults(cmd) {
-  const model = localStorage.getItem('ar-claude-model');
-  const effort = localStorage.getItem('ar-claude-effort');
-  let out = cmd;
-  if (model) out = setFlag(out, 'model', model);
-  if (effort) out = setFlag(out, 'effort', effort);
-  return out;
-}
-
-function rememberClaudeDefaults(command) {
-  // Only a claude spawn updates the defaults — launching bash must not clear
-  // them. A claude spawn with a flag omitted *does* clear that default: the
-  // operator chose the CLI default, so remember the choice.
-  if (!isClaudeCommand(command)) return;
-  const model = getFlag(command, 'model');
-  const effort = getFlag(command, 'effort');
-  if (model) localStorage.setItem('ar-claude-model', model);
-  else localStorage.removeItem('ar-claude-model');
-  if (effort) localStorage.setItem('ar-claude-effort', effort);
-  else localStorage.removeItem('ar-claude-effort');
-}
-
-// One row of flag chips — a structured editor over the command string. A chip
-// click splices only its own flag (setFlag), so hand-typed text elsewhere in
-// the command survives; "default" removes the flag (CLI config decides).
-function FlagChipRow({ label, flag, options, command, onCommand }) {
-  const current = getFlag(command, flag);
-  const chips = [{ value: null, text: 'default' }, ...options.map((o) => ({ value: o, text: o }))];
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{
-        fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-        color: 'var(--text-muted)', width: 46, flexShrink: 0,
-      }}>
-        {label}
-      </span>
-      {chips.map(({ value, text }) => {
-        const selected = current === value;
-        return (
-          <button key={text} onClick={() => onCommand(setFlag(command, flag, value))} style={{
-            flex: 1, height: 26, cursor: 'pointer', minWidth: 0,
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-            borderRadius: 'var(--radius-md)',
-            border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-default)'}`,
-            background: selected ? 'var(--accent-soft)' : 'var(--surface-card)',
-            color: selected ? 'var(--text-accent)' : 'var(--text-body)',
-          }}>
-            {text}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
+import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, ChevronRight, ChevronDown, QrCode } from 'lucide-react';
 
 // NOTE: the per-card scrollback preview was removed here — the server DTO never
 // carried a `preview` field (neither toDto() nor spawn() in server/src/sessions.js
@@ -198,231 +129,6 @@ function ExitedSessionCard({ session, onDismiss }) {
   );
 }
 
-function NewSessionDialog({ onClose, onCreate, error, busy }) {
-  const [name, setName] = React.useState('');
-  const [cwd, setCwd] = React.useState('~/');
-  const [command, setCommand] = React.useState(() => withClaudeDefaults('claude'));
-
-  // Spawn templates (phase 1, localStorage). Loaded once on mount; the picker
-  // prefills the form (prefill-and-edit, never fires blindly — a stale cwd must
-  // be visible before spawn), and "save as template" upserts the current form.
-  const [templates, setTemplates] = React.useState(loadTemplates);
-  const [justSaved, setJustSaved] = React.useState(false);
-
-  // Every form edit goes through these, not the raw setters: any change
-  // invalidates the "Saved" indicator — the stored template is the pre-edit
-  // form, and the button must not claim the edited one is saved.
-  const editName = (v) => { setName(v); setJustSaved(false); };
-  const editCwd = (v) => { setCwd(v); setJustSaved(false); };
-  const editCommand = (v) => { setCommand(v); setJustSaved(false); };
-
-  const applyTemplate = (t) => {
-    setName(t.name);
-    setCwd(t.cwd);
-    setCommand(t.command);
-    setJustSaved(false);
-  };
-
-  const saveAsTemplate = () => {
-    // The session name is the label — the operator already types a meaningful
-    // one ("claude · agent-relay"); upsert dedupes so a re-save overwrites.
-    // Blank name -> a content-derived label (core/templates.ts), widened with
-    // path segments if it would clash with a different directory's template —
-    // only a same-cwd re-save may upsert over an existing blank-name entry.
-    const label = name.trim() || uniqueFallbackLabel(templates, cwd, command);
-    const next = upsertTemplate(templates, {
-      label, name: name.trim() || 'untitled', cwd, command: command.trim(),
-    });
-    setTemplates(next);
-    // Only claim "Saved" when the localStorage write persisted — in private
-    // mode / over quota the chip still works this session but is gone on
-    // reload, and the accent state must not promise otherwise.
-    setJustSaved(saveTemplates(next));
-  };
-
-  const deleteTemplate = (label) => {
-    const next = removeTemplate(templates, label);
-    setTemplates(next);
-    saveTemplates(next);
-  };
-
-  const handleCreate = () => {
-    onCreate({
-      name: name.trim() || 'untitled',
-      cwd,
-      command: command.trim() || undefined, // optional; runs in the shell, which stays open
-    });
-  };
-
-  return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, zIndex: 40, display: 'grid', placeItems: 'center',
-      background: 'var(--surface-overlay)', backdropFilter: 'blur(2px)', padding: 'var(--space-6)',
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: '100%', maxWidth: 420, background: 'var(--surface-card)',
-        border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)',
-        boxShadow: 'var(--shadow-pop)', padding: 'var(--space-6)',
-        display: 'flex', flexDirection: 'column', gap: 'var(--space-5)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: 'var(--text-xl)', margin: 0, color: 'var(--text-strong)' }}>New session</h2>
-          <IconButton label="Close" size="sm" onClick={onClose}>
-            <span style={{ fontSize: 18, lineHeight: 1, color: 'var(--text-muted)' }}>×</span>
-          </IconButton>
-        </div>
-
-        {templates.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-              textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
-            }}>
-              Templates
-            </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {templates.map((t) => (
-                // Load-on-tap; the trailing × removes without loading. Each chip
-                // is one saved {name, cwd, command} shape.
-                <span key={t.label} style={{
-                  display: 'inline-flex', alignItems: 'center',
-                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full, 999px)',
-                  background: 'var(--surface-sunken)', overflow: 'hidden',
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => applyTemplate(t)}
-                    title={`${t.command || 'plain shell'} · ${t.cwd}`}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      height: 30, padding: '0 6px 0 12px', border: 'none', background: 'transparent',
-                      cursor: 'pointer', color: 'var(--text-body)',
-                      fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-                    }}
-                  >
-                    <Bookmark size={12} /> {t.label}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Delete template ${t.label}`}
-                    title="Delete template"
-                    onClick={() => deleteTemplate(t.label)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      height: 30, width: 26, border: 'none', background: 'transparent',
-                      cursor: 'pointer', color: 'var(--text-faint)',
-                    }}
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <Input
-          label="Session name"
-          value={name}
-          onChange={(e) => editName(e.target.value)}
-          placeholder="api-dev"
-          autoFocus
-        />
-        <Input
-          label="Working directory"
-          mono
-          value={cwd}
-          onChange={(e) => editCwd(e.target.value)}
-          prefix={<Folder size={14} />}
-        />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-            textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
-          }}>
-            Initial command
-          </span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {QUICK_COMMANDS.map((c) => {
-              // The claude chip stays lit while flags ride the command — the
-              // model/effort chips below edit the same string. Re-clicking it
-              // while lit is a no-op: a hand-built claude command (flags, a
-              // quoted prompt) must not be wiped by a "make sure it's
-              // selected" click on an already-selected control.
-              const selected = c === 'claude' ? isClaudeCommand(command) : command === c;
-              const pick = () => {
-                if (selected) return;
-                editCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
-              };
-              return (
-                <button key={c} onClick={pick} style={{
-                  flex: 1, height: 36, cursor: 'pointer',
-                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-                  borderRadius: 'var(--radius-md)',
-                  border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-default)'}`,
-                  background: selected ? 'var(--accent-soft)' : 'var(--surface-card)',
-                  color: selected ? 'var(--text-accent)' : 'var(--text-body)',
-                }}>
-                  {c}
-                </button>
-              );
-            })}
-          </div>
-          {isClaudeCommand(command) && (
-            <>
-              <FlagChipRow label="model" flag="model" options={CLAUDE_MODELS} command={command} onCommand={editCommand} />
-              <FlagChipRow label="effort" flag="effort" options={CLAUDE_EFFORTS} command={command} onCommand={editCommand} />
-            </>
-          )}
-          <Input
-            mono
-            value={command}
-            onChange={(e) => editCommand(e.target.value)}
-            placeholder="npm run dev — leave blank for a plain shell"
-          />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', color: 'var(--text-faint)',
-            }}>
-              Runs on start; the shell stays open when it exits.
-            </span>
-            <button
-              type="button"
-              onClick={saveAsTemplate}
-              title="Save this name, directory, and command as a reusable template"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-                color: justSaved ? 'var(--text-accent)' : 'var(--text-muted)',
-              }}
-            >
-              <BookmarkPlus size={13} /> {justSaved ? 'Saved' : 'Save as template'}
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <p style={{
-            color: 'var(--danger)', fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--text-sm)', margin: 0,
-          }}>
-            {error}
-          </p>
-        )}
-
-        <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button fullWidth loading={busy} leadingIcon={<Terminal size={15} />} onClick={handleCreate}>
-            Create &amp; attach
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // "Pair a device" dialog (VC-9, VC-10). Fetches GET /api/pairing on open (not
 // on page load — this component only mounts while the dialog is open, so its
 // state — including the credential-bearing pairingUrl — is discarded on close
@@ -537,7 +243,7 @@ function PairDeviceDialog({ onClose }) {
   );
 }
 
-export default function SessionsScreen({ host, theme, onToggleTheme, onAttach }) {
+export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShell, onAttach }) {
   // Data layer — list + poll + create/kill with their concurrency guards —
   // lives in core/useSessions. This screen owns only presentation state.
   const { sessions, create, kill, creating } = useSessions();
@@ -610,6 +316,11 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onAttach })
         <IconButton label="Pair a device" onClick={() => setPairOpen(true)}>
           <QrCode size={16} />
         </IconButton>
+        {onToggleShell && (
+          <IconButton label="Switch to desktop layout" onClick={onToggleShell}>
+            <Monitor size={16} />
+          </IconButton>
+        )}
         <IconButton label="Toggle theme" onClick={onToggleTheme}>
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </IconButton>
