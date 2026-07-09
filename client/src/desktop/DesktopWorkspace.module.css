@@ -1,0 +1,11 @@
+/* Desktop shell layout. First CSS-Modules usage in the repo (see the brief):
+   the new master-detail chrome needs :hover / :focus-visible states that inline
+   styles can't express, so it moves to CSS Modules over the same design-token
+   custom properties everything else already uses. */
+
+.workspace {
+  display: flex;
+  height: 100%;
+  background: var(--surface-app);
+  overflow: hidden;
+}

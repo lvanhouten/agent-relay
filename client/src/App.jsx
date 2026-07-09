@@ -2,8 +2,10 @@ import React from 'react';
 import LoginScreen from './screens/LoginScreen.jsx';
 import SessionsScreen from './screens/SessionsScreen.jsx';
 import TerminalScreen from './screens/TerminalScreen.jsx';
+import { DesktopWorkspace } from './desktop/DesktopWorkspace.jsx';
 import { readFragmentToken, stripFragment } from './core/fragmentPairing.ts';
 import { decideBoot } from './core/boot.ts';
+import { decideShell, readShellOverride, writeShellOverride } from './core/shellSelection.ts';
 import { login, listSessions } from './core/api.ts';
 
 export default function App() {
@@ -18,6 +20,24 @@ export default function App() {
     () => localStorage.getItem('ar-theme') ?? 'dark'
   );
   const [activeSession, setActiveSession] = React.useState(null);
+
+  // Shell selection (glossary: "Shell selection"). Measured ONCE at page load
+  // and sticky for the window's lifetime — no resize listener, so crossing the
+  // 768px/portrait boundary after load never swaps shells. The manual override
+  // lives in sessionStorage (per-window: a desk-side "force desktop" must not
+  // leak into a phone-over-RDP window sharing the origin). See core/shellSelection.ts.
+  const [shell, setShell] = React.useState(() =>
+    decideShell({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      override: readShellOverride(window.sessionStorage),
+    })
+  );
+  const toggleShell = () => setShell((cur) => {
+    const next = cur === 'desktop' ? 'mobile' : 'desktop';
+    writeShellOverride(window.sessionStorage, next);
+    return next;
+  });
 
   // Captured once via useState's lazy initializer — NOT re-read inside the
   // boot effect below. React 18 StrictMode double-invokes effects in dev
@@ -88,15 +108,26 @@ export default function App() {
           onConnect={(h) => { setHost(h); setScreen('sessions'); }}
         />
       )}
-      {screen === 'sessions' && (
+      {/* Authenticated: the desktop shell is one master-detail workspace (no
+          screen-swapping); the mobile shell is the original screen stack. The
+          shell toggle is reachable from both (sidebar / sessions header). */}
+      {(screen === 'sessions' || screen === 'terminal') && shell === 'desktop' && (
+        <DesktopWorkspace
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onToggleShell={toggleShell}
+        />
+      )}
+      {screen === 'sessions' && shell === 'mobile' && (
         <SessionsScreen
           host={host}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onToggleShell={toggleShell}
           onAttach={(s) => { setActiveSession(s); setScreen('terminal'); }}
         />
       )}
-      {screen === 'terminal' && activeSession && (
+      {screen === 'terminal' && shell === 'mobile' && activeSession && (
         <TerminalScreen
           session={activeSession}
           host={host}
