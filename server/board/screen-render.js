@@ -13,9 +13,18 @@
 //    arriving reflects a consistent grid at some write boundary. This module must
 //    not defeat that (no partial reads, no reading before the flush resolves).
 const { Terminal } = require('@xterm/headless');
+const { SerializeAddon } = require('@xterm/addon-serialize');
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
+
+// A generous but bounded scrollback for the attach-replay emulator. The board's
+// raw byte-log is itself capped (SCROLLBACK chunks), so reconstructing it here
+// bounds the *replayed* history to this many lines — more than any joiner scrolls
+// through, and finite so a repaint-heavy line can't balloon the transient
+// emulator. This is the one place a very long session shows slightly less history
+// than the old raw-byte-log dump would have.
+const REPLAY_SCROLLBACK = 5000;
 
 // createScreen(cols, rows) -> { write, resize, snapshot, dispose }
 function createScreen(cols, rows) {
@@ -74,4 +83,41 @@ function createScreen(cols, rows) {
   return { write, resize, snapshot, dispose };
 }
 
-module.exports = { createScreen };
+// Reconstruct a coherent, width-correct replay of a line's scrollback for a
+// freshly attaching client, returned as an escape-sequence string to write to
+// that client's terminal.
+//
+// Why not just replay the raw byte-log: it was captured at the PTY's width(s) at
+// the time, and a normal-buffer TUI (Claude Code, a shell with a redrawing
+// prompt) fills that log with cursor-RELATIVE redraws ("cursor up N, clear,
+// redraw"). Those N-line moves assume the capture-time wrap layout; replayed into
+// a terminal of a different width they land on the wrong rows, leaving characters
+// from an earlier redraw un-overwritten — the garble that only a resize (which
+// forces the live app to repaint) clears. Feeding the log through a VT emulator
+// sized to the CURRENT width and serializing its buffer collapses every redraw
+// into flat content + attributes, so the replay carries no width-relative cursor
+// moves; the target terminal re-wraps clean text at its own width. Colors and the
+// final cursor position are preserved by the serializer. The emulator is
+// transient — disposed before return.
+async function reconstructReplay(chunks, cols, rows) {
+  const term = new Terminal({
+    cols: cols > 0 ? cols : DEFAULT_COLS,
+    rows: rows > 0 ? rows : DEFAULT_ROWS,
+    scrollback: REPLAY_SCROLLBACK,
+    allowProposedApi: true,
+  });
+  const serialize = new SerializeAddon();
+  term.loadAddon(serialize);
+  try {
+    for (const chunk of chunks) term.write(chunk);
+    // Flush before read: the empty write's callback fires only after every queued
+    // write has parsed (the same @xterm/headless invariant snapshot() relies on),
+    // so the buffer is whole before the serializer walks it.
+    await new Promise((resolve) => term.write('', resolve));
+    return serialize.serialize();
+  } finally {
+    term.dispose();
+  }
+}
+
+module.exports = { createScreen, reconstructReplay };

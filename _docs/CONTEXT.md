@@ -61,6 +61,20 @@ highlighted, waiting vs. executing). Complements the session transcript, never
 replaces it (transcript = history + verbatim command text; screen = current UI
 state).
 
+### Reconstructed replay
+The line history a newly-attached client receives on join, rebuilt through a
+throwaway VT emulator instead of dumping the raw byte-log verbatim. The raw log's
+cursor-**relative** redraws (a shell prompt or a normal-buffer TUI moving up N
+lines to repaint) are only coherent at the width they were emitted at; replayed
+into a joiner of a different width they land on the wrong rows and leave stale
+characters — the garble that a manual resize used to be needed to clear.
+Reconstructing at the capture width and serializing flat logical lines (with
+colors) lets the joiner re-wrap them clean at its own width. Distinct from the
+*rendered screen*: that is the current grid only (bounded, no history); this
+keeps scrollback so join still shows what ran before you attached. The emulator
+is transient (per attach, disposed after) — it does **not** touch the lazy
+per-line screen emulator of ADR 0002.
+
 ### Beacon
 A hook-driven POST to `/api/beacon` in which a Claude Code session reports a
 lifecycle transition — `SessionStart`, `Stop`, or `SessionEnd` — for the line it

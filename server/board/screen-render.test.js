@@ -3,7 +3,7 @@
 // board, no PTY, no pipes. Prior art: board.test.js / lib.test.js pure helpers.
 const test = require('node:test');
 const assert = require('node:assert');
-const { createScreen } = require('./screen-render');
+const { createScreen, reconstructReplay } = require('./screen-render');
 
 const ESC = '\x1b';
 const clear = ESC + '[2J' + ESC + '[H';
@@ -167,4 +167,66 @@ test('snapshot size stays bounded by the dimensions regardless of output volume'
 test('dispose releases the emulator without throwing', () => {
   const s = createScreen(40, 10);
   assert.doesNotThrow(() => s.dispose());
+});
+
+// --- reconstructReplay (attach-time history reconstruction) ------------------
+// The fix for the `sb join` scroll-garble: the raw byte-log's cursor-relative
+// redraws are only coherent at the width they were emitted at, so replaying the
+// log verbatim into a joiner of a different width garbles. reconstructReplay
+// resolves the log through an emulator at the CAPTURE width and serializes flat
+// logical lines, which the joiner then re-wraps clean at its own width.
+
+// Render a byte string into a fresh grid of the given size; return its rows.
+async function renderRows(bytes, cols, rows = 24) {
+  const s = createScreen(cols, rows);
+  await s.write(bytes);
+  const snap = await s.snapshot();
+  s.dispose();
+  return snap.grid.split('\n');
+}
+
+test('reconstructReplay round-trips: replay rendered at the reconstruction width matches a direct render', async () => {
+  const bytes = ESC + '[31mred' + reset + '\r\nsecond line\r\nthird';
+  const replay = await reconstructReplay([bytes], 40, 24);
+  const direct = await renderRows(bytes, 40);
+  const viaReplay = await renderRows(replay, 40);
+  assert.deepStrictEqual(viaReplay, direct, 'the serialized replay reproduces the same grid');
+});
+
+test('reconstructReplay resolves a width-fragile cursor-relative redraw so a narrower joiner renders it clean', async () => {
+  const CAPTURE = 40, JOIN = 20;
+  const long = 'ABCDEFGHIJKLMNOPQRSTUVWXY'; // 25 chars: one row at 40, wraps at 20
+  // At the capture width, "up 2 lines, overwrite" lands on SHORT as intended.
+  const log = clear + 'SHORT\r\n' + long + '\r\n' + ESC + '[2A' + '\rOVER';
+
+  // Raw replay into the narrow joiner: the long line now wraps, so up-2 lands on
+  // its first wrapped row instead of SHORT — the redraw misses (SHORT survives)
+  // and corrupts the long line. This is the bug.
+  const rawAtJoin = await renderRows(log, JOIN);
+  assert.ok(rawAtJoin.includes('SHORT'), 'raw replay: the redraw missed SHORT');
+  assert.ok(!rawAtJoin.some(r => r.startsWith('ABCDEFGHIJKLMNOPQRST')),
+    'raw replay: the long line is corrupted');
+
+  // Reconstruct at the capture width, then render the flat replay at the join
+  // width: the redraw resolved correctly (hit SHORT -> OVERT), long line intact.
+  const replay = await reconstructReplay([log], CAPTURE, 24);
+  const viaReplay = await renderRows(replay, JOIN);
+  assert.ok(viaReplay.includes('OVERT'), 'reconstruction applied the redraw to SHORT');
+  assert.ok(!viaReplay.includes('SHORT'), 'SHORT was overwritten as intended');
+  assert.ok(viaReplay.some(r => r.startsWith('ABCDEFGHIJKLMNOPQRST')),
+    'the long line survives intact, re-wrapped at the join width');
+});
+
+test('reconstructReplay preserves scrollback history beyond the visible grid', async () => {
+  // More lines than the grid is tall: they must land in the serialized replay's
+  // scrollback (the whole point of keeping inline history on join).
+  let feed = '';
+  for (let i = 0; i < 60; i++) feed += 'line ' + i + '\r\n';
+  const replay = await reconstructReplay([feed], 80, 24);
+  assert.ok(replay.includes('line 0'), 'the oldest line is retained in the replay');
+  assert.ok(replay.includes('line 59'), 'the newest line is retained in the replay');
+});
+
+test('reconstructReplay handles an empty log', async () => {
+  assert.strictEqual(await reconstructReplay([], 80, 24), '', 'nothing captured -> empty replay');
 });
