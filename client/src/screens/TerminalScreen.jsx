@@ -110,8 +110,8 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
       {/* session header */}
       <header style={{
-        minHeight: 52, flexShrink: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap',
-        gap: 'var(--space-3)', rowGap: 'var(--space-2)', padding: 'var(--space-2) var(--space-4)',
+        height: 52, flexShrink: 0, display: 'flex', alignItems: 'center',
+        gap: 'var(--space-3)', padding: '0 var(--space-4)',
         background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
       }}>
         <IconButton label="Back to sessions" onClick={onBack}>
@@ -128,7 +128,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
           color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          minWidth: 0, flex: '1 1 auto',
         }}>
           {session.cwd}
         </span>
@@ -137,9 +136,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           <span style={{ width: 1, height: 22, background: 'var(--border-subtle)', margin: '0 4px' }} />
           <IconButton label="Search output" active={showSearch} onClick={toggleSearch}>
             <Search size={15} />
-          </IconButton>
-          <IconButton label="Download transcript (may contain secrets echoed to the terminal)" onClick={downloadTranscript}>
-            <Download size={15} />
           </IconButton>
           <IconButton label="Toggle composer" active={showComposer} onClick={() => setShowComposer((v) => !v)}>
             <Keyboard size={15} />
@@ -152,6 +148,9 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           </IconButton>
           <IconButton label="Toggle theme" onClick={onToggleTheme}>
             {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </IconButton>
+          <IconButton label="Download transcript (may contain secrets echoed to the terminal)" onClick={downloadTranscript}>
+            <Download size={15} />
           </IconButton>
         </div>
       </header>
