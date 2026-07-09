@@ -26,4 +26,10 @@ Written and committed only between stages (never while a Stage session runs).
 - **Decision:** approved (dialog option 1, "Yes"). Prompted only because `pwd -W` is not allowlisted; the rest auto-approves.
 - **Reasoning:** benign MAX_PATH headroom check the stage runs during setup; safe to run, nothing for a human to weigh.
 
+### 2026-07-09 17:15 — stage: execute-briefs — APPROVED
+- **Command:** `npm test --workspace=client > "$TMP/gate-02.log" 2>&1; echo "TEST_EXIT=$?"; npm run typecheck --workspace=client > "$TMP/tc-02.log" 2>&1; echo "TC_EXIT=$?"`
+- **Classification:** NOT deny-class — local test + typecheck gate after merging brief 02, output to temp logs. No outbound/external effect, no destruction, no credential/secret access, no inline secret.
+- **Decision:** approved (dialog option 1). Prompted on "Contains simple_expansion" (`$TMP`), not on any dangerous action.
+- **Reasoning:** the standard rebuild-and-retest merge gate; safe to run.
+
 ## Stage timeline
