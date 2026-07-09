@@ -110,8 +110,8 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
       {/* session header */}
       <header style={{
-        height: 52, flexShrink: 0, display: 'flex', alignItems: 'center',
-        gap: 'var(--space-3)', padding: '0 var(--space-4)',
+        minHeight: 52, flexShrink: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+        gap: 'var(--space-3)', rowGap: 'var(--space-2)', padding: 'var(--space-2) var(--space-4)',
         background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
       }}>
         <IconButton label="Back to sessions" onClick={onBack}>
@@ -128,6 +128,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         <span style={{
           fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
           color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          minWidth: 0, flex: '1 1 auto',
         }}>
           {session.cwd}
         </span>
