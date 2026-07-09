@@ -138,9 +138,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           <IconButton label="Search output" active={showSearch} onClick={toggleSearch}>
             <Search size={15} />
           </IconButton>
-          <IconButton label="Download transcript (may contain secrets echoed to the terminal)" onClick={downloadTranscript}>
-            <Download size={15} />
-          </IconButton>
           <IconButton label="Toggle composer" active={showComposer} onClick={() => setShowComposer((v) => !v)}>
             <Keyboard size={15} />
           </IconButton>
@@ -152,6 +149,9 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           </IconButton>
           <IconButton label="Toggle theme" onClick={onToggleTheme}>
             {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </IconButton>
+          <IconButton label="Download transcript (may contain secrets echoed to the terminal)" onClick={downloadTranscript}>
+            <Download size={15} />
           </IconButton>
         </div>
       </header>
