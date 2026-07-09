@@ -5,12 +5,12 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import {
   ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Sun, Moon,
-  Search, Download, Keyboard, X, ChevronUp, ChevronDown, Send as SendIcon,
+  Search, Download, Keyboard, Send as SendIcon,
 } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { KEY_CHIPS, composerBytes } from '../core/keyChips.ts';
 import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
-import { searchReadout } from '../core/searchReadout.ts';
+import { FindBar } from '../chrome/FindBar.jsx';
 
 // Default the composer visible on touch/small viewports, hidden on a desktop
 // with a real keyboard (toggleable either way). Read once at mount — a device's
@@ -30,9 +30,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   const [connStatus, setConnStatus] = React.useState('connecting');
 
   const [showSearch, setShowSearch] = React.useState(false);
-  const [searchTerm, setSearchTerm] = React.useState('');
   const [searchResults, setSearchResults] = React.useState({ resultIndex: -1, resultCount: -1 });
-  const searchInputRef = React.useRef(null);
 
   const [showComposer, setShowComposer] = React.useState(prefersComposer);
   const [composerText, setComposerText] = React.useState('');
@@ -45,21 +43,15 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   // surface connecting/reconnecting explicitly instead of a bare "idle" dot
   const statusLabel = (connStatus === 'connecting' || connStatus === 'reconnecting') ? connStatus : undefined;
 
-  const openSearch = () => {
-    setShowSearch(true);
-    // focus after the bar renders
-    requestAnimationFrame(() => searchInputRef.current?.focus());
-  };
+  const openSearch = () => setShowSearch(true);
   const closeSearch = () => {
     setShowSearch(false);
-    setSearchTerm('');
     setSearchResults({ resultIndex: -1, resultCount: -1 });
     viewRef.current?.clearSearch();
   };
   const toggleSearch = () => (showSearch ? closeSearch() : openSearch());
 
   const runSearch = (term) => {
-    setSearchTerm(term);
     if (term) viewRef.current?.searchNext(term);
     else { viewRef.current?.clearSearch(); setSearchResults({ resultIndex: -1, resultCount: -1 }); }
   };
@@ -89,8 +81,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     if (!composerText) return;
     if (viewRef.current?.send(composerBytes(composerText))) setComposerText('');
   };
-
-  const matchReadout = searchReadout(searchTerm, searchResults);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
@@ -143,45 +133,13 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
 
       {/* find bar */}
       {showSearch && (
-        <div style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-          padding: 'var(--space-2) var(--space-4)',
-          background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
-        }}>
-          <Search size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-          <input
-            ref={searchInputRef}
-            value={searchTerm}
-            onChange={(e) => runSearch(e.target.value)}
-            onKeyDown={(e) => {
-              // A CJK/predictive-keyboard candidate confirmation arrives as
-              // Enter mid-composition — it must not run the search early.
-              if (e.nativeEvent.isComposing) return;
-              if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? viewRef.current?.searchPrev(searchTerm) : viewRef.current?.searchNext(searchTerm); }
-              else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
-            }}
-            placeholder="Find in output…"
-            style={{
-              flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none',
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--text-strong)',
-            }}
-          />
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-            color: 'var(--text-faint)', minWidth: 40, textAlign: 'right',
-          }}>
-            {matchReadout}
-          </span>
-          <IconButton size="sm" label="Previous match" onClick={() => viewRef.current?.searchPrev(searchTerm)}>
-            <ChevronUp size={15} />
-          </IconButton>
-          <IconButton size="sm" label="Next match" onClick={() => viewRef.current?.searchNext(searchTerm)}>
-            <ChevronDown size={15} />
-          </IconButton>
-          <IconButton size="sm" label="Close search" onClick={closeSearch}>
-            <X size={15} />
-          </IconButton>
-        </div>
+        <FindBar
+          results={searchResults}
+          onQuery={runSearch}
+          onNext={(term) => viewRef.current?.searchNext(term)}
+          onPrev={(term) => viewRef.current?.searchPrev(term)}
+          onClose={closeSearch}
+        />
       )}
 
       <TerminalView
