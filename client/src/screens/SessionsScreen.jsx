@@ -20,8 +20,8 @@ const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 // model/effort name these chips don't know — the CLI is the validator, and a
 // hardcoded list must never refuse what the CLI would accept (see
 // _docs/issues/2026-07-02-claude-model-effort-selection.md).
-const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
-const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku'];
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
 
 // Operator-wide defaults for Claude sessions: last-used values persist on a
 // successful spawn (no separate settings UI) and prefill the next claude
