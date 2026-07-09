@@ -4,7 +4,7 @@
 // just logged. Uses the pure helpers so no pty/process is launched.
 const test = require('node:test');
 const assert = require('node:assert');
-const { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline,
+const { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline,
   makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
 
 test('scrubClaudeSessionMarkers: removes every allowlisted marker and reports them', () => {
@@ -455,4 +455,71 @@ test("handle('screen') for an exited line replies ended:true with its exitCode, 
   } finally {
     endedLines.forget('tomb-scr');   // module-level registry — leave it clean
   }
+});
+
+// --- attachWithReplay ordering contract --------------------------------------
+// The width-correct history replay is async (the emulator parses on a later
+// tick). The ordering guarantee — replay first, then live output that arrived
+// during reconstruction, then join the live set — is the subtle correctness
+// part. Injected `reconstruct` + fake session/socket exercise it without a pty.
+
+function fakeSession(buf = [], cols = 120, rows = 30) {
+  return { buf, pty: { cols, rows }, clients: new Set(), pending: new Map() };
+}
+function fakeSock() {
+  const writes = [];
+  return { writes, write(d) { writes.push(d); return true; }, end() {} };
+}
+// Mimic the board's p.onData fan-out for one live output burst.
+function emitLive(s, d) {
+  s.buf.push(d);
+  for (const c of s.clients) c.write(d);
+  for (const pend of s.pending.values()) pend.queue.push(d);
+}
+
+test('attachWithReplay: replay first, then live output buffered during reconstruction, then joins clients', async () => {
+  const s = fakeSession(['hist']);
+  const sock = fakeSock();
+  let finish;
+  const reconstruct = () => new Promise(r => { finish = r; });
+  const p = attachWithReplay(s, '1', sock, reconstruct);
+
+  // Mid-reconstruction the socket is pending, not a live client, and silent.
+  assert.ok(s.pending.has(sock), 'pending during reconstruction');
+  assert.ok(!s.clients.has(sock), 'not a live client yet');
+  emitLive(s, 'LIVE1');
+  emitLive(s, 'LIVE2');
+  assert.deepStrictEqual(sock.writes, [], 'nothing written until the replay is ready');
+
+  finish('REPLAY');
+  await p;
+  assert.deepStrictEqual(sock.writes, ['REPLAY', 'LIVE1', 'LIVE2'],
+    'replay, then the queued live output in arrival order');
+  assert.ok(s.clients.has(sock) && !s.pending.has(sock), 'now a normal live client');
+
+  // Subsequent output flows straight through as a live client.
+  emitLive(s, 'LIVE3');
+  assert.deepStrictEqual(sock.writes, ['REPLAY', 'LIVE1', 'LIVE2', 'LIVE3']);
+});
+
+test('attachWithReplay: a socket dropped mid-reconstruction gets no replay and never joins clients', async () => {
+  const s = fakeSession(['hist']);
+  const sock = fakeSock();
+  let finish;
+  const reconstruct = () => new Promise(r => { finish = r; });
+  const p = attachWithReplay(s, '1', sock, reconstruct);
+  s.pending.delete(sock);   // drop()/onExit removed it while reconstructing
+  finish('REPLAY');
+  await p;
+  assert.deepStrictEqual(sock.writes, [], 'no write to a socket that left mid-reconstruction');
+  assert.ok(!s.clients.has(sock), 'never joined the live set');
+});
+
+test('attachWithReplay: reconstruction failure falls back to the raw byte-log', async () => {
+  const s = fakeSession(['aaa', 'bbb']);
+  const sock = fakeSock();
+  const reconstruct = () => Promise.reject(new Error('boom'));
+  await attachWithReplay(s, '1', sock, reconstruct);
+  assert.deepStrictEqual(sock.writes, ['aaabbb'], 'raw log concatenated as the fallback');
+  assert.ok(s.clients.has(sock), 'still joins as a live client after the fallback');
 });

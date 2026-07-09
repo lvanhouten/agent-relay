@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const pty = require('node-pty');
 const { CTRL, dataPipe, lineClosedFarewell, generateSecret, persistSecret,
   makeHandshake, makeCommandBuffer, AUTH_TIMEOUT_MS } = require('./lib');
-const { createScreen } = require('./screen-render');
+const { createScreen, reconstructReplay } = require('./screen-render');
 
 const LOG = path.join(__dirname, 'switchboard.log');
 const log = (...a) => {
@@ -254,7 +254,11 @@ function createLine(o = {}) {
     env: { ...process.env, AGENT_RELAY_SESSION: id },
   });
   const now = Date.now();
-  const s = { pty: p, clients: new Set(), buf: [], sizes: new Map(), name: o.name || '', shell, cwd, startedAt: now, lastActivity: now };
+  // `pending`: sockets that have authed but are still awaiting their history
+  // reconstruction (attachWithReplay). They aren't in `clients` yet — live output
+  // is buffered into each one's queue so it lands AFTER the replay, never ahead of
+  // it. See attachWithReplay for the ordering contract.
+  const s = { pty: p, clients: new Set(), pending: new Map(), buf: [], sizes: new Map(), name: o.name || '', shell, cwd, startedAt: now, lastActivity: now };
   sessions.set(id, s);
 
   // Rendered screen for this line: constructed lazily on the first `screen`
@@ -276,7 +280,7 @@ function createLine(o = {}) {
     let authed = false;
     const gate = makeHandshake(SECRET);   // shared pre-auth handshake (cap + compare)
     const authTimer = setTimeout(() => { if (!authed) sock.destroy(); }, AUTH_TIMEOUT_MS);
-    const drop = () => { clearTimeout(authTimer); s.clients.delete(sock); };
+    const drop = () => { clearTimeout(authTimer); s.clients.delete(sock); s.pending.delete(sock); };
     sock.on('data', d => {
       if (authed) { p.write(d.toString('utf8')); return; }
       const r = gate.feed(d);
@@ -284,9 +288,10 @@ function createLine(o = {}) {
       if (r.type === 'overflow' || r.type === 'reject') { sock.destroy(); return; }
       authed = true;
       clearTimeout(authTimer);
-      s.clients.add(sock);
-      for (const chunk of s.buf) sock.write(chunk);   // replay scrollback, post-auth
       if (r.rest) p.write(r.rest);  // input bytes bundled in the same chunk as the secret line
+      // Replay history reconstructed at the current width, then join the live set
+      // (async, ordering-safe — see attachWithReplay).
+      attachWithReplay(s, id, sock);
     });
     sock.on('close', drop);
     sock.on('error', drop);
@@ -301,6 +306,9 @@ function createLine(o = {}) {
     if (s.buf.length > SCROLLBACK) s.buf.shift();
     s.screen.feed(d);   // no-op until the line's screen is first read (lazy)
     for (const c of s.clients) c.write(d);
+    // Buffer for sockets mid-reconstruction so this output lands after their
+    // replay (attachWithReplay flushes the queue, then joins them to `clients`).
+    for (const pend of s.pending.values()) pend.queue.push(d);
   });
   p.onExit(({ exitCode }) => {
     // This runs in an async pty callback OUTSIDE the control-plane dispatch's
@@ -308,7 +316,13 @@ function createLine(o = {}) {
     // every other live line) on one line's exit (N10). notifyClientsClosed guards
     // each client .end() so one wedged pane can't abort the farewell to the rest,
     // nor the cleanup below.
-    notifyClientsClosed(s.clients, lineClosedFarewell(id, exitCode));
+    const farewell = lineClosedFarewell(id, exitCode);
+    notifyClientsClosed(s.clients, farewell);
+    // Sockets still reconstructing history when the line dies never joined
+    // `clients`; end them too (with the same farewell) so a joiner that attached
+    // in the exit window isn't left hanging on a line that's already gone.
+    for (const sock of s.pending.keys()) { try { sock.end(farewell); } catch { /* pane already gone */ } }
+    s.pending.clear();
     try { server.close(); } catch { /* ignore */ }
     try { s.screen.dispose(); } catch { /* ignore */ }
     // Leave a tombstone so pollers can distinguish "ended" (and how) from
@@ -354,6 +368,51 @@ function createLine(o = {}) {
 // per-client isolation (N10) is unit-testable without spawning a pty.
 function notifyClientsClosed(clients, farewell) {
   for (const c of clients) { try { c.end(farewell); } catch { /* pane already gone */ } }
+}
+
+// Attach a freshly-authed socket to a line, replaying its history reconstructed
+// at the width the bytes were CAPTURED at (see screen-render.reconstructReplay
+// for why raw-log replay garbles at any other width). The capture width is the
+// PTY's width right now, snapshotted synchronously with the byte-log before the
+// first await: this join's own resize arrives a beat later on the separate
+// control pipe, so at this instant the PTY is still at its pre-join width — which
+// is exactly the width the buffered bytes were emitted at (a line nobody has
+// joined yet never resized). Reconstructing there and serializing flat logical
+// lines lets the joiner re-wrap them cleanly at its own width.
+//
+// Reconstruction is async, so the ordering must be exact:
+//   1. Snapshot the byte-log + width and register the socket in `pending` — all
+//      before the first await, so no output can slip past between them.
+//   2. While reconstructing, p.onData buffers live output into pend.queue (the
+//      socket isn't in `clients` yet, so it isn't written directly).
+//   3. After reconstruction, in one synchronous block (no await, so p.onData
+//      can't interleave): write the replay, flush the queued live output behind
+//      it, then join `clients` as a normal live pane.
+//
+// If the socket dropped mid-reconstruction, drop()/onExit already removed its
+// pending entry; the delete() guard returns false and we write nothing to it.
+// `reconstruct` is injected (defaulting to the real serializer) so the ordering
+// is unit-testable without a pty or a real emulator.
+async function attachWithReplay(s, id, sock, reconstruct = reconstructReplay) {
+  const chunks = s.buf.slice();
+  const cols = s.pty.cols, rows = s.pty.rows;
+  const pend = { queue: [] };
+  s.pending.set(sock, pend);
+  let replay;
+  try {
+    replay = await reconstruct(chunks, cols, rows);
+  } catch (e) {
+    // Emulator failed — fall back to the raw byte-log so the joiner still gets
+    // history (the pre-fix behavior, garble-prone but non-empty).
+    log('line', id, 'replay reconstruction failed, using raw log -', e.message);
+    replay = chunks.join('');
+  }
+  if (!s.pending.delete(sock)) return;   // socket gone (drop/onExit already handled it)
+  try {
+    sock.write(replay);
+    for (const q of pend.queue) sock.write(q);
+    s.clients.add(sock);
+  } catch { /* pane vanished between the guard and the flush */ }
 }
 
 // A valid terminal dimension: a finite positive integer. Guards the resize path
@@ -618,4 +677,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };
