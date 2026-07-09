@@ -6,7 +6,7 @@
 | 02-notify-rules-core | integrated | 1 | 064e911 | 9/9 | |
 | 03-jump-keys-and-terminal-passthrough | integrated | 1 | f4040fe | 4/4 | |
 | 04-find-bar-extraction | integrated | 1 | 1b3cf93 | 4/4 | browser proof of VC-2/VC-15 rides brief 05 / verify |
-| 05-desktop-workspace | pending | 2 | — | — | exclusive; Depends on 01,03,04 (all integrated) |
+| 05-desktop-workspace | running | 2 | — | — | exclusive; Depends on 01,03,04 (all integrated) |
 | 06-desktop-notifications | pending | 3 | — | — | exclusive; Depends on 02,05 |
 
 ## Handoff notes
