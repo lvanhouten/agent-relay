@@ -4,7 +4,7 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import {
-  ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Sun, Moon,
+  ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Minimize2, Sun, Moon,
   Search, Download, Keyboard, X, ChevronUp, ChevronDown, Send as SendIcon,
 } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
@@ -36,6 +36,20 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
 
   const [showComposer, setShowComposer] = React.useState(prefersComposer);
   const [composerText, setComposerText] = React.useState('');
+
+  // Tracks the actual browser state, not just our button — fullscreen can also
+  // be left via Esc or the browser's own UI, which fires fullscreenchange but
+  // never calls our handler.
+  const [isFullscreen, setIsFullscreen] = React.useState(() => !!document.fullscreenElement);
+  React.useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.();
+  };
 
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const hostLabel = host.replace(/^https?:\/\//, '');
@@ -132,8 +146,8 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           <IconButton label="Copy selection" onClick={() => navigator.clipboard?.writeText(viewRef.current?.getSelection() ?? '')}>
             <Copy size={15} />
           </IconButton>
-          <IconButton label="Fullscreen" onClick={() => document.documentElement.requestFullscreen?.()}>
-            <Maximize2 size={15} />
+          <IconButton label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} active={isFullscreen} onClick={toggleFullscreen}>
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </IconButton>
           <IconButton label="Toggle theme" onClick={onToggleTheme}>
             {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
