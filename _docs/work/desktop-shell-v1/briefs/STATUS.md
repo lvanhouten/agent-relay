@@ -7,7 +7,7 @@
 | 03-jump-keys-and-terminal-passthrough | integrated | 1 | f4040fe | 4/4 | |
 | 04-find-bar-extraction | integrated | 1 | 1b3cf93 | 4/4 | browser proof of VC-2/VC-15 rides brief 05 / verify |
 | 05-desktop-workspace | integrated | 2 | 63e88e2 | 9/9 | browser-verified; spec-compliance reviewed (see review-stage note) |
-| 06-desktop-notifications | pending | 3 | — | — | exclusive; Depends on 02,05 (05 integrated) |
+| 06-desktop-notifications | running | 3 | — | — | exclusive; Depends on 02,05 (both integrated) |
 
 ## Handoff notes
 - **01-shell-selection-core → [05-desktop-workspace]:** module at `client/src/core/shellSelection.ts` exports `ShellKind`, `StorageLike`, `decideShell`, `readShellOverride`, `writeShellOverride`; storage key `'ar-shell-override'`, intended for `window.sessionStorage` (never `localStorage`) per per-window isolation. (contract-change)
