@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 // switchboard CLI — new / list / join / end / wait on lines.
+const path = require('path');
+const { spawn } = require('child_process');
 const { connectControl, rpc } = require('./lib');
 const { detectSpawner } = require('./spawners');
 
@@ -25,7 +27,9 @@ usage:
   sb new [shell] [--run <cmd>]
                     start a new line + join a tab (e.g. sb new --run claude)
   sb list           list active lines
-  sb join <id>      join a new tab to an existing line
+  sb join <id> [--here]
+                    join an existing line — a new tab by default, or the
+                    current terminal with --here (blocks until you detach)
   sb end <id>       end a line
   sb screen <id>    print a line's current rendered screen
   sb wait <id> [idleMs] [maxWaitMs]
@@ -84,7 +88,18 @@ async function main() {
       break;
     }
     case 'join': {
-      if (!arg) { console.error('usage: sb join <id>'); process.exit(1); }
+      if (!arg) { console.error('usage: sb join <id> [--here]'); process.exit(1); }
+      // --here attaches this terminal to the line instead of opening a new tab:
+      // run patch.js (the same raw relay a spawned pane runs) in-process. The
+      // board opens no pane — client registration happens when patch connects to
+      // the data pipe, so no `join` RPC is needed. Blocks until detach/exit.
+      if (args.slice(2).includes('--here') || args.slice(2).includes('--inline')) {
+        // Ctrl+] (29) detaches back to this shell; the line keeps running.
+        console.log(`joining line ${arg} in this terminal — press Ctrl+] to detach`);
+        const child = spawn(process.execPath, [path.join(__dirname, 'patch.js'), arg, '29'], { stdio: 'inherit' });
+        child.on('exit', code => process.exit(code == null ? 0 : code));
+        break;
+      }
       const r = await rpc({ cmd: 'join', id: arg, spawn: spawnRecipe() });
       if (!r.ok) { console.log(`no such line: ${arg}`); break; }
       // A refused recipe (paneOpened === false) means no tab opened despite ok:true

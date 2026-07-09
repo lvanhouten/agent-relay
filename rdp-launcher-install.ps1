@@ -27,7 +27,8 @@ param(
   [string]$Browser = 'msedge',
   [int]$WidthThreshold = 900,
   [string[]]$DesktopClientNames = @(),
-  [string[]]$PhoneClientNames = @()
+  [string[]]$PhoneClientNames = @(),
+  [string]$WindowTitle = 'agent-relay'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,7 +48,7 @@ switch ($Action) {
     # into array elements (verified), so the launcher splits on commas itself;
     # the quotes keep a name with spaces from splitting at the argv level.
     $launcherArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Launcher`"" +
-      " -Url `"$Url`" -Browser `"$Browser`" -WidthThreshold $WidthThreshold"
+      " -Url `"$Url`" -Browser `"$Browser`" -WidthThreshold $WidthThreshold -WindowTitle `"$WindowTitle`""
     if ($DesktopClientNames.Count -gt 0) {
       $launcherArgs += " -DesktopClientNames `"$($DesktopClientNames -join ',')`""
     }
