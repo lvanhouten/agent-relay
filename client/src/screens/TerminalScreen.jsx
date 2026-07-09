@@ -14,6 +14,7 @@ import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { searchReadout } from '../core/searchReadout.ts';
 import { useFullscreen } from '../core/useFullscreen.ts';
 import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
+import { useMediaQuery } from '../core/useMediaQuery.ts';
 
 // Default the composer visible on touch/small viewports, hidden on a desktop
 // with a real keyboard (toggleable either way). Read once at mount — a device's
@@ -22,6 +23,15 @@ function prefersComposer() {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse)').matches;
+}
+
+// An explicit toggle (either way) should stick across sessions instead of
+// re-deriving from pointer type every time a terminal screen mounts — the
+// device heuristic above is only the first-ever default.
+const COMPOSER_PREF_KEY = 'ar-composer-open';
+function loadComposerPref() {
+  const stored = localStorage.getItem(COMPOSER_PREF_KEY);
+  return stored === null ? prefersComposer() : stored === '1';
 }
 
 // Chrome around the terminal: header, footer, status dot, find bar, and the
@@ -38,10 +48,17 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   const [searchResults, setSearchResults] = React.useState({ resultIndex: -1, resultCount: -1 });
   const searchInputRef = React.useRef(null);
 
-  const [showComposer, setShowComposer] = React.useState(prefersComposer);
+  const [showComposer, setShowComposer] = React.useState(loadComposerPref);
   const [composerText, setComposerText] = React.useState('');
 
+  React.useEffect(() => {
+    localStorage.setItem(COMPOSER_PREF_KEY, showComposer ? '1' : '0');
+  }, [showComposer]);
+
   const { isFullscreen, toggleFullscreen } = useFullscreen();
+  // Narrow viewports have far less header room to spend on the title before
+  // the action buttons start collapsing into the overflow menu.
+  const isNarrowViewport = useMediaQuery('(max-width: 480px)');
 
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const hostLabel = host.replace(/^https?:\/\//, '');
@@ -125,9 +142,14 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
           <ChevronLeft size={18} />
         </IconButton>
         <TerminalIcon size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-        <span style={{
+        {/* Shrink-only, capped - a long session name must ellipsize instead
+            of growing unbounded and pushing the badge/cwd/actions off the
+            header (it still wins the fight over cwd below via maxWidth). */}
+        <span title={session.name} style={{
           fontFamily: 'var(--font-display)', fontWeight: 600,
-          color: 'var(--text-strong)', flexShrink: 0,
+          color: 'var(--text-strong)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          minWidth: 0, maxWidth: isNarrowViewport ? 140 : 280, flex: '0 1 auto',
         }}>
           {session.name}
         </span>
