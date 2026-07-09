@@ -51,3 +51,10 @@ Written and committed only between stages (never while a Stage session runs).
 - **Reasoning:** wave-integration merge+gate; 01/02/04 gates green, 04 merged.
 
 ## Stage timeline
+
+### 2026-07-09 ~18:35 — stage 1 `execute-briefs` — GREEN, completed
+- **Marker:** committed `conduct/execute-briefs.done.json`, `outcome: green`, `exceptions: []`, `artifact: briefs/STATUS.md`.
+- **Summary:** all 6 briefs integrated across 3 waves (W1 = 01/02/03/04, W2 = 05, W3 = 06); feature branch green (client 146/146 tests + typecheck).
+- **Line 5 torn down** gracefully (`/exit` → `end_line`).
+- **Note:** during the 05→06 window the operator was monitoring Line 5 directly and handled the merge-gate permission prompts there; those are the operator's own actions, not Conductor approvals, so they are not in the approval log above (which records only Conductor-made approvals).
+- **PAUSE:** per operator request, the run is **held at the `execute-briefs` → `adversarial-review` boundary**. `adversarial-review` is NOT spawned until the operator gives an explicit go-ahead.
