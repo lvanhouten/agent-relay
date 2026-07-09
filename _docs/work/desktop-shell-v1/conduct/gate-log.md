@@ -18,4 +18,12 @@ Written and committed only between stages (never while a Stage session runs).
   all stage-reported and non-permission conductor-detected causes.
 - **Paging:** enabled (PushNotification at every Exception gate).
 
+## Mid-stage approvals
+
+### 2026-07-09 17:06 — stage: execute-briefs — APPROVED
+- **Command:** `echo "---longest tracked path len---" && git ls-files | awk '{ print length }' | sort -n | tail -1 && echo "---feature checkout abs path len---" && pwd -W 2>/dev/null | awk '{print length}' || pwd | awk '{print length}'`
+- **Classification:** NOT deny-class — read-only path-length measurement (echo / git ls-files / awk / sort / tail / pwd). No outbound or external effect, no destruction, no credential/secret access, no inline secret.
+- **Decision:** approved (dialog option 1, "Yes"). Prompted only because `pwd -W` is not allowlisted; the rest auto-approves.
+- **Reasoning:** benign MAX_PATH headroom check the stage runs during setup; safe to run, nothing for a human to weigh.
+
 ## Stage timeline
