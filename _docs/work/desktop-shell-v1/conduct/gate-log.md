@@ -32,4 +32,10 @@ Written and committed only between stages (never while a Stage session runs).
 - **Decision:** approved (dialog option 1). Prompted on "Contains simple_expansion" (`$TMP`), not on any dangerous action.
 - **Reasoning:** the standard rebuild-and-retest merge gate; safe to run.
 
+### 2026-07-09 17:18 — stage: execute-briefs — APPROVED
+- **Command:** `git merge be6ddb9cd2006122a6227359418a342358b7edbe -m "integrate(desktop-shell-v1): 01-shell-selection-core (wave 1)" 2>&1 | tail -5; echo "===GATE==="; npm test --workspace=client > "$TMP/gate-01.log" 2>&1; echo "TEST_EXIT=$?"; npm run typecheck --workspace=client > "$TMP/tc-01.log" 2>&1; echo "TC_EXIT=$?"`
+- **Classification:** NOT deny-class — local git merge of brief 01's worktree commit onto the feature branch + rebuild/retest gate. Same-repo merge, no outbound/external effect, no destruction outside the worktree, no credential/secret access.
+- **Decision:** approved (dialog option 1). Prompted on "Contains simple_expansion" (`$TMP`).
+- **Reasoning:** standard wave-integration merge+gate; brief 02's gate already came back green.
+
 ## Stage timeline
