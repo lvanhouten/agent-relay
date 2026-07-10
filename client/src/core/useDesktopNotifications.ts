@@ -1,6 +1,6 @@
 import React from 'react';
 import { notifyTransitions } from './notifyRules.ts';
-import { canNotify, toggleView } from './notifyGate.ts';
+import { canNotify, toggleView, toggleAction } from './notifyGate.ts';
 import type { PermissionState, ToggleView } from './notifyGate.ts';
 import type { Session } from './types.ts';
 
@@ -47,7 +47,10 @@ export function useDesktopNotifications(
 
   const toggle = React.useCallback(() => {
     if (!supported) return;
-    if (enabled) {
+    // Branch on the resolved (enabled + permission) state, not the raw opt-in:
+    // a stale enabled=true whose permission has since lapsed must re-request,
+    // not take the disable branch and silently no-op (toggleAction).
+    if (toggleAction(enabled, permission) === 'disable') {
       setEnabled(false);
       localStorage.setItem(STORAGE_KEY, '0');
       return;
@@ -60,7 +63,7 @@ export function useDesktopNotifications(
       setEnabled(granted);
       localStorage.setItem(STORAGE_KEY, granted ? '1' : '0');
     });
-  }, [supported, enabled]);
+  }, [supported, enabled, permission]);
 
   // Diff consecutive poll results and fire per returned spec. prevRef always
   // advances (even while disabled) so enabling mid-stream never retroactively
