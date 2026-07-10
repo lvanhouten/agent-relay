@@ -75,3 +75,12 @@ Written and committed only between stages (never while a Stage session runs).
 - **Remediation worktree (verify-pending, preserved):** path `.worktrees/r-475807b`, branch `remediate/desktop-shell-v1/475807b`, head `ccd2ebdb184b6f8b1c492f1960726cef169ce152`. Review head: `475807b`.
 - **Line 10 torn down** (remediation worktree left intact on disk for verify + integrate).
 - **CHECK-IN:** operator has gated every transition so far, so holding before `verify` rather than auto-advancing. Awaiting go-ahead.
+- **RESUMED:** operator ran pre-resume setup (re-fetch LINE-OPS; add `PreToolUse` hook → 4 hooks; clear `.conduct-signals/`; back to full watcher). `verify` spawned (Line 13). `PreToolUse`→`_pending-tool` now the authority-contract command source #2. New teardown rule adopted: clear `.conduct-signals/` after each stage.
+
+### 2026-07-10 ~17:33 — stage 4 `verify` — GREEN, completed
+- **Marker:** committed `conduct/verify.done.json`, `outcome: green`, `exceptions: []`.
+- **Verdict:** **CLEARED** — all 8 original findings Confirmed closed (independently re-derived). 174/174 client tests + clean typecheck. New-defect sweep: no criticals/warnings; one trivial low-confidence NOTE (UTF-16 surrogate split in a name cap).
+- **Range re-reviewed:** `475807b..ccd2ebdb` (remediation fix diff). **Artifact:** `_docs/work/desktop-shell-v1/adversarial-review-verify-475807b..ccd2ebd.md`.
+- **Watcher:** churn fix confirmed working — logged `absorbed turn-ended (stage provably working)`, woke only on `marker-present`.
+- **Line 13 torn down; `.conduct-signals/` cleared** (new teardown rule).
+- **CHECK-IN:** holding before `integrate` (the merge stage — the one that mutates the feature branch), per the operator's gating pattern. Awaiting go-ahead.
