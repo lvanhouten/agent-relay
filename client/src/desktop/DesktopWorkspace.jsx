@@ -29,11 +29,19 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
 
   // Visible (post-filter) partition, poll order preserved. Alt+N and the
   // sidebar render from the SAME liveSessions array, so the chord always lands
-  // on the row the operator sees at that position.
+  // on the row the operator sees at that position. Memoized on [sessions, q] so
+  // liveSessions keeps a stable identity across renders that don't change the
+  // visible set (typing elsewhere, toggling the dialog): the Alt+N effect below
+  // depends on it by reference and would otherwise tear down and re-add its
+  // document listener on every render.
   const q = query.trim().toLowerCase();
-  const matches = (s) => `${s.name} ${s.cwd}`.toLowerCase().includes(q);
-  const liveSessions = sessions.filter((s) => s.status !== 'exited' && matches(s));
-  const endedSessions = sessions.filter((s) => s.status === 'exited' && matches(s));
+  const { liveSessions, endedSessions } = React.useMemo(() => {
+    const matches = (s) => `${s.name} ${s.cwd}`.toLowerCase().includes(q);
+    return {
+      liveSessions: sessions.filter((s) => s.status !== 'exited' && matches(s)),
+      endedSessions: sessions.filter((s) => s.status === 'exited' && matches(s)),
+    };
+  }, [sessions, q]);
   const liveCount = sessions.filter((s) => s.status !== 'exited').length;
 
   // Which session the pane shows. resolveSelection (tested) prefers the live
