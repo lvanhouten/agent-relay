@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSessions } from '../core/useSessions.ts';
 import { useDesktopNotifications } from '../core/useDesktopNotifications.ts';
-import { jumpIndexFromKey } from '../core/jumpKeys.ts';
+import { jumpIndexFromKey, isTypingTarget } from '../core/jumpKeys.ts';
 import { pickMostRecentLive } from '../core/recency.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
 import { Sidebar } from './Sidebar.jsx';
@@ -61,6 +61,9 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
     const onKey = (e) => {
       const idx = jumpIndexFromKey(e);
       if (idx === null) return;
+      // Don't hijack Alt+digit while the operator is typing in the filter, a
+      // dialog field, or the find bar — only xterm's textarea lets it through.
+      if (isTypingTarget(document.activeElement)) return;
       const target = liveSessions[idx - 1];
       if (!target) return;
       e.preventDefault();

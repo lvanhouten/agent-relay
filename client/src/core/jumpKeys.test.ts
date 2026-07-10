@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { jumpIndexFromKey } from './jumpKeys.ts';
+import { jumpIndexFromKey, isTypingTarget, type FocusProbe } from './jumpKeys.ts';
 
 // Minimal event shape the predicate needs; unspecified modifiers default to
 // the "not held" / "not a repeat" case so each test only states what matters.
@@ -51,4 +51,41 @@ test('Meta+Alt+digit yields null', () => {
 
 test('a key-repeat of an otherwise-matching chord yields null', () => {
   assert.strictEqual(jumpIndexFromKey(key({ altKey: true, code: 'Digit3', key: '3', repeat: true })), null);
+});
+
+// isTypingTarget: which focus owners swallow a jump chord. xterm's textarea is
+// the one editable element that must NOT swallow it (the chord fires while the
+// terminal is focused by design); every other text field does.
+const probe = (
+  tagName: string,
+  opts: { isContentEditable?: boolean; inXterm?: boolean } = {},
+): FocusProbe => ({
+  tagName,
+  isContentEditable: opts.isContentEditable,
+  closest: (sel: string) => (opts.inXterm && sel === '.xterm' ? {} : null),
+});
+
+test('a filter/dialog INPUT swallows the chord', () => {
+  assert.strictEqual(isTypingTarget(probe('INPUT')), true);
+});
+
+test('a TEXTAREA swallows the chord', () => {
+  assert.strictEqual(isTypingTarget(probe('TEXTAREA')), true);
+});
+
+test('a contentEditable element swallows the chord', () => {
+  assert.strictEqual(isTypingTarget(probe('DIV', { isContentEditable: true })), true);
+});
+
+test("xterm's own textarea does NOT swallow the chord (VC-10/VC-11)", () => {
+  assert.strictEqual(isTypingTarget(probe('TEXTAREA', { inXterm: true })), false);
+});
+
+test('a non-editable element (button, plain div) does not swallow the chord', () => {
+  assert.strictEqual(isTypingTarget(probe('BUTTON')), false);
+  assert.strictEqual(isTypingTarget(probe('DIV')), false);
+});
+
+test('no focused element does not swallow the chord', () => {
+  assert.strictEqual(isTypingTarget(null), false);
 });
