@@ -84,3 +84,11 @@ Written and committed only between stages (never while a Stage session runs).
 - **Watcher:** churn fix confirmed working — logged `absorbed turn-ended (stage provably working)`, woke only on `marker-present`.
 - **Line 13 torn down; `.conduct-signals/` cleared** (new teardown rule).
 - **CHECK-IN:** holding before `integrate` (the merge stage — the one that mutates the feature branch), per the operator's gating pattern. Awaiting go-ahead.
+- **RESUMED:** operator "good to go"; `integrate` spawned (Line 14).
+
+### 2026-07-10 ~17:46 — stage 5 `integrate` — GREEN, completed
+- **Marker:** committed `conduct/integrate.done.json`, `outcome: green`, `exceptions: []`.
+- **Result:** merged `remediate/desktop-shell-v1/475807b` (CLEARED) into `features/desktop-shell-v1` at merge commit **`c59c66c`**; rebuild-and-retest gate green (**174/174** client tests + typecheck); remediation worktree torn down. No merge conflict (the feared annotated-doc add/add did not block). Annotated findings doc now on the feature branch (cross-worktree anomaly closed).
+- **Watcher:** absorbed 2 turn-endeds, woke on `marker-present` — churn fix solid.
+- **Line 14 torn down; `.conduct-signals/` cleared.**
+- **CHECK-IN:** holding before the final stage `contract-check` (read-only attestation), per the operator's gating pattern. Awaiting go-ahead.
