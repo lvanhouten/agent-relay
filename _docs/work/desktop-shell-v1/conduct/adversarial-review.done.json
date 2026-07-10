@@ -1,6 +1,0 @@
-{ "stage": "adversarial-review",
-  "outcome": "green",
-  "artifact": "_docs/work/desktop-shell-v1/adversarial-review-44f6ab1..475807b.md",
-  "summary": "CONCERNS — 4 warnings (tombstone-decode triplication, unguarded Alt+N listener, stale notify-toggle, untested resolveSelection), 4 notes; all 23 VCs delivered.",
-  "asserted": false,
-  "exceptions": [] }

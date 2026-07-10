@@ -1,6 +1,0 @@
-{ "stage": "contract-check",
-  "outcome": "green",
-  "artifact": "_docs/work/desktop-shell-v1/validation-contract-check-44f6ab1..e2d5f8e.md",
-  "summary": "DELIVERED — 23/23 live VC assertions delivered, 0 undelivered, 0 superseded",
-  "asserted": false,
-  "exceptions": [] }
