@@ -5,6 +5,7 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { attentionFor } from '../core/attention.ts';
+import { tombstoneView } from '../core/tombstoneView.ts';
 import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
@@ -43,12 +44,10 @@ function SessionRow({ session, index, selected, onSelect, onKill }) {
 
 function TombstoneRow({ session, onDismiss }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
-  const killed = session.reason === 'killed';
-  const label = killed ? 'killed' : `exit ${session.exitCode ?? '?'}`;
-  const failed = !killed && session.exitCode != null && session.exitCode !== 0;
+  const { dot, label, failed } = tombstoneView(session);
   return (
     <div className={styles.tombstoneRow}>
-      <StatusDot status={failed ? 'error' : 'offline'} size="sm" showLabel={false} pulse={false} />
+      <StatusDot status={dot} size="sm" showLabel={false} pulse={false} />
       <span className={styles.tombstoneMain}>
         <span className={styles.rowName}>{session.name}</span>
         <span className={styles.rowHint}>{shellLabel} · {session.cwd}</span>

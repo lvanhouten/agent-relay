@@ -30,3 +30,16 @@ export function canNotify(
 ): boolean {
   return supported && enabled && permission === 'granted';
 }
+
+// The bell toggle's branch decision, pure over the same two inputs the view
+// reads. Disable ONLY when notifications are actually live (opted in AND
+// granted); otherwise request permission. A stale enabled=true paired with a
+// non-granted permission — browser auto-revocation of an unused permission, or
+// a manual reset to 'default', neither of which clears localStorage — must fall
+// through to a fresh request instead of silently no-opping on the first click.
+export function toggleAction(
+  enabled: boolean,
+  permission: PermissionState,
+): 'disable' | 'request' {
+  return enabled && permission === 'granted' ? 'disable' : 'request';
+}

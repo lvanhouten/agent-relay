@@ -8,6 +8,7 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { useSessions } from '../core/useSessions.ts';
 import { attentionFor } from '../core/attention.ts';
+import { tombstoneView } from '../core/tombstoneView.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
@@ -81,12 +82,10 @@ function SessionCard({ session, onAttach, onKill }) {
 // same DELETE the kill button uses (the server falls through to `forget`).
 function ExitedSessionCard({ session, onDismiss }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
-  const killed = session.reason === 'killed';
-  const label = killed ? 'killed' : `exit ${session.exitCode ?? '?'}`;
-  // The one crash predicate — dot color and badge variant must agree. A kill is
-  // expected, a clean exit is fine, and an UNKNOWN (null) exit code is not
-  // presented as a crash: only a known non-zero code earns the error styling.
-  const failed = !killed && session.exitCode != null && session.exitCode !== 0;
+  // Tombstone decode (dot color, crash predicate, status word) is centralized in
+  // core/tombstoneView.ts — the one place a `reason`/`exitCode` becomes a
+  // rendering, shared with the sidebar row and detail pane so the three agree.
+  const { dot, label, failed } = tombstoneView(session);
   return (
     <Card padding="md" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', opacity: 0.75 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -96,7 +95,7 @@ function ExitedSessionCard({ session, onDismiss }) {
             fontFamily: 'var(--font-display)', fontWeight: 600,
             fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
           }}>
-            <StatusDot status={failed ? 'error' : 'offline'} pulse={false} size="sm" showLabel={false} />
+            <StatusDot status={dot} pulse={false} size="sm" showLabel={false} />
             {session.name}
           </span>
           <span style={{
