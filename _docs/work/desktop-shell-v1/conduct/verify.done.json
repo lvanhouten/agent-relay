@@ -1,0 +1,8 @@
+{
+  "stage": "verify",
+  "outcome": "green",
+  "artifact": "_docs/work/desktop-shell-v1/adversarial-review-verify-475807b..ccd2ebd.md",
+  "summary": "CLEARED — all 8 original findings Confirmed closed (independently re-derived); 174/174 client tests + clean typecheck; new-defect sweep found no criticals/warnings, one trivial low-confidence NOTE (UTF-16 surrogate split in name cap).",
+  "asserted": false,
+  "exceptions": []
+}
