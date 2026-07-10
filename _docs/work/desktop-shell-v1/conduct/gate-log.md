@@ -92,3 +92,25 @@ Written and committed only between stages (never while a Stage session runs).
 - **Watcher:** absorbed 2 turn-endeds, woke on `marker-present` — churn fix solid.
 - **Line 14 torn down; `.conduct-signals/` cleared.**
 - **CHECK-IN:** holding before the final stage `contract-check` (read-only attestation), per the operator's gating pattern. Awaiting go-ahead.
+- **RESUMED:** operator "go for it"; `contract-check` spawned (Line 15).
+
+### 2026-07-10 ~18:10 — stage 6 `contract-check` — GREEN, completed — RUN COMPLETE
+- **Marker:** committed `conduct/contract-check.done.json`, `outcome: green`, `exceptions: []`.
+- **Verdict:** **DELIVERED — 23/23 live VC assertions delivered, 0 undelivered, 0 superseded.**
+- **Range attested:** `44f6ab1..e2d5f8e` (branch base .. merged feature HEAD). **Artifact:** `_docs/work/desktop-shell-v1/validation-contract-check-44f6ab1..e2d5f8e.md`.
+- **Line 15 torn down; `.conduct-signals/` cleared.** Only the Conductor Line remains.
+
+## RUN COMPLETE — 2026-07-10
+
+The conducted build half ran end to end (execute-briefs → adversarial-review → remediate-batch → verify → integrate → contract-check), **every stage GREEN, zero Exception gates fired.**
+
+- **Feature HEAD:** `e2d5f8e` on `features/desktop-shell-v1` (includes remediation merge `c59c66c`).
+- **Tests:** 174/174 client + typecheck green on the merged branch.
+- **Contract:** 23/23 VC assertions DELIVERED.
+- **Findings:** review = CONCERNS (4 warnings + 4 notes) → all 8 fixed (verdict A), 0 parked → verify CLEARED → integrated.
+
+**Exception history:** none — no stage-reported exception, no conductor-detected wedge/bootstrap-failure, no deny-class prompt.
+
+**Approval log (Conductor-made mid-stage approvals):** 5, all in the "Mid-stage approvals" section above — 1 path-headroom diagnostic + 4 wave merge/test gates, all NOT deny-class (local git/npm, prompted only on prompt-forcing shell syntax). Operator also answered the 05→06 merge-gate prompts on Line 5 directly (their own actions, not in this log).
+
+**Next step (NOT conducted):** `finish-feature` / opening the PR is a separate, human-initiated step. The run stops here.
