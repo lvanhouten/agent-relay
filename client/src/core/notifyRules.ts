@@ -1,6 +1,6 @@
 // Pure reducer deciding which needs-input transitions deserve a desktop
 // notification. Diffs two consecutive session-poll results — no Notification
-// API access here; brief 06's hook owns permission/firing/click wiring, this
+// API access here; the notifications hook owns permission/firing/click wiring, this
 // module owns only the "what" and "whether".
 //
 // Transition-based, not state-based (VC-23): the pulsing sidebar dot is the

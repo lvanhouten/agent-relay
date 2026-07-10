@@ -13,7 +13,7 @@ import styles from './DetailPane.module.css';
 
 // Alt+digit must escape the terminal so the workspace's document-level listener
 // can select a session even while xterm has focus. TerminalView's passthrough
-// (brief 03) leaves a matching keydown un-consumed; this predicate is the same
+// leaves a matching keydown un-consumed; this predicate is the same
 // one the workspace listener uses, so the two can never disagree about what a
 // jump chord is.
 const isJumpChord = (e) => jumpIndexFromKey(e) !== null;

@@ -1,7 +1,7 @@
 // The one definition of "a session-jump chord": Alt + a bare digit 1-9, and
 // nothing else. Shared by TerminalView's passthrough (so it knows which
 // keydowns to let escape uneaten) and the workspace shell's document-level
-// listener (brief 05) — both call this, so they can never disagree about
+// listener — both call this, so they can never disagree about
 // what counts as a jump chord.
 
 // Recognized via event.code (the physical key, e.g. 'Digit3') rather than

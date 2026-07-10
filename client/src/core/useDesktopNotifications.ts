@@ -6,7 +6,7 @@ import type { Session } from './types.ts';
 
 // The desktop shell's notification wiring: permission state, the Notification
 // constructor, and the click handler. Every decision about *whether* a spec
-// fires lives in notifyTransitions (brief 02) — this hook adds only the
+// fires lives in notifyTransitions — this hook adds only the
 // enable/permission gate around it, no ad-hoc focus checks.
 //
 // Desktop-only: the mobile shell never mounts this. localStorage (not

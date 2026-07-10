@@ -12,8 +12,8 @@ import styles from './DesktopWorkspace.module.css';
 // The desktop shell: a master-detail workspace over the shared client core, no
 // screen-swapping. Owns the one piece of state the mobile shell doesn't need —
 // which session the detail pane is attached to — and keeps it here at the root
-// so a later slice (brief 06's notifications) can select a session from outside
-// the sidebar. Everything session-related still flows through useSessions; this
+// so the notification wiring can select a session from outside the sidebar.
+// Everything session-related still flows through useSessions; this
 // component only decides selection, filtering, and Alt+N routing.
 export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
   const { sessions, create, kill, creating, load } = useSessions();
@@ -68,7 +68,7 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
     if (orphaned) { selectedRef.current = null; setSelectedId(null); }
   }, [orphaned]);
 
-  // Alt+1..9 -> the Nth visible live row. jumpIndexFromKey (brief 03) is the one
+  // Alt+1..9 -> the Nth visible live row. jumpIndexFromKey is the one
   // definition of the chord; TerminalView's passthrough leaves it un-consumed so
   // this listener fires even while the terminal has focus.
   React.useEffect(() => {
