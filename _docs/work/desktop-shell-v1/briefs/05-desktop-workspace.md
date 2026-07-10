@@ -42,7 +42,7 @@ Two shells over that one core (glossary: *Shell*, *Shell selection*):
 **Out of scope:**
 
 - Notifications (bell toggle, permission, Notification API) — brief 06 adds them into this shell.
-- Command palette, spectator attach, panes/grid, broadcast input (later slices; ADR 0002 is decided but not built — build nothing that assumes more than this single interactive pane).
+- Command palette, spectator attach, panes/grid, broadcast input (later slices; ADR 0005 is decided but not built — build nothing that assumes more than this single interactive pane).
 - Any server or board change; any restyling of mobile screens or design-system components.
 - Live-responsive shell swapping on resize.
 

@@ -4,7 +4,7 @@ date: 2026-07-07
 deciders: Lukas Van Houten (owner), Claude (advisor)
 ---
 
-# 0002 — Spectator attach: declared at attach, dropped frames, poll-propagated dims
+# 0005 — Spectator attach: declared at attach, dropped frames, poll-propagated dims
 
 ## Context
 

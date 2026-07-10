@@ -42,7 +42,7 @@ Split the client into two shells over the one shared core, selected per browser 
 - **Find bar extraction**: the find bar (input, IME-composition guard, match readout, prev/next/close) moves out of the mobile terminal screen into a shared chrome component both shells import — it is debugged behavior worth one implementation. All other chrome stays per-shell (umbrella decision); the mobile composer/key-chips stay mobile-only.
 - **Notifications are transition-based; the sidebar dot is state-based.** A pure reducer diffs consecutive poll results and returns notification specs for sessions that *entered* needs-input, suppressed entirely while the window is focused; tag = session id so a re-fire replaces rather than stacks. A session already in needs-input when the window loses focus deliberately does **not** notify — the flag arrived while its pulsing dot was on screen; the dot (not a notification) remains the persistent signal, pulsing for as long as the session stays in needs-input regardless of focus. A thin hook wires the reducer to the Notification API: permission requested only from the bell-toggle click (never on load), notification click focuses the window and selects the session. Desktop shell only. No Pushover interplay — phone push and desk notification are different devices and coexist.
 - **Styling**: new desktop chrome uses CSS Modules over the existing design-token custom properties (Vite-native, zero new dependencies) — required for `:hover`/`:focus-visible` states inline styles can't express. Existing screens and `@ds` components stay inline-styled.
-- **No server changes.** The spectator-attach contract is decided (ADR 0002) but implemented in slice 2; nothing in v1 depends on it beyond not contradicting it.
+- **No server changes.** The spectator-attach contract is decided (ADR 0005) but implemented in slice 2; nothing in v1 depends on it beyond not contradicting it.
 
 ## Testing Decisions
 
@@ -60,7 +60,7 @@ New-guard hygiene per repo convention: prove each new test by mutation (break th
 ## Out of Scope
 
 - Command palette (deferred to slice 2 — sidebar filter covers v1 switching).
-- Spectator attach, PTY dims in `list`, pane grids, split view (slice 2, per ADR 0002 — decided, not built).
+- Spectator attach, PTY dims in `list`, pane grids, split view (slice 2, per ADR 0005 — decided, not built).
 - Broadcast input, local-trust endpoints, live output previews on rows (slice 3).
 - Any server or board change whatsoever.
 - Live-responsive shell swapping on resize (boot-time only, by decision).
@@ -73,7 +73,7 @@ New-guard hygiene per repo convention: prove each new test by mutation (break th
 ## Further Notes
 
 - The phone-over-RDP window is the load-bearing edge case: it is desktop Chrome with a mouse at phone geometry. Every detection decision above (geometry-only heuristic, per-window `sessionStorage` override, boot-time stickiness) exists to keep that path correct — regressing it breaks the operator's tested work-from-phone recipe (`_docs/rdp-mobile-recipe.md`).
-- ADR 0002 (spectator attach) was written during this feature's grill so v1's layout can't accidentally fight slice 2's contract; v1 must not build anything that assumes interactive-attach-per-visible-session beyond the single detail pane.
+- ADR 0005 (spectator attach) was written during this feature's grill so v1's layout can't accidentally fight slice 2's contract; v1 must not build anything that assumes interactive-attach-per-visible-session beyond the single detail pane.
 - The existing mobile terminal screen already defaults its composer hidden on fine-pointer devices via a `pointer: coarse` check — that check stays as-is (it gates a widget, not a shell).
 - Alt+digit browser conflicts checked: unreserved in Chrome/Edge on Windows; bare-Alt menu focus doesn't trigger on chorded Alt+digit.
 - Known and accepted `sessionStorage` edge: duplicating a tab clones its sessionStorage, so a duplicated window inherits the original's manual shell override — acceptable (duplicating a desktop-forced window and getting the desktop shell is arguably the expected outcome). The load-bearing phone-over-RDP window is OS-launched — a fresh browsing context — so it never inherits an override.
