@@ -58,3 +58,12 @@ Written and committed only between stages (never while a Stage session runs).
 - **Line 5 torn down** gracefully (`/exit` → `end_line`).
 - **Note:** during the 05→06 window the operator was monitoring Line 5 directly and handled the merge-gate permission prompts there; those are the operator's own actions, not Conductor approvals, so they are not in the approval log above (which records only Conductor-made approvals).
 - **PAUSE:** per operator request, the run is **held at the `execute-briefs` → `adversarial-review` boundary**. `adversarial-review` is NOT spawned until the operator gives an explicit go-ahead.
+- **RESUMED:** operator gave the go-ahead; `adversarial-review` spawned (Line 8).
+
+### 2026-07-09 ~20:57 — stage 2 `adversarial-review` — GREEN, completed
+- **Marker:** committed `conduct/adversarial-review.done.json`, `outcome: green`, `exceptions: []` (this stage reports no exception kind — always green with a doc).
+- **Verdict:** **CONCERNS** — 4 warnings, 4 notes; **all 23 VC assertions delivered** (promised-vs-delivered sweep passed). No BLOCK.
+- **Warnings:** tombstone-decode triplication; unguarded Alt+N listener; stale notify-toggle; untested resolveSelection.
+- **Artifact:** `_docs/work/desktop-shell-v1/adversarial-review-44f6ab1..475807b.md`.
+- **Line 8 torn down** gracefully.
+- **CHECK-IN:** holding before `remediate-batch` to surface the verdict to the operator (this run is hands-on); not auto-advancing.
