@@ -67,3 +67,11 @@ Written and committed only between stages (never while a Stage session runs).
 - **Artifact:** `_docs/work/desktop-shell-v1/adversarial-review-44f6ab1..475807b.md`.
 - **Line 8 torn down** gracefully.
 - **CHECK-IN:** holding before `remediate-batch` to surface the verdict to the operator (this run is hands-on); not auto-advancing.
+- **RESUMED:** operator gave the go-ahead ("proceed with remediation"); `remediate-batch` spawned (Line 10). Mid-run, re-fetched the updated conduct-feature skill/scripts (turn-ended triage fix + PermissionRequest hook) and added the `PermissionRequest` hook to the worktree settings. Note: `PermissionRequest` hook does not fire on Claude Code v2.1.206 (0 lines captured) — fell back to dialog-box command reads. Watcher churn: signal-layer triage still trips on this heavy worker's long *thinking* turns (busy-footer scan misses `Garnishing…/thinking`); switched to probe-only mid-stage.
+
+### 2026-07-10 ~12:25 — stage 3 `remediate-batch` — GREEN, completed
+- **Marker:** committed `conduct/remediate-batch.done.json`, `outcome: green`, `exceptions: []` (0 parked → no gate). Cross-worktree fields present.
+- **Result:** all 8 findings (4 warnings + 4 notes) resolved verdict A (fixed); 0 parked, 0 rejected, E-smell never tripped. Closure green: **174/174** client tests (+regression tests) + typecheck.
+- **Remediation worktree (verify-pending, preserved):** path `.worktrees/r-475807b`, branch `remediate/desktop-shell-v1/475807b`, head `ccd2ebdb184b6f8b1c492f1960726cef169ce152`. Review head: `475807b`.
+- **Line 10 torn down** (remediation worktree left intact on disk for verify + integrate).
+- **CHECK-IN:** operator has gated every transition so far, so holding before `verify` rather than auto-advancing. Awaiting go-ahead.
