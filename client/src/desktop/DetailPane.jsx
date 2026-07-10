@@ -6,6 +6,7 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Terminal as TerminalIcon, Search, Download, Copy, Trash2, Plus } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { jumpIndexFromKey } from '../core/jumpKeys.ts';
+import { tombstoneView } from '../core/tombstoneView.ts';
 import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { FindBar } from '../chrome/FindBar.jsx';
 import styles from './DetailPane.module.css';
@@ -50,15 +51,16 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
 
   const exited = session.status === 'exited';
   const shellLabel = session.shell.split(/[/\\]/).pop();
-  const killed = session.reason === 'killed';
-  const failed = exited && !killed && session.exitCode != null && session.exitCode !== 0;
-  const exitText = killed ? 'terminated' : `exited · code ${session.exitCode ?? '?'}`;
+  // Tombstone decode (dot / crash predicate / status word) is shared with the
+  // sidebar row and session card via core/tombstoneView.ts so the three can't
+  // drift; the detail banner below builds its fuller sentence from tomb.killed.
+  const tomb = exited ? tombstoneView(session) : null;
 
-  const dotStatus = exited ? (failed ? 'error' : 'offline')
+  const dotStatus = exited ? tomb.dot
     : connStatus === 'online' ? 'online'
     : connStatus === 'offline' ? 'offline'
     : 'idle';
-  const dotLabel = exited ? exitText
+  const dotLabel = exited ? tomb.label
     : (connStatus === 'connecting' || connStatus === 'reconnecting') ? connStatus : undefined;
 
   const openSearch = () => setShowSearch(true);
@@ -128,8 +130,8 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
       )}
 
       {exited && (
-        <div className={`${styles.banner}${failed ? ' ' + styles.bannerFailed : ''}`}>
-          <span>● {killed ? 'Session terminated.' : `Session exited with code ${session.exitCode ?? '?'}.`} The transcript below is read-only.</span>
+        <div className={`${styles.banner}${tomb.failed ? ' ' + styles.bannerFailed : ''}`}>
+          <span>● {tomb.killed ? 'Session terminated.' : `Session exited with code ${session.exitCode ?? '?'}.`} The transcript below is read-only.</span>
         </div>
       )}
 
