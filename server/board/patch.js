@@ -1,12 +1,18 @@
 'use strict';
-// Runs inside a WezTerm pane: a dumb raw relay between this terminal and a line.
-// argv: <line-id>
+// A dumb raw relay between this terminal and a line. Runs inside a spawned
+// WezTerm pane (`sb join`) or in the caller's own terminal (`sb join --here`).
+// argv: <line-id> [detach-byte]
+//   detach-byte — decimal code of a key that detaches (returns to the caller's
+//   shell) instead of being forwarded to the PTY. Omitted for a spawned pane,
+//   where closing the tab is the exit; supplied for --here so the caller isn't
+//   trapped with no way back to their shell (Ctrl+] = 29).
 const { CTRL, dataPipe, connectPipe } = require('./lib');
 const net = require('net');
 
 const id = process.argv[2];
+const detachByte = process.argv[3] ? Number(process.argv[3]) : null;
 if (!id) {
-  process.stderr.write('usage: patch <line-id>\n');
+  process.stderr.write('usage: patch <line-id> [detach-byte]\n');
   process.exit(1);
 }
 
@@ -41,7 +47,19 @@ if (!id) {
   }
 
   if (process.stdin.isTTY) process.stdin.setRawMode(true);
-  process.stdin.pipe(data);   // keystrokes -> PTY
+  if (detachByte != null) {
+    // Watch for the detach key; forward every other byte to the PTY. On detach,
+    // restore the terminal and exit 0 — the line keeps running on the board.
+    process.stdin.on('data', chunk => {
+      const i = chunk.indexOf(detachByte);
+      if (i === -1) { data.write(chunk); return; }
+      if (i > 0) data.write(chunk.subarray(0, i));
+      process.stdout.write('\r\n[detached]\r\n');
+      process.exit(0);
+    });
+  } else {
+    process.stdin.pipe(data);   // keystrokes -> PTY
+  }
   data.pipe(process.stdout);  // PTY output -> screen
   sendResize();
 

@@ -114,6 +114,14 @@ POST   /api/notify             Push a notification + optionally flag a session
                                "needs input" state; url requires AR_NOTIFY_URL_ORIGIN
                                (rejected otherwise — see Notifications)
 
+POST   /api/beacon             Report a Claude Code lifecycle event for a line
+                               body { event, sessionId?, claudeSessionId?,
+                                      transcriptPath?, cwd? }
+                               event ∈ SessionStart | Stop | SessionEnd; gives a
+                               Claude line an honest status (running / turn-done)
+                               instead of the idle heuristic. Never pushes — see
+                               Session beacons
+
 WS     /sessions/:id           Bidirectional PTY stream
                                (in: input / resize · out: data / exit)
 ```
@@ -201,6 +209,70 @@ line spawned outside the relay (`sb`, or a shell you opened yourself) has no
 Add a `Stop` hook the same way (drop `needsInput`) if you also want a "session
 finished" ping. The needs-input flag clears itself on the session's next input
 or output.
+
+## Session beacons
+
+A plain `needs-input` flag only lights a card when Claude is *blocked* asking for
+permission. For an honest fleet view — telling a working agent from one that has
+finished its turn from a genuinely idle shell — a Claude session **beacons** its
+lifecycle to `POST /api/beacon`. A beaconed line is a **Claude line**: its status
+comes from the beacons, superseding the idle heuristic — `running` while the agent
+works (even while silent), `turn-done` once it ends its turn and waits on you,
+back to `running` the moment it produces output again. A `SessionEnd` drops the
+marker and the line reverts to the plain-shell heuristic. Unlike `/api/notify`, a
+beacon **never** buzzes your phone — it carries no `title`/`body` and touches no
+push sink; it is pure state.
+
+Wire it with three **user-scope** Claude Code hooks (in `~/.claude/settings.json`,
+so they cover every repo on the machine, like the Notification recipe above). Each
+sends `$AGENT_RELAY_SESSION` (the board line id the relay injects) as `sessionId`,
+with `session_id` / `transcript_path` / `cwd` from the hook's stdin JSON as the
+self-healing binding (`cwd` is the fallback for a line spawned outside the relay):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf 'header = \"Authorization: Bearer %s\"' \"$AR_TOKEN\" | curl -s -X POST http://localhost:3017/api/beacon -K - -H 'Content-Type: application/json' -d \"{\\\"event\\\":\\\"SessionStart\\\",\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"claudeSessionId\\\":\\\"$(jq -r .session_id)\\\",\\\"transcriptPath\\\":\\\"$(jq -r .transcript_path)\\\",\\\"cwd\\\":\\\"$(jq -r .cwd)\\\"}\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf 'header = \"Authorization: Bearer %s\"' \"$AR_TOKEN\" | curl -s -X POST http://localhost:3017/api/beacon -K - -H 'Content-Type: application/json' -d \"{\\\"event\\\":\\\"Stop\\\",\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf 'header = \"Authorization: Bearer %s\"' \"$AR_TOKEN\" | curl -s -X POST http://localhost:3017/api/beacon -K - -H 'Content-Type: application/json' -d \"{\\\"event\\\":\\\"SessionEnd\\\",\\\"sessionId\\\":\\\"$AGENT_RELAY_SESSION\\\",\\\"cwd\\\":\\\"$CLAUDE_PROJECT_DIR\\\"}\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The auth header rides curl's stdin config (`-K -`) rather than an argv `-H`, for
+the same process-listing reason as the Notification recipe. `sessionId` binds the
+exact card; a line spawned outside the relay (`sb`, or a shell you opened) has no
+`$AGENT_RELAY_SESSION`, so it expands to empty and the `cwd` match takes over.
+`SessionStart` also carries `claudeSessionId` / `transcriptPath` (read from stdin
+with `jq`) — stored now for a future transcript feature, unused today; the `Stop`
+and `SessionEnd` hooks only need to name the line, so they can send `cwd` alone.
 
 ## Roadmap
 

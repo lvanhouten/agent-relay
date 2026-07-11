@@ -23,7 +23,19 @@
       no-op immediately.
 
   Idempotent on reconnect: if an app-mode window for the same URL already exists,
-  it does not open a second one.
+  it does not open a second one — instead it restores (if minimized) and
+  foregrounds that window, since a reconnect is exactly when the phone wants
+  the dashboard back on top.
+
+  Detection/action both key off the window's TITLE, not its owning process.
+  Verified 2026-07-09: a browser that keeps a background "keep running"/
+  startup-boost process alive (e.g. Edge's `--no-startup-window
+  --win-session-start`) can route a new `--app=` launch into that ALREADY-
+  RUNNING process instead of spawning a fresh one — so the process's
+  CommandLine never carries `--app=$Url`, and that same process may also own
+  the operator's regular browsing windows/tabs. Matching (or worse, closing)
+  by owning PID is therefore unreliable and unsafe; every action here targets
+  a window HANDLE via Win32 EnumWindows, never a process.
 
   Usage (normally invoked by the scheduled task, but runnable by hand to test the
   decision without waiting for a real connect):
@@ -47,6 +59,12 @@ param(
   # wider than -WidthThreshold). CLIENTNAME values are unverified for iOS/
   # Android; read them from the decision log before relying on this.
   [string[]]$PhoneClientNames = @(),
+  # Exact top-level window title the launched app window carries — matches
+  # <title> in client/index.html, which the app never changes at runtime. An
+  # app-mode (chromeless) window shows exactly this; a normal tab window
+  # always appends "- Profile - Browser", so an exact match is specific to
+  # the app-mode window without needing to know its owning process.
+  [string]$WindowTitle = 'agent-relay',
   # Log only the decision; never launch a window (dry-run for testing the rule).
   [switch]$WhatIfDecision
 )
@@ -97,14 +115,57 @@ function Get-PrimaryBounds {
   return [System.Windows.Forms.Screen]::PrimaryScreen.Bounds  # last read, even if 0
 }
 
-# The phone path's idempotency check and the desktop path's stale-window
-# teardown match the same thing: an app-mode browser process for this exact URL.
-$appArg = "--app=$Url"
-function Get-AppWindowProcesses {
-  @(
-    Get-CimInstance Win32_Process -Filter "Name = '$Browser.exe'" -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and $_.CommandLine -like "*$appArg*" }
-  )
+# Win32 window enumeration — see the file-header note on why this keys off
+# the window handle/title rather than the owning process.
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+
+namespace AgentRelay {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+  public static class Win32 {
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+  }
+}
+'@
+$SW_RESTORE = 9
+$WM_CLOSE = 0x0010
+
+# All visible top-level windows titled exactly -WindowTitle AND owned by a
+# -Browser process (the second check is cheap belt-and-suspenders against some
+# unrelated app happening to share the exact title). Returns window handles,
+# not processes — see the file-header note on why that distinction matters.
+function Get-AppWindowHandles {
+  $handles = New-Object System.Collections.Generic.List[IntPtr]
+  $callback = {
+    param([IntPtr]$hWnd, [IntPtr]$lParam)
+    if ([AgentRelay.Win32]::IsWindowVisible($hWnd)) {
+      $len = [AgentRelay.Win32]::GetWindowTextLength($hWnd)
+      if ($len -gt 0) {
+        $sb = New-Object System.Text.StringBuilder ($len + 1)
+        [AgentRelay.Win32]::GetWindowText($hWnd, $sb, $sb.Capacity) | Out-Null
+        if ($sb.ToString() -eq $WindowTitle) {
+          [uint32]$procId = 0
+          [AgentRelay.Win32]::GetWindowThreadProcessId($hWnd, [ref]$procId) | Out-Null
+          $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+          if ($proc -and $proc.ProcessName -eq $Browser) { $handles.Add($hWnd) }
+        }
+      }
+    }
+    return $true
+  }
+  [AgentRelay.Win32]::EnumWindows([AgentRelay.EnumWindowsProc]$callback, [IntPtr]::Zero) | Out-Null
+  @($handles)
 }
 
 # A DESKTOP-classified connect closes the maximized app window an earlier PHONE
@@ -112,21 +173,38 @@ function Get-AppWindowProcesses {
 # no-op decision is right, but the window otherwise outlives the phone session
 # across a phone->desktop reconnect and stays imposed on the desktop workflow.
 # The UNKNOWN branch deliberately does NOT call this: no evidence, no action.
+# Closes the WINDOW (WM_CLOSE), never the owning process — Stop-Process on a
+# shared/background browser process would take down every other window that
+# process owns, including the operator's regular browsing tabs.
 function Close-StaleAppWindow {
-  $existing = Get-AppWindowProcesses
-  if ($existing.Count -eq 0) { return }
+  $handles = Get-AppWindowHandles
+  if ($handles.Count -eq 0) { return }
   if ($WhatIfDecision) {
-    Write-Log "stale app window present (pid $($existing[0].ProcessId)) -> would close (WhatIfDecision)"
+    Write-Log "stale app window(s) present ($($handles.Count)) -> would close (WhatIfDecision)"
     return
   }
-  foreach ($p in $existing) {
+  foreach ($h in $handles) {
+    $ok = [AgentRelay.Win32]::PostMessage($h, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+    Write-Log "closed stale app window from an earlier phone connect (hwnd=$h): PostMessage returned $ok"
+  }
+}
+
+# Restore + foreground an existing app window rather than leaving a duplicate-
+# launch reconnect as a silent no-op.
+function Show-ExistingAppWindow($handles) {
+  foreach ($h in $handles) {
     try {
-      Stop-Process -Id $p.ProcessId -ErrorAction Stop
-      Write-Log "closed stale app window from an earlier phone connect (pid $($p.ProcessId))"
+      if ([AgentRelay.Win32]::IsIconic($h)) {
+        [AgentRelay.Win32]::ShowWindow($h, $SW_RESTORE) | Out-Null
+      }
+      $ok = [AgentRelay.Win32]::SetForegroundWindow($h)
+      Write-Log "foregrounded existing app window (hwnd=$h): SetForegroundWindow returned $ok"
+      return $true
     } catch {
-      Write-Log "close FAILED for stale app window (pid $($p.ProcessId)): $($_.Exception.Message)"
+      Write-Log "foreground FAILED for existing app window (hwnd=$h): $($_.Exception.Message)"
     }
   }
+  return $false
 }
 
 $clientName = if ($env:CLIENTNAME) { $env:CLIENTNAME } else { '(none)' }
@@ -181,18 +259,19 @@ if ($WhatIfDecision) {
   return
 }
 
-# Idempotent: don't stack windows on reconnect. Match an existing app-mode process
-# for this exact URL by its command line.
-$existing = Get-AppWindowProcesses
+# Idempotent: don't stack windows on reconnect. Match an existing app-mode
+# window by its title (see Get-AppWindowHandles).
+$existing = Get-AppWindowHandles
 if ($existing.Count -gt 0) {
-  Write-Log "decision: PHONE, but an app window for $Url already exists (pid $($existing[0].ProcessId)) -> no duplicate"
+  Write-Log "decision: PHONE, but an app window titled '$WindowTitle' already exists (hwnd=$($existing[0])) -> foregrounding instead of a duplicate launch"
+  Show-ExistingAppWindow $existing | Out-Null
   return
 }
 
 # Launch the chromeless, maximized app window.
 try {
-  Start-Process $Browser -ArgumentList @($appArg, '--start-maximized') | Out-Null
-  Write-Log "decision: PHONE -> launched $Browser $appArg --start-maximized"
+  Start-Process $Browser -ArgumentList @("--app=$Url", '--start-maximized') | Out-Null
+  Write-Log "decision: PHONE -> launched $Browser --app=$Url --start-maximized"
 } catch {
   Write-Log "launch FAILED for '$Browser': $($_.Exception.Message)"
 }

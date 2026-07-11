@@ -179,3 +179,45 @@ test('framePayload: paste strips stray paste markers in text so the framing stay
 test('framePayload: defaults (no opts) submit with Enter, no paste', () => {
   assert.strictEqual(mcp.framePayload('hi'), 'hi\r');
 });
+
+// --- readScreen: the stateless rendered-screen snapshot (sibling to readOutput) ---
+
+test('readScreen: ok:true maps to the { grid, cursor, cols, rows } snapshot', async () => {
+  mcp.__setRpc(async () => ({
+    ok: true, boot: 'nonceX', grid: 'line1\nline2', cursor: { row: 1, col: 3 }, cols: 80, rows: 24,
+  }));
+  const snap = await mcp.readScreen('1');
+  assert.deepStrictEqual(snap, { grid: 'line1\nline2', cursor: { row: 1, col: 3 }, cols: 80, rows: 24 });
+});
+
+test('readScreen: ended:true names the line as ended and includes the exit code', async () => {
+  mcp.__setRpc(async () => ({ ok: false, ended: true, exitCode: 2, reason: 'exited' }));
+  await assert.rejects(() => mcp.readScreen('7'), /line 7 has ended \(exit 2\)/);
+});
+
+test('readScreen: ended:false names it as no such line, distinct from the ended-line message', async () => {
+  mcp.__setRpc(async () => ({ ok: false, ended: false }));
+  await assert.rejects(() => mcp.readScreen('99'), /no such line: 99/);
+});
+
+test('readScreen: the ended-line and no-such-line messages never collide', async () => {
+  mcp.__setRpc(async () => ({ ok: false, ended: true, exitCode: 0 }));
+  let endedMsg = null;
+  try { await mcp.readScreen('5'); } catch (e) { endedMsg = e.message; }
+
+  mcp.__setRpc(async () => ({ ok: false, ended: false }));
+  let missingMsg = null;
+  try { await mcp.readScreen('5'); } catch (e) { missingMsg = e.message; }
+
+  assert.notStrictEqual(endedMsg, missingMsg);
+});
+
+test('readScreen: an RPC-level failure (board unreachable) maps to a generic read-failure error', async () => {
+  mcp.__setRpc(async () => { throw new Error('board unreachable'); });
+  await assert.rejects(() => mcp.readScreen('1'), /screen read failed/);
+});
+
+test('readScreen: an unexpected reply shape (neither ok:true nor a documented ended value) fails generically', async () => {
+  mcp.__setRpc(async () => ({ ok: false }));
+  await assert.rejects(() => mcp.readScreen('1'), /screen read failed/);
+});

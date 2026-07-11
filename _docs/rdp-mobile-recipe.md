@@ -14,7 +14,7 @@ it and you'll conclude the path is unusable.
 > **Why RDP and not the tunnel?** The office network DNS-filters Tailscale, so the
 > built-in `AR_TUNNEL=tailscale` path degrades to local-only at work (it's fully
 > usable on home/unfiltered networks). RDP is the sanctioned phone path at the
-> office. See `_docs/issues/2026-07-06-rdp-mobile-session-recipe.md` for the
+> office. See `_docs/issues/closed/2026-07-06-rdp-mobile-session-recipe.md` for the
 > investigation behind this.
 
 ## The recipe
@@ -32,7 +32,7 @@ Do these in the **Microsoft Remote Desktop** / **Windows App** on your phone
 2. **Touch mode, not pointer mode.** Switch input to **touch / direct
    manipulation** rather than trackpad/mouse-pointer emulation. Tapping then hits
    what you tap; scrolling is a finger drag. (The relay's terminal scrolls fine
-   under touch; the scroll-to-bottom pill — `_docs/issues/2026-07-02-terminal-qol.md`
+   under touch; the scroll-to-bottom pill — `_docs/issues/closed/2026-07-02-terminal-qol.md`
    — is the planned QoL follow-up for long transcripts.)
 
 3. **Home-screen icon.** The app can save a specific machine as a home-screen

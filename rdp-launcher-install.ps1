@@ -27,7 +27,8 @@ param(
   [string]$Browser = 'msedge',
   [int]$WidthThreshold = 900,
   [string[]]$DesktopClientNames = @(),
-  [string[]]$PhoneClientNames = @()
+  [string[]]$PhoneClientNames = @(),
+  [string]$WindowTitle = 'agent-relay'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,14 +48,14 @@ switch ($Action) {
     # into array elements (verified), so the launcher splits on commas itself;
     # the quotes keep a name with spaces from splitting at the argv level.
     $launcherArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Launcher`"" +
-      " -Url `"$Url`" -Browser `"$Browser`" -WidthThreshold $WidthThreshold"
+      " -Url `"$Url`" -Browser `"$Browser`" -WidthThreshold $WidthThreshold -WindowTitle `"$WindowTitle`""
     if ($DesktopClientNames.Count -gt 0) {
       $launcherArgs += " -DesktopClientNames `"$($DesktopClientNames -join ',')`""
     }
     if ($PhoneClientNames.Count -gt 0) {
       $launcherArgs += " -PhoneClientNames `"$($PhoneClientNames -join ',')`""
     }
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $launcherArgs
+    $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $launcherArgs
 
     # Event trigger: fire on LocalSessionManager 21 (logon) OR 25 (reconnect). One
     # subscription, two IDs — reconnect from a different device reuses the session
@@ -77,7 +78,7 @@ switch ($Action) {
       -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 
     try {
-      Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal `
+      Register-ScheduledTask -TaskName $TaskName -Action $taskAction -Trigger $trigger -Principal $principal `
         -Settings $settings -Description 'Open the agent-relay dashboard as an app window when the phone connects via RDP (no-op for desktop/console).' -Force | Out-Null
     } catch [Microsoft.Management.Infrastructure.CimException] {
       throw "register failed ($($_.Exception.Message)). Try again from an elevated PowerShell."
