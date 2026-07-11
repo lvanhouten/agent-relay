@@ -4,6 +4,7 @@ import { Input } from '@ds/Input.jsx';
 import { Sun, Moon, Lock } from 'lucide-react';
 import { headers, login } from '../core/api.ts';
 import { isLocalhost } from '../hostTrust.js';
+import styles from './LoginScreen.module.scss';
 
 // The app is served BY the relay (or the Vite dev proxy), so every request —
 // the login probe, session CRUD, the WS PTY stream — targets the page's own
@@ -71,41 +72,23 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme, initialEr
   const onKey = (e) => { if (e.key === 'Enter') connect(); };
 
   return (
-    <div style={{
-      height: '100%', display: 'grid', placeItems: 'center',
-      background: 'var(--surface-app)',
-    }}>
-      <button
-        onClick={onToggleTheme}
-        style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--text-muted)', padding: 8, borderRadius: 'var(--radius-md)',
-        }}
-      >
+    <div className={styles.screen}>
+      <button onClick={onToggleTheme} className={styles.themeBtn}>
         {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
       </button>
 
-      <div style={{ width: '100%', maxWidth: 400, padding: 'var(--space-6)' }}>
-        <div style={{ marginBottom: 'var(--space-8)', textAlign: 'center' }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 10,
-            fontFamily: 'var(--font-mono)', fontWeight: 700,
-            fontSize: 'var(--text-xl)', color: 'var(--text-strong)',
-          }}>
-            <span style={{
-              width: 28, height: 28, borderRadius: 6, background: 'var(--accent)',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 13, color: 'var(--text-on-accent)',
-            }}>▸</span>
+      <div className={styles.card}>
+        <div className={styles.header}>
+          <div className={styles.logo}>
+            <span className={styles.logoMark}>▸</span>
             agent-relay
           </div>
-          <p style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+          <p className={styles.tagline}>
             Connect to any session from anywhere.
           </p>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div className={styles.form}>
           <Input
             label="Access token"
             type="password"
@@ -115,26 +98,16 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme, initialEr
             placeholder="printed in the server console at startup"
             autoFocus
           />
-          {error && (
-            <p style={{
-              color: 'var(--danger)', fontFamily: 'var(--font-mono)',
-              fontSize: 'var(--text-sm)', margin: 0,
-            }}>
-              {error}
-            </p>
-          )}
+          {error && <p className={styles.error}>{error}</p>}
           <Button
             fullWidth
             loading={loading}
             onClick={connect}
-            style={{ marginTop: 'var(--space-2)' }}
+            className={styles.connectBtn}
           >
             Connect to relay
           </Button>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-faint)',
-          }}>
+          <div className={styles.hint}>
             <Lock size={11} /> connecting to {hostLabel}
           </div>
         </div>

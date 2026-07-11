@@ -5,13 +5,12 @@ import { Input } from '@ds/Input.jsx';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
 import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { Terminal, Folder, Bookmark, BookmarkPlus, X } from 'lucide-react';
+import styles from './NewSessionDialog.module.scss';
 
 // Shared new-session dialog — the one create surface both shells open (mobile:
 // SessionsScreen; desktop: the workspace sidebar). Behavior is unchanged from
 // its original inline home in SessionsScreen: templates, claude model/effort
-// chips, "save as template", and the stays-open-until-success contract. Kept
-// inline-styled (the design-system convention) even though it now lives beside
-// the CSS-Modules desktop chrome — it predates that convention and is shared.
+// chips, "save as template", and the stays-open-until-success contract.
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
@@ -55,24 +54,18 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
   const current = getFlag(command, flag);
   const chips = [{ value: null, text: 'default' }, ...options.map((o) => ({ value: o, text: o }))];
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{
-        fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-        color: 'var(--text-muted)', width: 46, flexShrink: 0,
-      }}>
+    <div className={styles.flagChipRow}>
+      <span className={styles.flagLabel}>
         {label}
       </span>
       {chips.map(({ value, text }) => {
         const selected = current === value;
         return (
-          <button key={text} onClick={() => onCommand(setFlag(command, flag, value))} style={{
-            flex: 1, height: 26, cursor: 'pointer', minWidth: 0,
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-            borderRadius: 'var(--radius-md)',
-            border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-default)'}`,
-            background: selected ? 'var(--accent-soft)' : 'var(--surface-card)',
-            color: selected ? 'var(--text-accent)' : 'var(--text-body)',
-          }}>
+          <button
+            key={text}
+            onClick={() => onCommand(setFlag(command, flag, value))}
+            className={`${styles.flagChip} ${selected ? styles.flagChipSelected : ''}`}
+          >
             {text}
           </button>
         );
@@ -138,50 +131,30 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
   };
 
   return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, zIndex: 40, display: 'grid', placeItems: 'center',
-      background: 'var(--surface-overlay)', backdropFilter: 'blur(2px)', padding: 'var(--space-6)',
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: '100%', maxWidth: 420, background: 'var(--surface-card)',
-        border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)',
-        boxShadow: 'var(--shadow-pop)', padding: 'var(--space-6)',
-        display: 'flex', flexDirection: 'column', gap: 'var(--space-5)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: 'var(--text-xl)', margin: 0, color: 'var(--text-strong)' }}>New session</h2>
+    <div onClick={onClose} className={styles.overlay}>
+      <div onClick={(e) => e.stopPropagation()} className={styles.dialog}>
+        <div className={styles.headerRow}>
+          <h2 className={styles.title}>New session</h2>
           <IconButton label="Close" size="sm" onClick={onClose}>
-            <span style={{ fontSize: 18, lineHeight: 1, color: 'var(--text-muted)' }}>×</span>
+            <span className={styles.closeIcon}>×</span>
           </IconButton>
         </div>
 
         {templates.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-              textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
-            }}>
+          <div className={styles.fieldGroup}>
+            <span className={styles.sectionLabel}>
               Templates
             </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div className={styles.templateChipRow}>
               {templates.map((t) => (
                 // Load-on-tap; the trailing × removes without loading. Each chip
                 // is one saved {name, cwd, command} shape.
-                <span key={t.label} style={{
-                  display: 'inline-flex', alignItems: 'center',
-                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-full, 999px)',
-                  background: 'var(--surface-sunken)', overflow: 'hidden',
-                }}>
+                <span key={t.label} className={styles.templateChip}>
                   <button
                     type="button"
                     onClick={() => applyTemplate(t)}
                     title={`${t.command || 'plain shell'} · ${t.cwd}`}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      height: 30, padding: '0 6px 0 12px', border: 'none', background: 'transparent',
-                      cursor: 'pointer', color: 'var(--text-body)',
-                      fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-                    }}
+                    className={styles.templateChipButton}
                   >
                     <Bookmark size={12} /> {t.label}
                   </button>
@@ -190,11 +163,7 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
                     aria-label={`Delete template ${t.label}`}
                     title="Delete template"
                     onClick={() => deleteTemplate(t.label)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      height: 30, width: 26, border: 'none', background: 'transparent',
-                      cursor: 'pointer', color: 'var(--text-faint)',
-                    }}
+                    className={styles.templateChipDelete}
                   >
                     <X size={12} />
                   </button>
@@ -219,14 +188,11 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
           prefix={<Folder size={14} />}
         />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-            textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
-          }}>
+        <div className={styles.fieldGroup}>
+          <span className={styles.sectionLabel}>
             Initial command
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className={styles.quickCommandsRow}>
             {QUICK_COMMANDS.map((c) => {
               // The claude chip stays lit while flags ride the command — the
               // model/effort chips below edit the same string. Re-clicking it
@@ -239,14 +205,11 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
                 editCommand(c === 'claude' ? withClaudeDefaults('claude') : c);
               };
               return (
-                <button key={c} onClick={pick} style={{
-                  flex: 1, height: 36, cursor: 'pointer',
-                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-                  borderRadius: 'var(--radius-md)',
-                  border: `1px solid ${selected ? 'var(--border-accent)' : 'var(--border-default)'}`,
-                  background: selected ? 'var(--accent-soft)' : 'var(--surface-card)',
-                  color: selected ? 'var(--text-accent)' : 'var(--text-body)',
-                }}>
+                <button
+                  key={c}
+                  onClick={pick}
+                  className={`${styles.quickCommandChip} ${selected ? styles.quickCommandChipSelected : ''}`}
+                >
                   {c}
                 </button>
               );
@@ -264,22 +227,15 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
             onChange={(e) => editCommand(e.target.value)}
             placeholder="npm run dev — leave blank for a plain shell"
           />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', color: 'var(--text-faint)',
-            }}>
+          <div className={styles.commandFooterRow}>
+            <span className={styles.hintText}>
               Runs on start; the shell stays open when it exits.
             </span>
             <button
               type="button"
               onClick={saveAsTemplate}
               title="Save this name, directory, and command as a reusable template"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-                color: justSaved ? 'var(--text-accent)' : 'var(--text-muted)',
-              }}
+              className={`${styles.saveTemplateButton} ${justSaved ? styles.saveTemplateButtonSaved : ''}`}
             >
               <BookmarkPlus size={13} /> {justSaved ? 'Saved' : 'Save as template'}
             </button>
@@ -287,15 +243,12 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
         </div>
 
         {error && (
-          <p style={{
-            color: 'var(--danger)', fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--text-sm)', margin: 0,
-          }}>
+          <p className={styles.errorText}>
             {error}
           </p>
         )}
 
-        <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
+        <div className={styles.actionsRow}>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button fullWidth loading={busy} leadingIcon={<Terminal size={15} />} onClick={handleCreate}>
             Create &amp; attach

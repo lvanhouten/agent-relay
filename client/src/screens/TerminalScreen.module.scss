@@ -1,0 +1,180 @@
+.screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-app);
+}
+
+.header {
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.termIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+// Shrink-only, capped: a long session name ellipsizes instead of pushing the
+// badge/cwd/actions off the header. Narrow viewports have far less room to
+// spend before the action buttons collapse into the overflow menu.
+.title {
+  min-width: 0;
+  max-width: 280px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text-strong);
+
+  @media (max-width: 480px) {
+    max-width: 140px;
+  }
+}
+
+// Shrink-only (no grow): gives up room under pressure but doesn't compete with
+// the actions row for surplus, so slack goes to buttons not path padding.
+.cwd {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.statusDot {
+  flex-shrink: 0;
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: var(--border-subtle);
+}
+
+// The only flex-grow item in the row; its resolved width IS the room CSS gave
+// the buttons (see useVisibleActionCount).
+.actionsRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+// Always reserved so the row's fixed cost doesn't change between renders and
+// throw off the flex-grow measurement above.
+.overflowSlot {
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.findBar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.findIcon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.findInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-strong);
+}
+
+.findCount {
+  min-width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+.composer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-card);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.chipRow {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.chip {
+  flex-shrink: 0;
+  height: 44px;
+  min-width: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+}
+
+.footer {
+  height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+  background: var(--surface-card);
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+.hostAccent {
+  color: var(--text-accent);
+}
+
+.footerRight {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

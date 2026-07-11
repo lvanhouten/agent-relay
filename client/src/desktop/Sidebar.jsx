@@ -7,7 +7,7 @@ import { Input } from '@ds/Input.jsx';
 import { attentionFor } from '../core/attention.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
 import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff } from 'lucide-react';
-import styles from './Sidebar.module.css';
+import styles from './Sidebar.module.scss';
 
 // One live session row. Attention dot uses the SAME decode as the mobile cards
 // (core/attention.ts) — the one status-vocabulary sync point — so a needs-input

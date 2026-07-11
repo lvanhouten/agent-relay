@@ -9,7 +9,7 @@ import { jumpIndexFromKey } from '../core/jumpKeys.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
 import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { FindBar } from '../chrome/FindBar.jsx';
-import styles from './DetailPane.module.css';
+import styles from './DetailPane.module.scss';
 
 // Alt+digit must escape the terminal so the workspace's document-level listener
 // can select a session even while xterm has focus. TerminalView's passthrough
@@ -41,7 +41,7 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
     return (
       <section className={styles.pane}>
         <div className={styles.empty}>
-          <TerminalIcon size={32} style={{ color: 'var(--text-faint)' }} />
+          <TerminalIcon size={32} className={styles.emptyIcon} />
           <span>No active sessions. Start one to get going.</span>
           <Button leadingIcon={<Plus size={15} />} onClick={onNewSession}>New session</Button>
         </div>
@@ -93,7 +93,7 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
     <section className={styles.pane}>
       <div className={styles.toolbar}>
         <span className={styles.title}>
-          <TerminalIcon size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <TerminalIcon size={15} className={styles.titleIcon} />
           <span className={styles.name}>{session.name}</span>
           <Badge variant="accent">{shellLabel}</Badge>
         </span>
