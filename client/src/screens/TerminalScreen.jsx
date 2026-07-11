@@ -1,15 +1,14 @@
 import React from 'react';
-import { Badge } from '@ds/Badge.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { OverflowMenu } from '@ds/OverflowMenu.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import {
   ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Minimize2, Sun, Moon,
-  Search, Download, Keyboard, X, ChevronUp, ChevronDown, Send as SendIcon,
+  Search, Download, Keyboard, X, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
-import { KEY_CHIPS, composerBytes } from '../core/keyChips.ts';
+import { KEY_CHIPS } from '../core/keyChips.ts';
 import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { searchReadout } from '../core/searchReadout.ts';
 import { useFullscreen } from '../core/useFullscreen.ts';
@@ -35,7 +34,7 @@ function loadComposerPref() {
 }
 
 // Chrome around the terminal: header, footer, status dot, find bar, and the
-// mobile composer (input + canned-key chips). The terminal itself — xterm, the
+// mobile composer (canned-key chips). The terminal itself — xterm, the
 // WS lifecycle, the mount dance, the scroll-to-bottom pill — lives in
 // core/TerminalView; this screen drives it through the imperative handle.
 export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack }) {
@@ -49,7 +48,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   const searchInputRef = React.useRef(null);
 
   const [showComposer, setShowComposer] = React.useState(loadComposerPref);
-  const [composerText, setComposerText] = React.useState('');
 
   React.useEffect(() => {
     localStorage.setItem(COMPOSER_PREF_KEY, showComposer ? '1' : '0');
@@ -102,16 +100,10 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     URL.revokeObjectURL(url);
   };
 
-  // The composer exists for flaky mobile moments — the same moments the socket
-  // is mid-reconnect and send() drops the bytes. Only clear the input when the
-  // send actually reached an open socket; the chips/Send button are also gated
-  // off connStatus below, but the return check covers the status-vs-socket race.
+  // Chips send raw bytes straight to the PTY. They're gated off connStatus so a
+  // mid-reconnect tap can't silently drop into a closed socket.
   const composerReady = connStatus === 'online';
   const sendChip = (seq) => viewRef.current?.send(seq);
-  const submitComposer = () => {
-    if (!composerText) return;
-    if (viewRef.current?.send(composerBytes(composerText))) setComposerText('');
-  };
 
   const matchReadout = searchReadout(searchTerm, searchResults);
 
@@ -153,7 +145,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         }}>
           {session.name}
         </span>
-        <Badge variant="accent">{shellLabel}</Badge>
         {/* Shrink-only (no grow) - it gives up room under pressure but doesn't
             compete with the actions row below for surplus space, so slack
             goes to buttons rather than padding out an already-fitting path. */}
@@ -242,7 +233,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         onSearchResults={setSearchResults}
       />
 
-      {/* mobile answer mode: canned-key chips + composer input */}
+      {/* mobile answer mode: canned-key chips */}
       {showComposer && (
         <div style={{
           flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
@@ -259,7 +250,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 onClick={() => sendChip(chip.seq)}
                 disabled={!composerReady}
                 style={{
-                  flexShrink: 0, height: 34, minWidth: 40, padding: '0 12px',
+                  flexShrink: 0, height: 44, minWidth: 48, padding: '0 16px',
                   border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
                   background: 'var(--surface-sunken)', color: 'var(--text-strong)',
                   fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
@@ -270,30 +261,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 {chip.label}
               </button>
             ))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <input
-              value={composerText}
-              onChange={(e) => setComposerText(e.target.value)}
-              // isComposing: a mobile-IME candidate confirmation must not
-              // submit half-composed text to a live agent (this input exists
-              // for exactly those keyboards).
-              onKeyDown={(e) => { if (e.nativeEvent.isComposing) return; if (e.key === 'Enter') { e.preventDefault(); submitComposer(); } }}
-              placeholder="Type a reply, then Send…"
-              enterKeyHint="send"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              style={{
-                flex: 1, minWidth: 0, height: 40, padding: '0 var(--space-3)',
-                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                background: 'var(--surface-app)', color: 'var(--text-strong)', outline: 'none',
-                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-base)',
-              }}
-            />
-            <IconButton label="Send" bordered onClick={submitComposer} disabled={!composerText || !composerReady}>
-              <SendIcon size={16} />
-            </IconButton>
           </div>
         </div>
       )}
