@@ -9,6 +9,7 @@ import { XTERM_THEMES } from './xtermThemes.ts';
 import { PILL_INIT, onScroll as pillOnScroll, onLine as pillOnLine } from './scrollPill.ts';
 import type { PillState } from './scrollPill.ts';
 import type { ConnStatus, TerminalViewMode, SearchResults } from './types.ts';
+import { shouldXtermConsumeKey } from './keyPassthrough.ts';
 
 // Search highlight colors — a warm yellow that reads on both the dark and light
 // xterm themes. Enabling decorations is also what makes SearchAddon compute a
@@ -42,6 +43,12 @@ export interface TerminalViewProps {
   // Live search match position/count from the search addon, for the find bar's
   // readout. resultCount is -1 when the addon hasn't computed it.
   onSearchResults?: (results: SearchResults) => void;
+  // When provided and it returns true for a keydown, xterm does not consume
+  // that event (nothing is written to the PTY) and the native event keeps
+  // bubbling, so a document-level listener still sees it — the escape hatch
+  // the desktop shell's Alt+digit session-jump chord needs. Absent, behavior
+  // is unchanged from today (xterm handles every keydown itself).
+  passthroughKeys?: (e: KeyboardEvent) => boolean;
 }
 
 export interface TerminalViewHandle {
@@ -69,7 +76,7 @@ export interface TerminalViewHandle {
 // from outside — find bar, composer, header buttons — stays in the consuming
 // screen and reaches in through the imperative handle.
 export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewProps>(
-  function TerminalView({ sessionId, theme, onDetach, onSearchToggle, onStatusChange, onSearchResults }, handleRef) {
+  function TerminalView({ sessionId, theme, onDetach, onSearchToggle, onStatusChange, onSearchResults, passthroughKeys }, handleRef) {
     const containerRef = React.useRef<HTMLDivElement | null>(null);
     const termRef = React.useRef<Terminal | null>(null);
     const searchRef = React.useRef<SearchAddon | null>(null);
@@ -96,9 +103,11 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     const onDetachRef = React.useRef(onDetach);
     const onSearchToggleRef = React.useRef(onSearchToggle);
     const onSearchResultsRef = React.useRef(onSearchResults);
+    const passthroughKeysRef = React.useRef(passthroughKeys);
     React.useEffect(() => { onDetachRef.current = onDetach; }, [onDetach]);
     React.useEffect(() => { onSearchToggleRef.current = onSearchToggle; }, [onSearchToggle]);
     React.useEffect(() => { onSearchResultsRef.current = onSearchResults; }, [onSearchResults]);
+    React.useEffect(() => { passthroughKeysRef.current = passthroughKeys; }, [passthroughKeys]);
 
     const { connStatus, send, resize } = useSessionWS(sessionId, undefined, {
       onData: React.useCallback((data: string) => onDataRef.current?.(data), []),
@@ -189,6 +198,9 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         if (data === '\x06') { onSearchToggleRef.current?.(); return; } // Ctrl+F — find bar
         send(data);
       });
+
+      // Runs before xterm's own keydown handling — see keyPassthrough.ts.
+      term.attachCustomKeyEventHandler((e) => shouldXtermConsumeKey(passthroughKeysRef.current, e));
 
       // Scroll-pill bookkeeping: a line feed while detached counts toward the
       // "n new" badge; any scroll recomputes pinned-ness (re-reaching bottom

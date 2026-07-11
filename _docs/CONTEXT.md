@@ -39,6 +39,33 @@ v1: `tailscale serve`, exposing the relay at the machine's stable tailnet URL.
 Reachability is tailnet-scoped; the tunnel is not the auth boundary (the token
 and origin gates still apply).
 
+### Shell
+A composition of screens over the shared client core (`client/src/core/`).
+Two exist: the *mobile shell* (the original `login → sessions → terminal`
+screen stack) and the *desktop shell* (the master–detail workspace). Shells
+differ in chrome and navigation, never in protocol or session semantics —
+anything needing new server state belongs in the core, not a shell.
+
+### Shell selection
+The boot-time choice of shell, made once per browser window at page load:
+phone-shaped windows get the mobile shell, others the desktop shell. Sticky
+for the window's lifetime — resizing never swaps shells mid-session. A manual
+override (per-window, survives that window's reloads) beats the heuristic.
+
+### Phone-shaped window
+A browser window classified as phone-like at boot: portrait aspect
+(taller than wide) **or** narrower than 768 CSS px. Geometry, deliberately not
+pointer/UA — the phone-over-RDP path is desktop Chrome with a mouse, so only
+window shape tells the truth. Matches the RDP launcher's session-geometry rule
+in spirit (portrait-or-narrow).
+
+### Spectator
+A watch-only attach to a session: sees everything the session shows, sends
+nothing — input and resize are dropped at the relay, so a spectator never
+affects the PTY or its size (never enters the board's smallest-client clamp).
+Renders by adopting the PTY's real dimensions and scaling to fit. Contrast
+*interactive* (the default attach: owns input and participates in sizing).
+
 ### Same-origin model
 The client's reachability rule: you reach a relay by loading the page *from*
 it (directly or through a tunnel) — page, API, and WS stream all target the
