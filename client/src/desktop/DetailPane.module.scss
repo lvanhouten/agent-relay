@@ -87,3 +87,12 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
+
+.emptyIcon {
+  color: var(--text-faint);
+}
+
+.titleIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

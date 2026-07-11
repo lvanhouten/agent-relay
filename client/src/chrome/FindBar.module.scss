@@ -1,0 +1,33 @@
+.bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-strong);
+}
+
+.count {
+  min-width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}

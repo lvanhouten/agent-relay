@@ -7,6 +7,7 @@ import { readFragmentToken, stripFragment } from './core/fragmentPairing.ts';
 import { decideBoot } from './core/boot.ts';
 import { decideShell, readShellOverride, writeShellOverride } from './core/shellSelection.ts';
 import { login, listSessions } from './core/api.ts';
+import styles from './App.module.scss';
 
 export default function App() {
   // 'boot' is a transient loading state — first paint decides among the
@@ -90,13 +91,9 @@ export default function App() {
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   return (
-    <div style={{ height: '100dvh', overflow: 'hidden' }}>
+    <div className={styles.root}>
       {screen === 'boot' && (
-        <div style={{
-          height: '100%', display: 'grid', placeItems: 'center',
-          background: 'var(--surface-app)', color: 'var(--text-faint)',
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
-        }}>
+        <div className={styles.boot}>
           Connecting…
         </div>
       )}

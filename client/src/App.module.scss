@@ -1,0 +1,14 @@
+.root {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.boot {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-app);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}

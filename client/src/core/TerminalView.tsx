@@ -10,6 +10,7 @@ import { PILL_INIT, onScroll as pillOnScroll, onLine as pillOnLine } from './scr
 import type { PillState } from './scrollPill.ts';
 import type { ConnStatus, TerminalViewMode, SearchResults } from './types.ts';
 import { shouldXtermConsumeKey } from './keyPassthrough.ts';
+import styles from './TerminalView.module.scss';
 
 // Search highlight colors — a warm yellow that reads on both the dark and light
 // xterm themes. Enabling decorations is also what makes SearchAddon compute a
@@ -240,33 +241,14 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     };
 
     return (
-      // xterm container — padding lives on this wrapper, NOT the mount node.
-      // FitAddon measures its parent via getComputedStyle().height, which under
-      // box-sizing:border-box is padding-inclusive; padding here would make it
-      // over-count rows and clip the last line. position:relative anchors the
-      // scroll-to-bottom pill over the viewport.
-      <div
-        style={{
-          flex: 1, overflow: 'hidden', position: 'relative',
-          background: XTERM_THEMES[theme]?.background ?? '#070b0e',
-          padding: 'var(--space-3)',
-        }}
-      >
-        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <div className={styles.wrapper}>
+        <div ref={containerRef} className={styles.mount} />
         {!pill.atBottom && (
           <button
             type="button"
             onClick={jumpToBottom}
             aria-label="Scroll to latest output"
-            style={{
-              position: 'absolute', bottom: 'var(--space-4)', left: '50%', transform: 'translateX(-50%)',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '6px 14px', borderRadius: 'var(--radius-full, 999px)',
-              border: '1px solid var(--border-strong)', background: 'var(--surface-card)',
-              color: 'var(--text-strong)', cursor: 'pointer',
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-              boxShadow: 'var(--shadow-2, 0 4px 12px rgba(0,0,0,.35))',
-            }}
+            className={styles.pill}
           >
             ↓ {pill.newLines > 0 ? `${pill.newLines} new` : 'latest'}
           </button>

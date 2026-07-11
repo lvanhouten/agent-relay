@@ -7,6 +7,10 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  css: {
+    // Dart Sass 2.0 drops the legacy JS API; opt into the modern compiler now.
+    preprocessorOptions: { scss: { api: 'modern' } },
+  },
   resolve: {
     alias: {
       '@ds': resolve(__dirname, '../_docs/design-system/components/core'),

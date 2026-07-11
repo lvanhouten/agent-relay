@@ -2,6 +2,7 @@ import React from 'react';
 import { IconButton } from '@ds/IconButton.jsx';
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { searchReadout } from '../core/searchReadout.ts';
+import styles from './FindBar.module.scss';
 
 // Terminal find bar — the one piece of chrome shared across shells (every
 // other screen affordance is deliberately per-shell). Owns its own input
@@ -39,27 +40,17 @@ export function FindBar({ results, onQuery, onNext, onPrev, onClose }) {
   const matchReadout = searchReadout(term, results);
 
   return (
-    <div style={{
-      flexShrink: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-      padding: 'var(--space-2) var(--space-4)',
-      background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
-    }}>
-      <Search size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+    <div className={styles.bar}>
+      <Search size={14} className={styles.icon} />
       <input
         ref={inputRef}
         value={term}
         onChange={(e) => changeTerm(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Find in output…"
-        style={{
-          flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none',
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--text-strong)',
-        }}
+        className={styles.input}
       />
-      <span style={{
-        fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-        color: 'var(--text-faint)', minWidth: 40, textAlign: 'right',
-      }}>
+      <span className={styles.count}>
         {matchReadout}
       </span>
       <IconButton size="sm" label="Previous match" onClick={() => onPrev(term)}>

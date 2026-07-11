@@ -1,0 +1,337 @@
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.exitedBody {
+  opacity: 0.75;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cardName {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-lg);
+  color: var(--text-strong);
+}
+
+.cardCwd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardBadges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.cardTime {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+.exitedTime {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: var(--surface-overlay);
+  backdrop-filter: blur(2px);
+  padding: var(--space-6);
+}
+
+.modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-pop);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modalTitle {
+  font-size: var(--text-xl);
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.closeGlyph {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.errorText {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.checkingText {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.qrSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.qrHeading {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  align-self: flex-start;
+}
+
+.qrBox {
+  background: #fff;
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  line-height: 0;
+  width: 224px;
+  height: 224px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qrPlaceholder {
+  color: #888;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.pairingUrl {
+  width: 100%;
+  word-break: break-all;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-body);
+}
+
+.messageText {
+  margin: 0;
+  text-align: center;
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.modalActions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.screen {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-app);
+}
+
+.header {
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-5);
+  gap: var(--space-3);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.logo {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logoMark {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-on-accent);
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.overflowSlot {
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--container-w);
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+.topBar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-6);
+}
+
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.pageTitle {
+  font-size: var(--text-3xl);
+  margin: 6px 0 0;
+  color: var(--text-strong);
+}
+
+.accentWord {
+  color: var(--text-accent);
+}
+
+.controlsRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.searchBox {
+  width: 200px;
+}
+
+.emptyState {
+  text-align: center;
+  padding: var(--space-20) 0;
+  color: var(--text-muted);
+}
+
+.emptyStateText {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.sessionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.sessionsGridEnded {
+  margin-top: var(--space-4);
+}
+
+.endedSection {
+  margin-top: var(--space-8);
+}
+
+.endedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}

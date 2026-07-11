@@ -7,7 +7,7 @@ import { resolveSelection } from '../core/resolveSelection.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
 import { Sidebar } from './Sidebar.jsx';
 import { DetailPane } from './DetailPane.jsx';
-import styles from './DesktopWorkspace.module.css';
+import styles from './DesktopWorkspace.module.scss';
 
 // The desktop shell: a master-detail workspace over the shared client core, no
 // screen-swapping. Owns the one piece of state the mobile shell doesn't need —

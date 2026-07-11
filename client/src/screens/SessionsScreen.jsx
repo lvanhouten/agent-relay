@@ -16,6 +16,7 @@ import { useFullscreen } from '../core/useFullscreen.ts';
 import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
 import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, ChevronRight, ChevronDown, QrCode, Maximize2, Minimize2 } from 'lucide-react';
+import styles from './SessionsScreen.module.scss';
 
 // NOTE: the per-card scrollback preview was removed here — the server DTO never
 // carried a `preview` field (neither toDto() nor spawn() in server/src/sessions.js
@@ -33,22 +34,14 @@ function SessionCard({ session, onAttach, onKill }) {
   const pulse = attention.pulse;
   return (
     <Card interactive padding="md" onClick={() => onAttach(session)}
-      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontFamily: 'var(--font-display)', fontWeight: 600,
-            fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
-          }}>
+      className={styles.cardBody}>
+      <div className={styles.cardHeader}>
+        <div className={styles.cardTitleBlock}>
+          <span className={styles.cardName}>
             <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={pulse} />
             {session.name}
           </span>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-            color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
+          <span className={styles.cardCwd}>
             <Folder size={12} /> {session.cwd}
           </span>
         </div>
@@ -57,20 +50,16 @@ function SessionCard({ session, onAttach, onKill }) {
         </IconButton>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className={styles.cardFooter}>
+        <div className={styles.cardBadges}>
           <Badge variant="accent">{shellLabel}</Badge>
           <Badge variant="neutral">pid {session.pid}</Badge>
         </div>
         {/* State word + relative time read as one clause ("quiet · 43s ago") —
             the state is literally derived from that same idle clock server-side. */}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <span className={styles.cardMeta}>
           <StatusDot status={attention.dot} pulse={pulse} size="sm" label={attention.label} />
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-            color: 'var(--text-faint)',
-          }}>
+          <span className={styles.cardTime}>
             <Clock size={11} /> {session.lastActive}
           </span>
         </span>
@@ -90,22 +79,14 @@ function ExitedSessionCard({ session, onDismiss }) {
   // rendering, shared with the sidebar row and detail pane so the three agree.
   const { dot, label, failed } = tombstoneView(session);
   return (
-    <Card padding="md" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', opacity: 0.75 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontFamily: 'var(--font-display)', fontWeight: 600,
-            fontSize: 'var(--text-lg)', color: 'var(--text-strong)',
-          }}>
+    <Card padding="md" className={`${styles.cardBody} ${styles.exitedBody}`}>
+      <div className={styles.cardHeader}>
+        <div className={styles.cardTitleBlock}>
+          <span className={styles.cardName}>
             <StatusDot status={dot} pulse={false} size="sm" showLabel={false} />
             {session.name}
           </span>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-            color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
+          <span className={styles.cardCwd}>
             <Folder size={12} /> {session.cwd}
           </span>
         </div>
@@ -114,16 +95,12 @@ function ExitedSessionCard({ session, onDismiss }) {
         </IconButton>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className={styles.cardFooter}>
+        <div className={styles.cardBadges}>
           <Badge variant="neutral">{shellLabel}</Badge>
           <Badge variant={failed ? 'danger' : 'neutral'}>{label}</Badge>
         </div>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-          color: 'var(--text-faint)', flexShrink: 0,
-        }}>
+        <span className={styles.exitedTime}>
           <Clock size={11} /> {session.lastActive}
         </span>
       </div>
@@ -164,45 +141,30 @@ function PairDeviceDialog({ onClose }) {
   const display = info ? pairingDisplay(info) : null;
 
   return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, zIndex: 40, display: 'grid', placeItems: 'center',
-      background: 'var(--surface-overlay)', backdropFilter: 'blur(2px)', padding: 'var(--space-6)',
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: '100%', maxWidth: 420, background: 'var(--surface-card)',
-        border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)',
-        boxShadow: 'var(--shadow-pop)', padding: 'var(--space-6)',
-        display: 'flex', flexDirection: 'column', gap: 'var(--space-5)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontSize: 'var(--text-xl)', margin: 0, color: 'var(--text-strong)' }}>Pair a device</h2>
+    <div onClick={onClose} className={styles.overlay}>
+      <div onClick={(e) => e.stopPropagation()} className={styles.modal}>
+        <div className={styles.modalHeader}>
+          <h2 className={styles.modalTitle}>Pair a device</h2>
           <IconButton label="Close" size="sm" onClick={onClose}>
-            <span style={{ fontSize: 18, lineHeight: 1, color: 'var(--text-muted)' }}>×</span>
+            <span className={styles.closeGlyph}>×</span>
           </IconButton>
         </div>
 
         {error && (
-          <p style={{
-            color: 'var(--danger)', fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--text-sm)', margin: 0,
-          }}>
+          <p className={styles.errorText}>
             {error}
           </p>
         )}
 
         {!error && !info && (
-          <p style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', margin: 0 }}>
+          <p className={styles.checkingText}>
             Checking tunnel status…
           </p>
         )}
 
         {!error && display && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', alignItems: 'center' }}>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-              textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)',
-              alignSelf: 'flex-start',
-            }}>
+          <div className={styles.qrSection}>
+            <span className={styles.qrHeading}>
               {display.heading}
             </span>
 
@@ -210,34 +172,24 @@ function PairDeviceDialog({ onClose }) {
               <>
                 {/* QR modules need a light, high-contrast background regardless
                     of the app theme, hence the fixed white box. */}
-                <div style={{
-                  background: '#fff', padding: 'var(--space-3)',
-                  borderRadius: 'var(--radius-lg)', lineHeight: 0,
-                  width: 224, height: 224, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
+                <div className={styles.qrBox}>
                   {qrDataUrl
                     ? <img src={qrDataUrl} width={200} height={200} alt="Pairing QR code — scan with the device you want to pair" />
-                    : <span style={{ color: '#888', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)' }}>Rendering…</span>}
+                    : <span className={styles.qrPlaceholder}>Rendering…</span>}
                 </div>
-                <code style={{
-                  width: '100%', wordBreak: 'break-all', textAlign: 'center',
-                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-body)',
-                }}>
+                <code className={styles.pairingUrl}>
                   {pairingUrl}
                 </code>
               </>
             ) : (
-              <p style={{
-                margin: 0, textAlign: 'center', color: 'var(--text-body)',
-                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
-              }}>
+              <p className={styles.messageText}>
                 {display.message}
               </p>
             )}
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-1)' }}>
+        <div className={styles.modalActions}>
           <Button fullWidth variant="ghost" onClick={onClose}>Close</Button>
         </div>
       </div>
@@ -312,30 +264,15 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
   const overflowActions = actions.slice(visibleActionCount);
 
   return (
-    <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
-      <header style={{
-        height: 52, flexShrink: 0, display: 'flex', alignItems: 'center',
-        padding: '0 var(--space-5)', gap: 'var(--space-3)',
-        background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
-      }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontWeight: 700,
-          fontSize: 'var(--text-base)', color: 'var(--text-strong)',
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-        }}>
-          <span style={{
-            width: 22, height: 22, borderRadius: 4, background: 'var(--accent)',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, color: 'var(--text-on-accent)',
-          }}>▸</span>
+    <div className={styles.screen}>
+      <header className={styles.header}>
+        <span className={styles.logo}>
+          <span className={styles.logoMark}>▸</span>
           agent-relay
         </span>
         {/* The only flex-grow item in the row - see TerminalScreen's header for
             why its resolved clientWidth is exactly "room CSS gave the buttons". */}
-        <div ref={actionsRowRef} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-          gap: 'var(--space-2)', flex: '1 1 0', minWidth: 0, overflow: 'hidden',
-        }}>
+        <div ref={actionsRowRef} className={styles.actionsRow}>
           {visibleActions.map((a) => (
             <IconButton key={a.key} label={a.label} active={a.active} onClick={a.onClick}>
               {a.icon}
@@ -344,33 +281,24 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
         </div>
         {/* Always reserved, whether or not the menu has anything in it - see
             TerminalScreen's header for why. */}
-        <div style={{ width: 36, flexShrink: 0 }}>
+        <div className={styles.overflowSlot}>
           <OverflowMenu items={overflowActions} />
         </div>
       </header>
 
-      <main style={{
-        flex: 1, width: '100%', maxWidth: 'var(--container-w)',
-        margin: '0 auto', padding: 'var(--space-8) var(--space-6)',
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-          gap: 'var(--space-4)', flexWrap: 'wrap', marginBottom: 'var(--space-6)',
-        }}>
+      <main className={styles.main}>
+        <div className={styles.topBar}>
           <div>
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-              textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-muted)',
-            }}>
+            <span className={styles.sectionLabel}>
               Active sessions
             </span>
-            <h1 style={{ fontSize: 'var(--text-3xl)', margin: '6px 0 0', color: 'var(--text-strong)' }}>
+            <h1 className={styles.pageTitle}>
               {liveCount} session{liveCount === 1 ? '' : 's'} on{' '}
-              <span style={{ color: 'var(--text-accent)' }}>main</span>
+              <span className={styles.accentWord}>main</span>
             </h1>
           </div>
-          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-            <div style={{ width: 200 }}>
+          <div className={styles.controlsRow}>
+            <div className={styles.searchBox}>
               <Input
                 prefix={<Search size={14} />}
                 placeholder="Filter sessions"
@@ -385,19 +313,15 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
         </div>
 
         {live.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 'var(--space-20) 0', color: 'var(--text-muted)' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}>
+          <div className={styles.emptyState}>
+            <div className={styles.emptyStateText}>
               {liveCount === 0
                 ? 'No active sessions. Start one to get going.'
                 : `No sessions match "${query}".`}
             </div>
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 'var(--space-4)',
-          }}>
+          <div className={styles.sessionsGrid}>
             {live.map((s) => (
               <SessionCard key={s.id} session={s} onAttach={onAttach} onKill={kill} />
             ))}
@@ -405,23 +329,13 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
         )}
 
         {ended.length > 0 && (
-          <section style={{ marginTop: 'var(--space-8)' }}>
-            <button onClick={() => setShowEnded((v) => !v)} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-              textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-muted)',
-            }}>
+          <section className={styles.endedSection}>
+            <button onClick={() => setShowEnded((v) => !v)} className={styles.endedToggle}>
               {showEnded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               Recently exited ({ended.length})
             </button>
             {showEnded && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: 'var(--space-4)',
-                marginTop: 'var(--space-4)',
-              }}>
+              <div className={`${styles.sessionsGrid} ${styles.sessionsGridEnded}`}>
                 {ended.map((s) => (
                   <ExitedSessionCard key={s.id} session={s} onDismiss={kill} />
                 ))}

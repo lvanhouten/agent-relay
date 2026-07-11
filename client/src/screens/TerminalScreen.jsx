@@ -13,7 +13,7 @@ import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { searchReadout } from '../core/searchReadout.ts';
 import { useFullscreen } from '../core/useFullscreen.ts';
 import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
-import { useMediaQuery } from '../core/useMediaQuery.ts';
+import styles from './TerminalScreen.module.scss';
 
 // Default the composer visible on touch/small viewports, hidden on a desktop
 // with a real keyboard (toggleable either way). Read once at mount — a device's
@@ -54,9 +54,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   }, [showComposer]);
 
   const { isFullscreen, toggleFullscreen } = useFullscreen();
-  // Narrow viewports have far less header room to spend on the title before
-  // the action buttons start collapsing into the overflow menu.
-  const isNarrowViewport = useMediaQuery('(max-width: 480px)');
 
   const shellLabel = session.shell.split(/[/\\]/).pop();
   const hostLabel = host.replace(/^https?:\/\//, '');
@@ -123,71 +120,37 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   const overflowActions = actions.slice(visibleActionCount);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-app)' }}>
+    <div className={styles.screen}>
       {/* session header */}
-      <header style={{
-        height: 52, flexShrink: 0, display: 'flex', alignItems: 'center',
-        gap: 'var(--space-3)', padding: '0 var(--space-4)',
-        background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
-      }}>
+      <header className={styles.header}>
         <IconButton label="Back to sessions" onClick={onBack}>
           <ChevronLeft size={18} />
         </IconButton>
-        <TerminalIcon size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-        {/* Shrink-only, capped - a long session name must ellipsize instead
-            of growing unbounded and pushing the badge/cwd/actions off the
-            header (it still wins the fight over cwd below via maxWidth). */}
-        <span title={session.name} style={{
-          fontFamily: 'var(--font-display)', fontWeight: 600,
-          color: 'var(--text-strong)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          minWidth: 0, maxWidth: isNarrowViewport ? 140 : 280, flex: '0 1 auto',
-        }}>
+        <TerminalIcon size={15} className={styles.termIcon} />
+        <span title={session.name} className={styles.title}>
           {session.name}
         </span>
-        {/* Shrink-only (no grow) - it gives up room under pressure but doesn't
-            compete with the actions row below for surplus space, so slack
-            goes to buttons rather than padding out an already-fitting path. */}
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-          color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          minWidth: 0, flex: '0 1 auto',
-        }}>
+        <span className={styles.cwd}>
           {session.cwd}
         </span>
-        <StatusDot status={dotStatus} size="sm" label={statusLabel} style={{ flexShrink: 0 }} />
-        <span style={{ width: 1, height: 22, background: 'var(--border-subtle)', margin: '0 4px', flexShrink: 0 }} />
-        {/* The only flex-grow item in the row - a direct header child, not
-            nested, so it actually receives a definite width from header's own
-            flex layout. Its resolved clientWidth IS "room CSS gave the
-            buttons" - see useVisibleActionCount above for why that's the
-            thing to measure. */}
-        <div ref={actionsRowRef} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-          gap: 'var(--space-2)', flex: '1 1 0', minWidth: 0, overflow: 'hidden',
-        }}>
+        <StatusDot status={dotStatus} size="sm" label={statusLabel} className={styles.statusDot} />
+        <span className={styles.divider} />
+        <div ref={actionsRowRef} className={styles.actionsRow}>
           {visibleActions.map((a) => (
             <IconButton key={a.key} label={a.label} active={a.active} onClick={a.onClick}>
               {a.icon}
             </IconButton>
           ))}
         </div>
-        {/* Always reserved, whether or not the menu has anything in it - a
-            conditionally-present trigger would change the row's fixed cost
-            between renders and throw off the flex-grow measurement above. */}
-        <div style={{ width: 36, flexShrink: 0 }}>
+        <div className={styles.overflowSlot}>
           <OverflowMenu items={overflowActions} />
         </div>
       </header>
 
       {/* find bar */}
       {showSearch && (
-        <div style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-          padding: 'var(--space-2) var(--space-4)',
-          background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)',
-        }}>
-          <Search size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+        <div className={styles.findBar}>
+          <Search size={14} className={styles.findIcon} />
           <input
             ref={searchInputRef}
             value={searchTerm}
@@ -200,15 +163,9 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
               else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
             }}
             placeholder="Find in output…"
-            style={{
-              flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none',
-              fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--text-strong)',
-            }}
+            className={styles.findInput}
           />
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)',
-            color: 'var(--text-faint)', minWidth: 40, textAlign: 'right',
-          }}>
+          <span className={styles.findCount}>
             {matchReadout}
           </span>
           <IconButton size="sm" label="Previous match" onClick={() => viewRef.current?.searchPrev(searchTerm)}>
@@ -235,12 +192,8 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
 
       {/* mobile answer mode: canned-key chips */}
       {showComposer && (
-        <div style={{
-          flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
-          padding: 'var(--space-2) var(--space-3)',
-          background: 'var(--surface-card)', borderTop: '1px solid var(--border-subtle)',
-        }}>
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+        <div className={styles.composer}>
+          <div className={styles.chipRow}>
             {KEY_CHIPS.map((chip) => (
               <button
                 key={chip.label}
@@ -249,14 +202,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
                 aria-label={chip.title ?? chip.label}
                 onClick={() => sendChip(chip.seq)}
                 disabled={!composerReady}
-                style={{
-                  flexShrink: 0, height: 44, minWidth: 48, padding: '0 16px',
-                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                  background: 'var(--surface-sunken)', color: 'var(--text-strong)',
-                  fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
-                  cursor: composerReady ? 'pointer' : 'not-allowed',
-                  opacity: composerReady ? 1 : 0.45,
-                }}
+                className={styles.chip}
               >
                 {chip.label}
               </button>
@@ -266,16 +212,11 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
       )}
 
       {/* status strip */}
-      <footer style={{
-        height: 30, flexShrink: 0, display: 'flex', alignItems: 'center',
-        gap: 'var(--space-4)', padding: '0 var(--space-5)',
-        background: 'var(--surface-card)', borderTop: '1px solid var(--border-subtle)',
-        fontFamily: 'var(--font-mono)', fontSize: 'var(--text-2xs)', color: 'var(--text-faint)',
-      }}>
-        <span style={{ color: 'var(--text-accent)' }}>● {hostLabel}</span>
+      <footer className={styles.footer}>
+        <span className={styles.hostAccent}>● {hostLabel}</span>
         <span>utf-8</span>
         <span>{shellLabel}</span>
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+        <span className={styles.footerRight}>
           <Kbd keys={['Ctrl', 'F']} /> find
           <Kbd keys={['Ctrl', 'D']} /> detach
         </span>
