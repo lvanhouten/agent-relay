@@ -21,7 +21,7 @@ test('KEY_CHIPS: arrows use the CSI cursor sequences', () => {
 test('KEY_CHIPS: letter/digit chips send the bare char with no trailing Enter', () => {
   // The predictable-model invariant: a chip is one raw key. If a port ever adds
   // an auto-submit \r here, digit menus would double-fire — this pins it.
-  for (const label of ['y', 'n', '1', '2', '3']) {
+  for (const label of ['y', 'n', 'x', '1', '2', '3']) {
     const chip = KEY_CHIPS.find((c) => c.label === label);
     assert.ok(chip, `missing chip ${label}`);
     assert.strictEqual(chip!.seq, label);

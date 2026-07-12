@@ -31,6 +31,7 @@ export const KEY_CHIPS: readonly KeyChip[] = [
   { label: '→', seq: '\x1b[C', title: 'Right arrow' },
   { label: 'y', seq: 'y', title: 'Type y' },
   { label: 'n', seq: 'n', title: 'Type n' },
+  { label: 'x', seq: 'x', title: 'Type x' },
   { label: '1', seq: '1' },
   { label: '2', seq: '2' },
   { label: '3', seq: '3' },
