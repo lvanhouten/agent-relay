@@ -4,7 +4,8 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
 import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
-import { Terminal, Folder, Bookmark, BookmarkPlus, X } from 'lucide-react';
+import { Terminal, Folder, FolderSearch, Bookmark, BookmarkPlus, X } from 'lucide-react';
+import { DirectoryPicker } from './DirectoryPicker.jsx';
 import styles from './NewSessionDialog.module.scss';
 
 // Shared new-session dialog — the one create surface both shells open (mobile:
@@ -84,6 +85,9 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
   // be visible before spawn), and "save as template" upserts the current form.
   const [templates, setTemplates] = React.useState(loadTemplates);
   const [justSaved, setJustSaved] = React.useState(false);
+  // The Working Directory field's "Browse…" affordance swaps the dialog body for
+  // a folder picker (no stacked modal); "Use this folder" writes the path back.
+  const [browsing, setBrowsing] = React.useState(false);
 
   // Every form edit goes through these, not the raw setters: any change
   // invalidates the "Saved" indicator — the stored template is the pre-edit
@@ -134,12 +138,22 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
     <div onClick={onClose} className={styles.overlay}>
       <div onClick={(e) => e.stopPropagation()} className={styles.dialog}>
         <div className={styles.headerRow}>
-          <h2 className={styles.title}>New session</h2>
+          <h2 className={styles.title}>{browsing ? 'Choose a folder' : 'New session'}</h2>
           <IconButton label="Close" size="sm" onClick={onClose}>
             <span className={styles.closeIcon}>×</span>
           </IconButton>
         </div>
 
+        {browsing && (
+          <DirectoryPicker
+            initialPath={cwd}
+            onPick={(p) => { editCwd(p); setBrowsing(false); }}
+            onCancel={() => setBrowsing(false)}
+          />
+        )}
+
+        {!browsing && (
+        <>
         {templates.length > 0 && (
           <div className={styles.fieldGroup}>
             <span className={styles.sectionLabel}>
@@ -186,6 +200,17 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
           value={cwd}
           onChange={(e) => editCwd(e.target.value)}
           prefix={<Folder size={14} />}
+          suffix={
+            <button
+              type="button"
+              className={styles.browseButton}
+              onClick={() => setBrowsing(true)}
+              aria-label="Browse folders"
+              title="Browse folders"
+            >
+              <FolderSearch size={16} />
+            </button>
+          }
         />
 
         <div className={styles.fieldGroup}>
@@ -254,6 +279,8 @@ export function NewSessionDialog({ onClose, onCreate, error, busy }) {
             Create &amp; attach
           </Button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

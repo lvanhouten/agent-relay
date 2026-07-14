@@ -7,6 +7,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { createAPI } = require('./api');
 const { BoardUnreachableError } = require('./sessions');
 const { errorHandler } = require('./errorHandler');
@@ -75,6 +78,53 @@ test('DELETE /sessions/:id -> 500 on a non-board error (not swallowed as 404)', 
   const app = serve({ kill: async () => { throw new Error('boom'); } });
   const { status } = await request(app, 'DELETE', '/api/sessions/7');
   assert.strictEqual(status, 500);
+});
+
+// --- GET /fs/browse: read-only directory listing for the create dialog ---
+
+test('GET /fs/browse -> 200 with a directories-only listing for a real folder', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'api-browse-'));
+  try {
+    await fs.promises.mkdir(path.join(dir, 'sub'));
+    await fs.promises.writeFile(path.join(dir, 'file.txt'), 'x');
+    const app = serve({});
+    const { status, body } = await request(app, 'GET', `/api/fs/browse?path=${encodeURIComponent(dir)}`);
+    assert.strictEqual(status, 200);
+    const parsed = JSON.parse(body);
+    assert.deepStrictEqual(parsed.entries, [{ name: 'sub', isDir: true }]);
+    assert.strictEqual(parsed.path, path.resolve(dir));
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('GET /fs/browse -> 400 not-found for a nonexistent path (never a 500)', async () => {
+  const app = serve({});
+  const missing = path.join(os.tmpdir(), 'api-browse-does-not-exist-zzz');
+  const { status, body } = await request(app, 'GET', `/api/fs/browse?path=${encodeURIComponent(missing)}`);
+  assert.strictEqual(status, 400);
+  assert.strictEqual(JSON.parse(body).error, 'not-found');
+});
+
+test('GET /fs/browse -> 400 not-a-directory when the path is a file', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'api-browse-'));
+  const filePath = path.join(dir, 'file.txt');
+  try {
+    await fs.promises.writeFile(filePath, 'x');
+    const app = serve({});
+    const { status, body } = await request(app, 'GET', `/api/fs/browse?path=${encodeURIComponent(filePath)}`);
+    assert.strictEqual(status, 400);
+    assert.strictEqual(JSON.parse(body).error, 'not-a-directory');
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('GET /fs/browse -> 200 (home) on a repeated ?path= array, not a 500', async () => {
+  const app = serve({});
+  const { status, body } = await request(app, 'GET', '/api/fs/browse?path=a&path=b');
+  assert.strictEqual(status, 200);
+  assert.strictEqual(JSON.parse(body).path, path.resolve(os.homedir()));
 });
 
 // --- POST /notify: fan-out + needs-input flag ---

@@ -58,6 +58,27 @@ export type ClientFrame = InputFrame | ResizeFrame;
 // _docs/issues/2026-07-02-desktop-workspace-shell.md.
 export type TerminalViewMode = 'interactive' | 'spectator';
 
+// Mirrors server/src/fsBrowse.js — the GET /api/fs/browse reply for the create
+// dialog's directory picker. `parent` is null at a filesystem root (drive root /
+// POSIX /), so the picker hides the "up" affordance there. `entries` is
+// directories only (isDir always true in v1; kept explicit for a future files
+// pass). `truncated` means the directory held more than the server cap.
+export interface BrowseEntry {
+  name: string;
+  isDir: boolean;
+}
+
+export interface BrowseResult {
+  path: string;
+  parent: string | null;
+  entries: BrowseEntry[];
+  truncated: boolean;
+}
+
+// The typed filesystem conditions GET /api/fs/browse reports in a 4xx body
+// instead of a 500 — the picker renders each in place and stays put.
+export type BrowseErrorCode = 'denied' | 'not-found' | 'not-a-directory';
+
 // Mirrors server/src/pairing.js's GET /api/pairing response. pairingUrl is a
 // full `https://<tunnel-host>/#token=<token>` string IFF tunnel.state==='up';
 // null otherwise (down/disabled never expose a URL — a localhost URL would be
