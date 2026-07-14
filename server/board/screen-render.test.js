@@ -230,3 +230,31 @@ test('reconstructReplay preserves scrollback history beyond the visible grid', a
 test('reconstructReplay handles an empty log', async () => {
   assert.strictEqual(await reconstructReplay([], 80, 24), '', 'nothing captured -> empty replay');
 });
+
+// The replay restores the visible screen, NOT the PTY's input-handling modes.
+// SerializeAddon.serialize() re-asserts the source emulator's DEC private modes
+// unless excludeModes is set. Mouse tracking (?1003h) in particular hands the web
+// client's wheel + drag to the PTY, so scrollback scroll and text selection die on
+// attach until a resize (the regression a joiner into a Claude Code line hit). The
+// live stream re-establishes any modes the running app still wants — the replay
+// must not force them.
+test('reconstructReplay does not re-assert interactive input modes into the joiner', async () => {
+  // Source turns on mouse tracking + SGR encoding + bracketed paste, then keeps
+  // emitting content (modes stay on in the emulator's final state).
+  const log =
+    'header line\r\n' +
+    ESC + '[?1003h' + ESC + '[?1006h' + ESC + '[?2004h' +
+    ESC + '[?1h' + // application cursor keys
+    'body line one\r\nbody line two\r\n';
+  const replay = await reconstructReplay([log], 80, 24);
+
+  const modeSeqs = replay.match(/\x1b\[\?[0-9;]+[hl]/g) || [];
+  assert.deepStrictEqual(modeSeqs, [], 'no DEC private mode re-assertions leak into the replay');
+  assert.ok(!replay.includes(ESC + '[?1003h'), 'mouse tracking is not re-enabled on attach');
+  assert.ok(!replay.includes(ESC + '[?2004h'), 'bracketed paste is not re-enabled on attach');
+
+  // Content is still faithfully restored — only the modes are dropped.
+  const rows = await renderRows(replay, 80);
+  assert.ok(rows.includes('header line'), 'visible content survives the mode exclusion');
+  assert.ok(rows.includes('body line two'), 'later content survives too');
+});

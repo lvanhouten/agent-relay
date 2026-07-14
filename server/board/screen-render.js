@@ -114,7 +114,14 @@ async function reconstructReplay(chunks, cols, rows) {
     // write has parsed (the same @xterm/headless invariant snapshot() relies on),
     // so the buffer is whole before the serializer walks it.
     await new Promise((resolve) => term.write('', resolve));
-    return serialize.serialize();
+    // excludeModes: the replay restores the joiner's visible screen, not the PTY's
+    // input-handling modes. Serializing modes re-asserts the source's DEC private
+    // modes (mouse tracking ?1003h, bracketed paste, application cursor keys, focus
+    // reporting) as trailing sequences on every attach. Mouse tracking in the web
+    // client hands wheel + drag to the PTY, so local scrollback scroll and text
+    // selection go dead until a resize. The live stream re-establishes whatever
+    // modes the running app still wants; the replay must not force stale ones.
+    return serialize.serialize({ excludeModes: true });
   } finally {
     term.dispose();
   }
