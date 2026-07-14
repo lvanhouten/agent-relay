@@ -24,7 +24,7 @@ const HELP = `switchboard — a PTY exchange for your terminal
 
 usage:
   sb up             bring the board online
-  sb new [shell] [--run <cmd>]
+  sb new [shell] [--run <cmd>] [--here]
                     start a new line + join a tab (e.g. sb new --run claude)
   sb list           list active lines
   sb join <id> [--here]
@@ -37,12 +37,89 @@ usage:
                     10min cap) — backgroundable via your shell's own job control,
                     unlike an MCP tool call
   sb down           take the board offline (ends every line)
-  sb help           show this help`;
+  sb help           show this help
+
+Run \`sb <command> -h\` for a command's full arguments.`;
+
+// Per-command help, shown for `sb <cmd> -h` / `--help`. Each lists every arg
+// and flag the command accepts.
+const USAGE = {
+  up: `sb up — bring the board online
+
+  Starts the board daemon if it isn't already running, then exits. No args.`,
+  new: `sb new [shell] [--run <cmd>] [--here] — start a new line
+
+  shell           optional shell to launch (default: the board's own default)
+  --run, -r <cmd> initial command typed into the shell once it's up; the shell
+                  stays open afterward (e.g. sb new --run claude)
+  --here, --inline attach THIS terminal to the new line instead of opening a new
+                  tab; blocks until you press Ctrl+] to detach (line keeps running)
+
+  Without --here, a new tab is opened in your terminal (needs a detectable
+  terminal or SWITCHBOARD_TERM).`,
+  list: `sb list  (alias: sb ls) — list active lines
+
+  Prints one row per live line (ID, PID, SHELL, JOINED, UPTIME). No args.`,
+  ls: null, // aliased to list below
+  join: `sb join <id> [--here] — join an existing line
+
+  <id>            the line id to join (see \`sb list\`)
+  --here, --inline attach THIS terminal instead of opening a new tab; blocks
+                  until you press Ctrl+] to detach (line keeps running)
+
+  Without --here, a new tab is opened in your terminal.`,
+  end: `sb end <id> — end a line
+
+  <id>            the line id to end. The line's process is killed.`,
+  screen: `sb screen <id> — print a line's current rendered screen
+
+  <id>            the line id whose rendered terminal grid to print (a one-shot
+                  snapshot; no read cursor).`,
+  wait: `sb wait <id> [idleMs] [maxWaitMs] — block until a line goes quiet or exits
+
+  <id>            the line id to wait on
+  idleMs          quiet threshold in ms before the line counts as idle
+                  (default: ~12s)
+  maxWaitMs       hard cap in ms before giving up (default: 10min)
+
+  Prints a JSON result. Backgroundable via your shell's own job control.`,
+  down: `sb down — take the board offline
+
+  Ends every line and stops the board daemon. No args.`,
+};
+USAGE.ls = USAGE.list;
+
+// Parse `sb new` args: optional leading shell, --run/-r <cmd>, --here/--inline.
+// Shell-naive by design (mirrors the create dialog) — the first non-flag token is
+// the shell; flags may appear in any order.
+function parseNewArgs(rest) {
+  let shell, run, here = false;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--run' || rest[i] === '-r') run = rest[++i];
+    else if (rest[i] === '--here' || rest[i] === '--inline') here = true;
+    else if (!shell && !rest[i].startsWith('-')) shell = rest[i];
+  }
+  return { shell, run, here };
+}
+
+// patch.js in-process against a line id: attaches THIS terminal to the line
+// (stdio inherited), Ctrl+] (29) detaches back to this shell, line keeps running.
+function joinHere(id) {
+  console.log(`joining line ${id} in this terminal — press Ctrl+] to detach`);
+  const child = spawn(process.execPath, [path.join(__dirname, 'patch.js'), id, '29'], { stdio: 'inherit' });
+  child.on('exit', code => process.exit(code == null ? 0 : code));
+}
 
 async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0];
   const arg = args[1];
+  // `sb <cmd> -h` / `--help` prints that command's full arg list, when the flag
+  // follows a known command (a bare `sb -h` still falls to the top-level HELP).
+  if (USAGE[cmd] && (args.slice(1).includes('-h') || args.slice(1).includes('--help'))) {
+    console.log(USAGE[cmd]);
+    return;
+  }
   switch (cmd) {
     case 'up': {
       const sock = await connectControl();
@@ -53,20 +130,21 @@ async function main() {
     case 'new': {
       // sb new [shell] [--run <cmd>] — optional shell, optional initial command
       // typed into the shell (which stays open), mirroring the web client.
-      const rest = args.slice(1);
-      let shell, run;
-      for (let i = 0; i < rest.length; i++) {
-        if (rest[i] === '--run' || rest[i] === '-r') run = rest[++i];
-        else if (!shell && !rest[i].startsWith('-')) shell = rest[i];
-      }
-      const msg = { cmd: 'new', open: true, cwd: process.cwd(), spawn: spawnRecipe() };
+      const { shell, run, here } = parseNewArgs(args.slice(1));
+      // --here attaches this terminal instead of opening a new tab: create the
+      // line with open:false (no pane recipe), then patch in-process — mirroring
+      // `sb join --here`. The `run` command still feeds through the board.
+      const msg = here
+        ? { cmd: 'new', open: false, cwd: process.cwd() }
+        : { cmd: 'new', open: true, cwd: process.cwd(), spawn: spawnRecipe() };
       if (shell) msg.shell = shell;
       if (run) msg.run = run;
       const r = await rpc(msg);
+      const started = `line ${r.id} started${run ? ` (running: ${run})` : ''}`;
+      if (here) { joinHere(r.id); break; }
       // paneOpened === false means the board refused the launch recipe (no
       // standalone {cmd} arg) — the line exists but no tab will appear, so say so
       // instead of the misleading "joining a tab" (N7/new-N1).
-      const started = `line ${r.id} started${run ? ` (running: ${run})` : ''}`;
       console.log(r.paneOpened === false
         ? `${started} — could NOT open a tab (check SWITCHBOARD_TERM); join it manually with \`sb join ${r.id}\``
         : `${started} — joining a tab`);
@@ -94,10 +172,7 @@ async function main() {
       // board opens no pane — client registration happens when patch connects to
       // the data pipe, so no `join` RPC is needed. Blocks until detach/exit.
       if (args.slice(2).includes('--here') || args.slice(2).includes('--inline')) {
-        // Ctrl+] (29) detaches back to this shell; the line keeps running.
-        console.log(`joining line ${arg} in this terminal — press Ctrl+] to detach`);
-        const child = spawn(process.execPath, [path.join(__dirname, 'patch.js'), arg, '29'], { stdio: 'inherit' });
-        child.on('exit', code => process.exit(code == null ? 0 : code));
+        joinHere(arg);
         break;
       }
       const r = await rpc({ cmd: 'join', id: arg, spawn: spawnRecipe() });
@@ -144,4 +219,8 @@ async function main() {
   }
 }
 
-main().catch(e => { console.error(e.message); process.exit(1); });
+if (require.main === module) {
+  main().catch(e => { console.error(e.message); process.exit(1); });
+}
+
+module.exports = { parseNewArgs };
