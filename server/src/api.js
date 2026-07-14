@@ -1,6 +1,7 @@
 'use strict';
 const { Router } = require('express');
 const { notifyAll } = require('./notifiers');
+const { browseDir } = require('./fsBrowse');
 
 // Field caps for POST /sessions. These fields flow into pty.spawn (and `command`
 // is typed into a real shell), so validate type + length here rather than let a
@@ -186,6 +187,24 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
       });
       res.json({ ok: true, id: id ?? null });
     } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
+  });
+
+  // Read-only directory listing for the create dialog's "Browse…" picker — lists
+  // the BOARD's filesystem (see fsBrowse.js for the why and the ADR-0001 trust
+  // note). No board RPC: a pure fs walk, so no 503 path. Expected filesystem
+  // conditions map to 4xx with a typed body the picker renders in place (denied ->
+  // 403, missing/not-a-dir -> 400); only an unexpected fs failure reaches next(e).
+  r.get('/fs/browse', async (req, res, next) => {
+    try {
+      // Express parses a repeated ?path= into an array; coerce so a malformed
+      // query resolves to home (undefined) rather than throwing in resolveCwd.
+      const p = typeof req.query.path === 'string' ? req.query.path : undefined;
+      const result = await browseDir(p);
+      if (result.error) {
+        return res.status(result.error === 'denied' ? 403 : 400).json(result);
+      }
+      res.json(result);
+    } catch (e) { next(e); }
   });
 
   return r;

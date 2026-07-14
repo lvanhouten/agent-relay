@@ -1,0 +1,96 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.pathBar {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  // The tail (the folder you're in) is the useful end; keep it visible.
+  overflow-x: auto;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  // A FIXED viewport, not max-height: the list scrolls internally so its height
+  // is constant no matter how many rows match. A content-sized list shrank as the
+  // filter narrowed, which resized the (vertically-centered) dialog and made it
+  // jump around while typing. Fixed height keeps the dialog anchored.
+  height: 46vh;
+  overflow-y: auto;
+
+  &[aria-busy='true'] {
+    opacity: 0.6;
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  // Comfortable touch target — this is the mobile-first surface.
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-body);
+  font-size: var(--text-sm);
+
+  &:hover,
+  &:focus-visible {
+    background: var(--surface-sunken);
+  }
+}
+
+.rowIcon {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.rowName {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: var(--space-4) var(--space-3);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.truncated {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.footer {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}

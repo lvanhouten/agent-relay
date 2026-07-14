@@ -1,9 +1,9 @@
 # Working directory in the new-session dialog is a bare text field — no way to browse
 
 **Source:** Came up alongside the terminal-header title-overflow fix (2026-07-09) while looking at the create-session dialog. `2026-07-02-fleet-spawn-templates.md` already named this exact pain ("a full Windows path on a soft keyboard") and solved it by letting a *saved* cwd be replayed with one tap; this doc covers the case templates don't: a directory you haven't spawned in before.
-**Status:** 💡 Proposed — 2026-07-09.
+**Status:** ✅ Landed — 2026-07-14. Shipped as designed, plus a client-side folder filter over the loaded entries. Endpoint `GET /api/fs/browse` in `server/src/fsBrowse.js` (dirs-only, cap 500 + `truncated`, typed `not-found`/`not-a-directory`/`denied`, lexical `parent` null at a filesystem root); `resolveCwd` extracted to `server/src/paths.js` and shared with spawn. Client: touch-first `chrome/DirectoryPicker.jsx` that swaps the dialog body (no stacked modal), present in both shells; `core/pickerPath.ts` for the child-path join. Directory browsing intentionally has **no path sandbox** — a read-only listing sits under ADR-0001's accepted trust ceiling (a token holder can already spawn a shell in any cwd). Deferred: symlinked/junction directories are not surfaced (would need a per-entry stat); the filter operates only over the first-500 loaded entries; scoped-tokens will need an explicit call on whether a read scope includes fs browsing.
 **Kind:** Enhancement
-**Modules:** client (`SessionsScreen.jsx`'s create dialog), server (`src/api.js`, `src/sessions.js` — a new read-only listing endpoint)
+**Modules:** client (`chrome/NewSessionDialog.jsx` + `chrome/DirectoryPicker.jsx`), server (`src/api.js`, `src/fsBrowse.js`, `src/paths.js`)
 **Severity:** Low–Medium — pure convenience; the text field always keeps working as a fallback.
 
 ## Motivation

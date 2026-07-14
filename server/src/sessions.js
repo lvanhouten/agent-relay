@@ -4,20 +4,9 @@
 // through the board kernel (board-client) over its pipes. The web tier holds no
 // PTY state, so it can restart without dropping a single session — and sessions
 // are shared with the `sb` CLI / terminal panes.
-const os = require('os');
 const path = require('path');
 const { rpc, attach, DEFAULT_IDLE_MS } = require('./board-client');
-
-// Expand a leading ~ and fall back to home. The board hands cwd straight to
-// pty.spawn, which throws on a literal "~/".
-function resolveCwd(cwd) {
-  const raw = (cwd ?? '').trim();
-  if (!raw) return os.homedir();
-  if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
-    return path.join(os.homedir(), raw.slice(1).replace(/^[\\/]/, ''));
-  }
-  return raw;
-}
+const { resolveCwd } = require('./paths');
 
 // Canonicalize a cwd for equality matching (the /api/notify cwd bridge). A hook
 // reports its own absolute cwd; the board records the resolveCwd()'d value passed

@@ -194,3 +194,23 @@
   gap: var(--space-3);
   margin-top: var(--space-1);
 }
+
+.browseButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  // Padded to a real touch target inside the field's affix slot.
+  height: 28px;
+  width: 28px;
+  margin-right: -4px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-accent);
+  }
+}
