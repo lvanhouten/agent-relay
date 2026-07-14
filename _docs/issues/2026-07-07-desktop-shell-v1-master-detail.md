@@ -1,7 +1,7 @@
 # Desktop shell v1 — shell split + master–detail workspace
 
 **Source:** Slice 1 of `2026-07-02-desktop-workspace-shell.md` (the umbrella doc — architecture, reuse inventory, and the React/TypeScript/styling decisions live there), sliced 2026-07-07 after a scoping pass against the current code.
-**Status:** 💡 Proposed — 2026-07-07. First slice; entering the feature pipeline.
+**Status:** ✅ Landed — PR #51. Shell split (`core/shellSelection.ts` + `core/boot.ts`, per-window `sessionStorage` override, toggle from both shells), master–detail workspace (`desktop/DesktopWorkspace.jsx` + `Sidebar.jsx` + `DetailPane.jsx`), Alt+1..9 session jump (Alt not Ctrl, to avoid fighting the terminal), and poll-driven local notifications (`core/notifyGate.ts` + `notifyRules.ts` + `useDesktopNotifications.ts`). Client-only, no server change. Slices v2 (spectator panes) and v3 (fleet extras) remain open.
 **Kind:** Enhancement (architectural beachhead)
 **Modules:** client only — `App.jsx` (shell selection), new `DesktopShell`, screens untouched as the mobile shell. No server changes.
 **Severity:** High value / medium effort.
