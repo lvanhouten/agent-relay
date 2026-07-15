@@ -69,8 +69,8 @@ const NOTIFY = {
 };
 
 export function Sidebar({
-  liveSessions, endedSessions, liveCount, selectedId,
-  query, onQuery, onSelect, onKill, onDismiss, onNewSession,
+  liveSessions, endedSessions, liveCount, selectedId, home,
+  query, onQuery, onHome, onSelect, onKill, onDismiss, onNewSession,
   theme, onToggleTheme, onToggleShell, notifyView, onToggleNotify,
 }) {
   const [showEnded, setShowEnded] = React.useState(false);
@@ -80,10 +80,15 @@ export function Sidebar({
   return (
     <aside className={styles.sidebar}>
       <div className={styles.header}>
-        <span className={styles.brand}>
+        <button
+          className={`${styles.brand}${home ? ' ' + styles.brandActive : ''}`}
+          onClick={onHome}
+          aria-current={home ? 'true' : undefined}
+          title="Fleet overview"
+        >
           <span className={styles.brandMark}>▸</span>
           agent-relay
-        </span>
+        </button>
         <span className={styles.count}>{liveCount} live</span>
       </div>
 

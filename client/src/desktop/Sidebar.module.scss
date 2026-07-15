@@ -26,6 +26,27 @@
   font-weight: 700;
   font-size: var(--text-base);
   color: var(--text-strong);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  margin: 0 calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.brand:hover {
+  background: var(--surface-sunken);
+}
+
+.brand:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+/* Home overview is the active detail pane — mark the brand as current. */
+.brandActive {
+  color: var(--text-accent);
 }
 
 .brandMark {

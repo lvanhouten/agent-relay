@@ -1,7 +1,7 @@
 # Desktop shell has no "home page" — the detail pane is always a terminal or a bare empty state
 
 **Source:** Noticed 2026-07-15 while using the desktop shell. There's nowhere to *land* that isn't a specific session's terminal.
-**Status:** 🔵 Open — not started.
+**Status:** ✅ Landed 2026-07-15 — the "start small" version below (a deselectable fleet-overview pane). A deliberate `home` state in `DesktopWorkspace` suppresses auto-select so `selectedId === null` is reachable; the sidebar brand is the deselect affordance (marked active while home); `desktop/HomePane.jsx` renders the overview (fleet summary chips + needs-attention quick-jumps + the zero-session onboarding sub-case), fed by the pure `core/fleetSummary.ts` (unit-tested). Client-only, no server change. Verified E2E. The maximal dashboard (fleet-wide widgets, live-preview tails) stays open as desktop shell v3 territory.
 **Kind:** Enhancement
 **Modules:** client (`desktop/DesktopWorkspace.jsx`, `desktop/DetailPane.jsx`)
 **Severity:** Low — cosmetic/UX; the workspace is fully functional without it.

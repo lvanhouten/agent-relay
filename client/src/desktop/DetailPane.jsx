@@ -1,8 +1,7 @@
 import React from 'react';
-import { Button } from '@ds/Button.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
-import { Terminal as TerminalIcon, Search, Download, Copy, Trash2, Plus } from 'lucide-react';
+import { Terminal as TerminalIcon, Search, Download, Copy, Trash2 } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { jumpIndexFromKey } from '../core/jumpKeys.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
@@ -21,7 +20,9 @@ const isJumpChord = (e) => jumpIndexFromKey(e) !== null;
 // TerminalView. No composer / key chips (desktop has a keyboard — brief). When
 // the selected session is a tombstone it keeps the dead terminal readable and
 // shows an exit banner instead of retrying the (permanently refused) attach.
-export function DetailPane({ session, theme, onKill, onNewSession }) {
+// Rendered only with a session — the no-selection state is the workspace's
+// HomePane, not this component.
+export function DetailPane({ session, theme, onKill }) {
   const viewRef = React.useRef(null);
   const [connStatus, setConnStatus] = React.useState('connecting');
   const [showSearch, setShowSearch] = React.useState(false);
@@ -36,17 +37,7 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
     setConnStatus('connecting');
   }, [sessionId]);
 
-  if (!session) {
-    return (
-      <section className={styles.pane}>
-        <div className={styles.empty}>
-          <TerminalIcon size={32} className={styles.emptyIcon} />
-          <span>No active sessions. Start one to get going.</span>
-          <Button leadingIcon={<Plus size={15} />} onClick={onNewSession}>New session</Button>
-        </div>
-      </section>
-    );
-  }
+  if (!session) return null;
 
   const exited = session.status === 'exited';
   // Tombstone decode (dot / crash predicate / status word) is shared with the
