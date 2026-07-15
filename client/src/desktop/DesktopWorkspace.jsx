@@ -7,6 +7,7 @@ import { resolveSelection } from '../core/resolveSelection.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
 import { Sidebar } from './Sidebar.jsx';
 import { DetailPane } from './DetailPane.jsx';
+import { HomePane } from './HomePane.jsx';
 import styles from './DesktopWorkspace.module.scss';
 
 // The desktop shell: a master-detail workspace over the shared client core, no
@@ -19,13 +20,25 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
   const { sessions, create, kill, creating, load } = useSessions();
   const [query, setQuery] = React.useState('');
   const [selectedId, setSelectedId] = React.useState(null);
+  // Deliberate "no selection" — the operator stepped back to the home overview.
+  // Distinct from the transient null of a fresh load: it suppresses auto-select
+  // so the home pane isn't immediately overwritten by the most-recent session.
+  const [home, setHome] = React.useState(false);
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');
 
+  // Every selection funnels through here so it also leaves the home state: a
+  // sidebar row, an Alt+N chord, or a notification click all mean "attach a
+  // terminal", which is never "stay home".
+  const selectSession = React.useCallback((id) => {
+    setHome(false);
+    setSelectedId(id);
+  }, []);
+
   // Local browser notifications. Fires off the same poll data (transition-based,
-  // via the tested reducer); a notification click routes selection through this
-  // root's setSelectedId — the sidebar never owns selection.
-  const notify = useDesktopNotifications(sessions, setSelectedId);
+  // via the tested reducer); a notification click routes selection through
+  // selectSession — the sidebar never owns selection, and a click leaves home.
+  const notify = useDesktopNotifications(sessions, selectSession);
 
   // Visible (post-filter) partition, poll order preserved. Alt+N and the
   // sidebar render from the SAME liveSessions array, so the chord always lands
@@ -60,11 +73,14 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
   // Guarded on selectedId (not `selected`): an explicit selection stands even
   // before it appears in the list, so a fresh create never auto-switches away,
   // and a selected session that exits keeps its banner instead of jumping.
+  // Suppressed while `home` is set: a deliberate deselect must not be clobbered
+  // back into a terminal by the next poll (that's the whole point of the home
+  // state — see goHome).
   React.useEffect(() => {
-    if (selectedId !== null) return;
+    if (home || selectedId !== null) return;
     const next = pickMostRecentLive(sessions);
     if (next) setSelectedId(next.id);
-  }, [selectedId, sessions]);
+  }, [home, selectedId, sessions]);
 
   // Release a selection whose session has vanished for good: a selected
   // tombstone evicted from the board's 20-cap ring leaves selectedId pointing at
@@ -89,11 +105,11 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
       const target = liveSessions[idx - 1];
       if (!target) return;
       e.preventDefault();
-      setSelectedId(target.id);
+      selectSession(target.id);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [liveSessions]);
+  }, [liveSessions, selectSession]);
 
   const handleCreate = async (opts) => {
     setCreateError('');
@@ -102,6 +118,7 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
       if (!session) return; // dropped by the re-entrancy guard — first click still in flight
       rememberClaudeDefaults(opts.command ?? '');
       selectedRef.current = session; // show it immediately, before the poll catches up
+      setHome(false);
       setSelectedId(session.id);
       setDialog(false);
       load();
@@ -123,6 +140,11 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
 
   const openDialog = () => { setCreateError(''); setDialog(true); };
 
+  // Step back to the neutral fleet overview without killing or dismissing
+  // anything. Clearing the ref too so resolveSelection can't resurrect the last
+  // terminal from its transient-absence cache.
+  const goHome = () => { setHome(true); setSelectedId(null); selectedRef.current = null; };
+
   return (
     <div className={styles.workspace}>
       <Sidebar
@@ -130,9 +152,11 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
         endedSessions={endedSessions}
         liveCount={liveCount}
         selectedId={selectedId}
+        home={home && !selected}
         query={query}
         onQuery={setQuery}
-        onSelect={setSelectedId}
+        onHome={goHome}
+        onSelect={selectSession}
         onKill={handleKill}
         onDismiss={handleDismiss}
         onNewSession={openDialog}
@@ -142,12 +166,19 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
         notifyView={notify.view}
         onToggleNotify={notify.toggle}
       />
-      <DetailPane
-        session={selected}
-        theme={theme}
-        onKill={handleKill}
-        onNewSession={openDialog}
-      />
+      {selected ? (
+        <DetailPane
+          session={selected}
+          theme={theme}
+          onKill={handleKill}
+        />
+      ) : (
+        <HomePane
+          sessions={sessions}
+          onSelect={selectSession}
+          onNewSession={openDialog}
+        />
+      )}
       {dialog && (
         <NewSessionDialog
           onClose={() => setDialog(false)}
