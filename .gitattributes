@@ -1,0 +1,19 @@
+# Line-ending policy. Without this, Git for Windows' core.autocrlf=true checks
+# text files out as CRLF while the repo stores LF, and every touched file warns
+# "LF will be replaced by CRLF the next time Git touches it". Pinning eol=lf
+# makes the working tree LF too, so checkout is a no-op and the warning is gone —
+# and because this lives in the repo it applies to every clone/contributor, not
+# just one machine's git config.
+* text=auto eol=lf
+
+# Binary assets Git must never line-ending-normalize.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.pdf   binary
