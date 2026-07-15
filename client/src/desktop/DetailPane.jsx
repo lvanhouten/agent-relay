@@ -1,5 +1,4 @@
 import React from 'react';
-import { Badge } from '@ds/Badge.jsx';
 import { Button } from '@ds/Button.jsx';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
@@ -50,7 +49,6 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
   }
 
   const exited = session.status === 'exited';
-  const shellLabel = session.shell.split(/[/\\]/).pop();
   // Tombstone decode (dot / crash predicate / status word) is shared with the
   // sidebar row and session card via core/tombstoneView.ts so the three can't
   // drift; the detail banner below builds its fuller sentence from tomb.killed.
@@ -95,7 +93,6 @@ export function DetailPane({ session, theme, onKill, onNewSession }) {
         <span className={styles.title}>
           <TerminalIcon size={15} className={styles.titleIcon} />
           <span className={styles.name}>{session.name}</span>
-          <Badge variant="accent">{shellLabel}</Badge>
         </span>
         <span className={styles.cwd}>{session.cwd}</span>
         <span className={styles.spacer} />
