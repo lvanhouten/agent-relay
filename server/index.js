@@ -117,12 +117,15 @@ server.listen(PORT, () => {
   console.log(notifiers.length
     ? `  push notifications: ${notifiers.map((n) => n.name).join(', ')} (POST /api/notify)`
     : '  push notifications: off (set AR_PUSHOVER_TOKEN + AR_PUSHOVER_USER to enable)');
-  if (TOKEN_GENERATED) {
+  if (TOKEN) {
     console.log(
-      `\nAR_TOKEN not set — generated an access token (persisted across runs):\n\n  ${TOKEN}\n\n` +
-      `Paste it into the login screen. Set AR_TOKEN to pin a stable token,\n` +
-      `or AR_NO_AUTH=1 to disable auth entirely (dev only — an open relay\n` +
-      `executes commands for any page your browser visits).\n`
+      TOKEN_GENERATED
+        ? `\nAR_TOKEN not set — generated an access token (persisted across runs):\n\n  ${TOKEN}\n\n` +
+          `Paste it into the login screen. Set AR_TOKEN to pin a stable token,\n` +
+          `or AR_NO_AUTH=1 to disable auth entirely (dev only — an open relay\n` +
+          `executes commands for any page your browser visits).\n`
+        : `\nAR_TOKEN set — using the pinned access token:\n\n  ${TOKEN}\n\n` +
+          `Paste it into the login screen.\n`
     );
   }
   // Start the tunnel after the local listener is up so its console block follows
