@@ -5,7 +5,7 @@ import { OverflowMenu } from '@ds/OverflowMenu.jsx';
 import { Kbd } from '@ds/Kbd.jsx';
 import {
   ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Minimize2, Sun, Moon,
-  Search, Download, Keyboard, X, ChevronUp, ChevronDown,
+  Search, Download, Keyboard, X, ChevronUp, ChevronDown, FolderPlus,
 } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { KEY_CHIPS } from '../core/keyChips.ts';
@@ -37,7 +37,7 @@ function loadComposerPref() {
 // mobile composer (canned-key chips). The terminal itself — xterm, the
 // WS lifecycle, the mount dance, the scroll-to-bottom pill — lives in
 // core/TerminalView; this screen drives it through the imperative handle.
-export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack }) {
+export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack, onNewInDir }) {
   const viewRef = React.useRef(null);
   const actionsRowRef = React.useRef(null);
   const [connStatus, setConnStatus] = React.useState('connecting');
@@ -111,6 +111,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     { key: 'search', label: 'Search output', menuLabel: 'Search output', active: showSearch, onClick: toggleSearch, icon: <Search size={15} /> },
     { key: 'composer', label: 'Toggle composer', menuLabel: 'Toggle composer', active: showComposer, onClick: () => setShowComposer((v) => !v), icon: <Keyboard size={15} /> },
     { key: 'copy', label: 'Copy selection', menuLabel: 'Copy selection', onClick: () => navigator.clipboard?.writeText(viewRef.current?.getSelection() ?? ''), icon: <Copy size={15} /> },
+    { key: 'new-here', label: 'New session here', menuLabel: 'New session here', onClick: () => onNewInDir?.(session.cwd), icon: <FolderPlus size={15} /> },
     { key: 'fullscreen', label: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', menuLabel: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', active: isFullscreen, onClick: toggleFullscreen, icon: isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} /> },
     { key: 'theme', label: 'Toggle theme', menuLabel: 'Toggle theme', onClick: onToggleTheme, icon: theme === 'dark' ? <Sun size={15} /> : <Moon size={15} /> },
     { key: 'download', label: 'Download transcript (may contain secrets echoed to the terminal)', menuLabel: 'Download transcript', onClick: downloadTranscript, icon: <Download size={15} /> },

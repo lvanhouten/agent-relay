@@ -1,7 +1,6 @@
 import React from 'react';
 import LoginScreen from './screens/LoginScreen.jsx';
-import SessionsScreen from './screens/SessionsScreen.jsx';
-import TerminalScreen from './screens/TerminalScreen.jsx';
+import MobileShell from './MobileShell.jsx';
 import { DesktopWorkspace } from './desktop/DesktopWorkspace.jsx';
 import { readFragmentToken, stripFragment } from './core/fragmentPairing.ts';
 import { decideBoot } from './core/boot.ts';
@@ -20,7 +19,6 @@ export default function App() {
   const [theme, setTheme] = React.useState(
     () => localStorage.getItem('ar-theme') ?? 'dark'
   );
-  const [activeSession, setActiveSession] = React.useState(null);
 
   // Shell selection (glossary: "Shell selection"). Measured ONCE at page load
   // and sticky for the window's lifetime — no resize listener, so crossing the
@@ -105,10 +103,12 @@ export default function App() {
           onConnect={(h) => { setHost(h); setScreen('sessions'); }}
         />
       )}
-      {/* Authenticated: the desktop shell is one master-detail workspace (no
-          screen-swapping); the mobile shell is the original screen stack. The
-          shell toggle is reachable from both (sidebar / sessions header). */}
-      {(screen === 'sessions' || screen === 'terminal') && shell === 'desktop' && (
+      {/* Authenticated: the desktop shell is one master-detail workspace, the
+          mobile shell its own screen stack — each owns its data layer + create
+          dialog over the shared core. Both sub-navigate internally, so App only
+          gates on the authenticated `sessions` state. The shell toggle is
+          reachable from both (sidebar / sessions header). */}
+      {screen === 'sessions' && shell === 'desktop' && (
         <DesktopWorkspace
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -116,21 +116,11 @@ export default function App() {
         />
       )}
       {screen === 'sessions' && shell === 'mobile' && (
-        <SessionsScreen
+        <MobileShell
           host={host}
           theme={theme}
           onToggleTheme={toggleTheme}
           onToggleShell={toggleShell}
-          onAttach={(s) => { setActiveSession(s); setScreen('terminal'); }}
-        />
-      )}
-      {screen === 'terminal' && shell === 'mobile' && activeSession && (
-        <TerminalScreen
-          session={activeSession}
-          host={host}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          onBack={() => setScreen('sessions')}
         />
       )}
     </div>

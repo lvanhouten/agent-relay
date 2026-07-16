@@ -7,14 +7,12 @@ import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
 import { OverflowMenu } from '@ds/OverflowMenu.jsx';
 import { Input } from '@ds/Input.jsx';
-import { useSessions } from '../core/useSessions.ts';
 import { attentionFor, attentionRank } from '../core/attention.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
 import { getPairing } from '../core/api.ts';
 import { pairingDisplay } from '../core/pairingDisplay.ts';
 import { useFullscreen } from '../core/useFullscreen.ts';
 import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
-import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
 import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, ChevronRight, ChevronDown, QrCode, Maximize2, Minimize2 } from 'lucide-react';
 import styles from './SessionsScreen.module.scss';
 
@@ -197,40 +195,17 @@ function PairDeviceDialog({ onClose }) {
   );
 }
 
-export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShell, onAttach }) {
-  // Data layer — list + poll + create/kill with their concurrency guards —
-  // lives in core/useSessions. This screen owns only presentation state.
-  const { sessions, create, kill, creating } = useSessions();
+export default function SessionsScreen({
+  host, theme, onToggleTheme, onToggleShell, onAttach, sessions, onKill, onNewSession,
+}) {
+  // Presenter over the shell-owned data layer: `sessions`, `onKill`, and the
+  // create dialog (opened via onNewSession) all live in MobileShell. This screen
+  // owns only its own presentation state (filter, pairing, fullscreen).
   const [query, setQuery] = React.useState('');
-  const [dialog, setDialog] = React.useState(false);
-  const [createError, setCreateError] = React.useState('');
   const [pairOpen, setPairOpen] = React.useState(false);
   const { isFullscreen, toggleFullscreen } = useFullscreen();
   const actionsRowRef = React.useRef(null);
 
-  const handleCreate = async (opts) => {
-    // Keep the dialog open until the create actually succeeds — create()
-    // rejects on any non-ok response (expired token, 500, network drop); closing
-    // first would drop that failure into an unhandled rejection with no feedback.
-    //
-    // create()'s re-entrancy guard lives inside the hook, so a double-click's
-    // second call no-ops *after* this line: anything placed before the
-    // `if (!session)` check below runs on dropped calls too. Today that's only
-    // this error clear (harmless — the first click just cleared it); keep any
-    // future side effect (analytics, optimistic mutation) below the null check.
-    setCreateError('');
-    try {
-      const session = await create(opts);
-      if (!session) return; // dropped by the re-entrancy guard — the first click is still in flight
-      rememberClaudeDefaults(opts.command ?? '');
-      setDialog(false);
-      onAttach(session);
-    } catch {
-      setCreateError('Could not create the session. Check the server and try again.');
-    }
-  };
-
-  const openDialog = () => { setCreateError(''); setDialog(true); };
   const [showEnded, setShowEnded] = React.useState(false);
 
   const filtered = sessions.filter((s) =>
@@ -306,7 +281,7 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <Button leadingIcon={<Plus size={15} />} onClick={openDialog}>
+            <Button leadingIcon={<Plus size={15} />} onClick={onNewSession}>
               New session
             </Button>
           </div>
@@ -323,7 +298,7 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
         ) : (
           <div className={styles.sessionsGrid}>
             {live.map((s) => (
-              <SessionCard key={s.id} session={s} onAttach={onAttach} onKill={kill} />
+              <SessionCard key={s.id} session={s} onAttach={onAttach} onKill={onKill} />
             ))}
           </div>
         )}
@@ -337,22 +312,13 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
             {showEnded && (
               <div className={`${styles.sessionsGrid} ${styles.sessionsGridEnded}`}>
                 {ended.map((s) => (
-                  <ExitedSessionCard key={s.id} session={s} onDismiss={kill} />
+                  <ExitedSessionCard key={s.id} session={s} onDismiss={onKill} />
                 ))}
               </div>
             )}
           </section>
         )}
       </main>
-
-      {dialog && (
-        <NewSessionDialog
-          onClose={() => setDialog(false)}
-          onCreate={handleCreate}
-          error={createError}
-          busy={creating}
-        />
-      )}
 
       {/* Mounted only while open — its own state (including the
           credential-bearing pairing URL) is discarded on close, never lifted
