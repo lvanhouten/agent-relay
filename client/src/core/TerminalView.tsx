@@ -30,7 +30,7 @@ export interface TerminalViewProps {
   // 'interactive' (the default): fit xterm to the container and push the size to
   // the board. 'spectator': adopt the reported PTY dims (cols/rows below) and
   // CSS-scale the grid to fit the pane, never fit, never send resize — a
-  // watch-only pane for the desktop grid (ADR-0005). Mode is fixed for the
+  // watch-only pane for the desktop grid. Mode is fixed for the
   // component's life; a switch is a remount by the consumer.
   mode?: TerminalViewMode;
   // Reported PTY grid from the session DTO/poll. Spectator mode adopts these and
@@ -167,13 +167,8 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       },
     }), [send]);
 
-    // Mount xterm once. `mode` is NOT baked in: the pane persists across focus
-    // changes (the grid keys it by id, not id:mode), so the data pipe stays open
-    // and the reconstructed history replay fires exactly once — flipping focus
-    // corrupted a long session when it reattached and re-ran that replay
-    // (ADR-0005 live mode-switch). applyMode() reconfigures the live terminal for
-    // interactive vs spectator; the mode-change effect below calls it and
-    // useSessionWS pushes the matching `mode` frame.
+    // Mount once per pane. Mode changes go through applyMode(), never a remount:
+    // remounting re-runs the history replay into a live pipe.
     React.useEffect(() => {
       const term = new Terminal({
         theme: XTERM_THEMES[theme] ?? XTERM_THEMES.dark,
@@ -307,8 +302,8 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     // Focus/mode change: reconfigure in place (no remount, no reattach).
     React.useEffect(() => { applyModeRef.current?.(mode === 'spectator'); }, [mode]);
 
-    // Spectator dims propagate via the sessions poll (ADR-0005: ≤5s lag is
-    // acceptable). On change, re-adopt them and rescale; no-op while interactive.
+    // Spectator dims propagate via the sessions poll (≤5s lag is acceptable).
+    // On change, re-adopt them and rescale; no-op while interactive.
     React.useEffect(() => {
       if (mode !== 'spectator') return;
       const term = termRef.current;

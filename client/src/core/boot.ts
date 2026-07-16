@@ -1,5 +1,5 @@
-// Pure decision logic for the client boot flow (VC-3, VC-4, VC-5, VC-7,
-// VC-15): which screen to land on at first paint, given a possible
+// Pure decision logic for the client boot flow: which screen to land on at
+// first paint, given a possible
 // QR-pairing fragment token and/or an ambient auth cookie. Kept side-effect
 // free — network calls (login exchange, ambient-cookie probe) are injected
 // via BootDeps — so the branching is unit-testable without a real fetch or

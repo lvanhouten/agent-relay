@@ -1,6 +1,6 @@
-// The pure halves of useSessions' polling guards, extracted so they can be
-// unit-tested directly (they were previously proven only as named guarded code
-// paths inside SessionsScreen). React-free by design: useSessions holds an
+// The pure halves of useSessions' polling guards, kept here so they're
+// unit-tested directly instead of only proven as named guarded code paths
+// inside SessionsScreen. React-free by design: useSessions holds an
 // instance in a ref precisely so the counters never retrigger effects.
 
 import type { Session } from './types.ts';

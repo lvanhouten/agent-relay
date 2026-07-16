@@ -6,7 +6,7 @@ import type { Session } from './types.ts';
 // A tombstone DTO (server/src/sessions.js endedToDto): status 'exited' with a
 // `reason` and `exitCode`. These pin the crash predicate + status word so the
 // three surfaces that render a tombstone (sidebar row, session card, detail
-// pane) can't drift the way they had before this decode was centralized.
+// pane) can't drift from each other.
 const tomb = (reason: string, exitCode: number | null): Session => ({
   id: '1', name: 's-1', shell: 'bash', cwd: '~', pid: null,
   status: 'exited', lastActive: 'just now', reason, exitCode,

@@ -1,4 +1,4 @@
-// Pure state transitions for the desktop spectator grid (ADR-0005). The grid is
+// Pure state transitions for the desktop spectator grid. The grid is
 // an ordered set of session ids rendered as panes; one is "focused"
 // (interactive), the rest are spectators. Kept pure and here so the transitions
 // are unit-tested directly rather than only through DesktopWorkspace.

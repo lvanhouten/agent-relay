@@ -10,10 +10,10 @@ export const ACTION_SLOT_PX = 36 + 8;
 // fixed-width slot always reserved for the "…" trigger, so its resolved
 // clientWidth already IS "room for buttons" - no inference or subtraction
 // needed, and it's correct in both directions (shrinking AND growing back)
-// since flex-grow, not the row's own content, drives its size. An earlier
-// version tried to back this out of the header's scrollWidth, which only
-// reflects true content width while overflowing - once things fit,
-// scrollWidth just collapses to clientWidth and the signal is lost.
+// since flex-grow, not the row's own content, drives its size. This avoids
+// the header's scrollWidth, which only reflects true content width while
+// overflowing - once things fit, scrollWidth just collapses to clientWidth
+// and the signal is lost.
 export function useVisibleActionCount(actionsRowRef: React.RefObject<HTMLElement>, totalActions: number) {
   const [visibleCount, setVisibleCount] = React.useState(totalActions);
 

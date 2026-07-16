@@ -72,8 +72,7 @@ test('serialize -> parse round-trips a valid list', () => {
 test('fallbackLabel: derived from command word + cwd leaf, so blank-name saves differ by content', () => {
   assert.strictEqual(fallbackLabel('C:\\Users\\x\\dev\\agent-relay', 'claude --model opus'), 'claude · agent-relay');
   assert.strictEqual(fallbackLabel('/repo/sub/', 'npm run dev'), 'npm · sub');
-  // Two blank-name saves of DIFFERENT templates must not collide on one label
-  // (the old literal 'template' fallback silently overwrote the first).
+  // Two blank-name saves of DIFFERENT templates must not collide on one label.
   assert.notStrictEqual(
     fallbackLabel('/repo/api', 'claude'),
     fallbackLabel('/repo/web', 'npm run dev'),

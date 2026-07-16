@@ -31,8 +31,8 @@ const ATTENTION: Record<string, AttentionView> = {
   running: { dot: 'online', label: 'running', pulse: false },
   idle: { dot: 'idle', label: 'quiet', pulse: false },
   'needs-input': { dot: 'attention', label: 'needs input', pulse: true },
-  // Turn ended, process still alive (a Claude line's agent finished its turn —
-  // see ADR-0003). Distinct from needs-input by COLOR (its own dot variant +
+  // Turn ended, process still alive (a Claude line's agent finished its turn).
+  // Distinct from needs-input by COLOR (its own dot variant +
   // --status-done token), not motion: the pulse must not be the only signal,
   // since prefers-reduced-motion disables it and a static screenshot never
   // shows it.

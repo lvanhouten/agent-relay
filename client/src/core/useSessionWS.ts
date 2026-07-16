@@ -28,7 +28,7 @@ export function useSessionWS(
   { onData, onExit, onReady }: SessionWSHandlers,
   // Interactive vs spectator. Pushed to the server as a live `mode` frame, NOT a
   // URL param: a focus change in the grid must NOT reconnect (that would re-run
-  // the reconstructed history replay and corrupt a long session — ADR-0005), so
+  // the reconstructed history replay and corrupt a long session), so
   // `mode` is deliberately excluded from the connect effect's deps. The server
   // toggles input-gating and the control socket in place; on (re)connect onopen
   // re-sends the current mode.

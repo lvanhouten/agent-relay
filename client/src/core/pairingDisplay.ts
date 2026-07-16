@@ -1,4 +1,4 @@
-// Pure status -> display mapping for the pair-device dialog (VC-9, VC-10).
+// Pure status -> display mapping for the pair-device dialog.
 // Kept in core so the state fan-out (up/down/disabled/unknown) is unit-tested
 // instead of only visible as JSX branches — the dialog itself just renders
 // whatever this returns, plus the QR image when showQr is true.
