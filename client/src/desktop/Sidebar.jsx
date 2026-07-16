@@ -6,14 +6,14 @@ import { IconButton } from '@ds/IconButton.jsx';
 import { Input } from '@ds/Input.jsx';
 import { attentionFor } from '../core/attention.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
-import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff } from 'lucide-react';
+import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff, ArrowRightToLine } from 'lucide-react';
 import styles from './Sidebar.module.scss';
 
 // One live session row. Attention dot uses the SAME decode as the mobile cards
 // (core/attention.ts) — the one status-vocabulary sync point — so a needs-input
 // flag pulses here exactly as it does on a phone. jumpHint shows the Alt+N chord
 // for the first nine visible rows.
-function SessionRow({ session, index, selected, onSelect, onKill }) {
+function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
   const attention = attentionFor(session.status);
   const shellLabel = session.shell.split(/[/\\]/).pop();
   return (
@@ -25,6 +25,14 @@ function SessionRow({ session, index, selected, onSelect, onKill }) {
       className={`${styles.row}${selected ? ' ' + styles.rowSelected : ''}`}
       aria-current={selected ? 'true' : undefined}
     >
+      {/* Additive action on the LEFT, terminate on the far right — deliberately
+          opposite ends so a cheap "watch this" click can't be mistaken for the
+          destructive kill (revealed on hover like rowKill). */}
+      <span className={styles.rowInject}>
+        <IconButton label="Add to grid" size="sm" onClick={(e) => { e.stopPropagation(); onInject(session.id); }}>
+          <ArrowRightToLine size={13} />
+        </IconButton>
+      </span>
       <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={attention.pulse} />
       <span className={styles.rowMain}>
         <span className={styles.rowName}>{session.name}</span>
@@ -70,7 +78,7 @@ const NOTIFY = {
 
 export function Sidebar({
   liveSessions, endedSessions, liveCount, selectedId, home,
-  query, onQuery, onHome, onSelect, onKill, onDismiss, onNewSession,
+  query, onQuery, onHome, onSelect, onInject, onKill, onDismiss, onNewSession,
   theme, onToggleTheme, onToggleShell, notifyView, onToggleNotify,
 }) {
   const [showEnded, setShowEnded] = React.useState(false);
@@ -117,6 +125,7 @@ export function Sidebar({
               index={i}
               selected={s.id === selectedId}
               onSelect={onSelect}
+              onInject={onInject}
               onKill={onKill}
             />
           ))

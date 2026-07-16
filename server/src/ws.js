@@ -5,6 +5,16 @@ const { StringDecoder } = require('string_decoder');
 const { isAuthenticated, TOKEN, SIGNING_SECRET } = require('./auth');
 const { originAllowed } = require('./origin');
 
+// Initial spectator state for a connection: a query-param mode (`?mode=spectator`)
+// set by the desktop grid's panes; scoped tokens will later derive it from the
+// token scope, reusing this gate — one design, two consumers (ADR-0005). The
+// grid then flips it live with a `mode` frame (below) so a focus change never
+// reattaches. A spectator's inbound input/resize frames are dropped, not errored,
+// and its control socket is closed so it leaves the board's resize clamp.
+function initialSpectator(query) {
+  return query.mode === 'spectator';
+}
+
 // authConfig is injectable for tests (same reason as auth.makeAuthMiddleware —
 // the module credentials aren't otherwise overridable); real callers omit it and
 // get the module TOKEN/SIGNING_SECRET.
@@ -21,6 +31,7 @@ function createWSHub(server, sessions, authConfig = {}) {
     // page the operator's browser visits could open a socket to a line. Same
     // policy as the REST tier (src/origin.js); non-browser clients send no
     // Origin and pass through to the credential check.
+    let spectator = initialSpectator(parsed.query);
     if (!originAllowed(req.headers.origin, req.headers.host)) { ws.close(1008, 'forbidden origin'); return; }
     // Either credential: the ?token= query param (non-browser clients, kept
     // byte-for-byte) or a valid auth cookie on the upgrade headers (browsers).
@@ -57,6 +68,7 @@ function createWSHub(server, sessions, authConfig = {}) {
 
     try {
       handle = await sessions.attach(id, {
+        spectator,
         onData: buf => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'data', payload: decoder.write(buf) })); },
         onExit: code => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code })); },
       });
@@ -77,6 +89,20 @@ function createWSHub(server, sessions, authConfig = {}) {
     ws.on('message', raw => {
       try {
         const msg = JSON.parse(raw.toString());
+        // A `mode` frame flips this live connection between interactive and
+        // spectator without reattaching: it toggles the input/resize gate and
+        // opens/closes the control socket (leaving/entering the board's resize
+        // clamp). The data pipe is untouched, so the reconstructed history replay
+        // never re-runs on a focus change (ADR-0005 live mode-switch).
+        if (msg.type === 'mode') {
+          spectator = !!msg.spectator;
+          handle.setSpectator?.(spectator);
+          return;
+        }
+        // Spectator connections are watch-only: input/resize are dropped (not
+        // errored) so a grid pane can't drive or resize the shared line
+        // (ADR-0005). Data still flows outbound — watching is the whole point.
+        if (spectator) return;
         if (msg.type === 'input') {
           handle.write(msg.payload);
           // The operator answered from the web terminal — clear any needs-input

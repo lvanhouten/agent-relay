@@ -4,10 +4,12 @@ import { useDesktopNotifications } from '../core/useDesktopNotifications.ts';
 import { jumpIndexFromKey, isTypingTarget } from '../core/jumpKeys.ts';
 import { pickMostRecentLive } from '../core/recency.ts';
 import { resolveSelection } from '../core/resolveSelection.ts';
+import { injectPane, removePane, prunePanes, focusedPane } from '../core/gridPanes.ts';
 import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDialog.jsx';
 import { Sidebar } from './Sidebar.jsx';
 import { DetailPane } from './DetailPane.jsx';
 import { HomePane } from './HomePane.jsx';
+import { PaneGrid } from './PaneGrid.jsx';
 import styles from './DesktopWorkspace.module.scss';
 
 // The desktop shell: a master-detail workspace over the shared client core, no
@@ -26,13 +28,19 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
   const [home, setHome] = React.useState(false);
   const [dialog, setDialog] = React.useState(false);
   const [createError, setCreateError] = React.useState('');
+  // The spectator grid's watch set: an ordered list of session ids shown as
+  // panes when non-empty (else the single-terminal / home view). Built via the
+  // sidebar's inject arrow; focus (which pane is interactive) rides selectedId.
+  const [gridIds, setGridIds] = React.useState([]);
 
   // Every selection funnels through here so it also leaves the home state: a
   // sidebar row, an Alt+N chord, or a notification click all mean "attach a
-  // terminal", which is never "stay home".
+  // terminal", which is never "stay home". A row already in the grid focuses its
+  // pane (stays in grid mode); any other row leaves the grid for the single view.
   const selectSession = React.useCallback((id) => {
     setHome(false);
     setSelectedId(id);
+    setGridIds((prev) => (prev.includes(id) ? prev : []));
   }, []);
 
   // Local browser notifications. Fires off the same poll data (transition-based,
@@ -56,6 +64,30 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
     };
   }, [sessions, q]);
   const liveCount = sessions.filter((s) => s.status !== 'exited').length;
+
+  // Grid derivations. liveById is keyed off ALL live sessions (not the filtered
+  // liveSessions) so a sidebar filter never prunes a watched pane. panes drops
+  // any watched id whose session has exited/vanished; the grid is active only
+  // while panes is non-empty, and focus (the interactive pane) is selectedId
+  // when it's a pane, else the first.
+  const liveById = React.useMemo(() => {
+    const m = new Map();
+    for (const s of sessions) if (s.status !== 'exited') m.set(s.id, s);
+    return m;
+  }, [sessions]);
+  const panes = React.useMemo(
+    () => prunePanes(gridIds, new Set(liveById.keys())),
+    [gridIds, liveById],
+  );
+  const gridActive = panes.length > 0;
+  const focusedGridId = focusedPane(panes, selectedId);
+
+  // Keep gridIds free of dead panes so focus/state never point at a gone id.
+  // panes preserves order+identity, so after this settles the lengths match and
+  // it no-ops (no render loop).
+  React.useEffect(() => {
+    if (panes.length !== gridIds.length) setGridIds(panes);
+  }, [panes, gridIds.length]);
 
   // Which session the pane shows. resolveSelection (tested) prefers the live
   // match, falls back to the cached last-known selection only while it's
@@ -127,9 +159,19 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
     }
   };
 
-  // Terminate keeps the selection: a killed live session becomes a tombstone and
-  // the pane switches to its exit banner (no auto-switch away).
-  const handleKill = (id) => { kill(id); };
+  // Step back to the neutral fleet overview without killing or dismissing
+  // anything. Clearing the ref too so resolveSelection can't resurrect the last
+  // terminal from its transient-absence cache.
+  const goHome = () => { setHome(true); setSelectedId(null); selectedRef.current = null; };
+
+  // Terminating the session you're viewing sends you home rather than stranding
+  // the pane on the dead terminal's exit banner; the tombstone still lands in the
+  // sidebar's "Recently exited", so its exit code stays one click away. Killing
+  // any other row leaves your current view untouched.
+  const handleKill = (id) => {
+    kill(id);
+    if (id === selectedId) goHome();
+  };
 
   // Dismissing a tombstone removes it entirely; if it was the selected one,
   // release the selection so the auto-select effect picks the next live session.
@@ -140,10 +182,24 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
 
   const openDialog = () => { setCreateError(''); setDialog(true); };
 
-  // Step back to the neutral fleet overview without killing or dismissing
-  // anything. Clearing the ref too so resolveSelection can't resurrect the last
-  // terminal from its transient-absence cache.
-  const goHome = () => { setHome(true); setSelectedId(null); selectedRef.current = null; };
+  // Inject a session as a grid pane and make it the interactive one. Entering
+  // grid mode from a single terminal seeds the currently-viewed session as the
+  // first pane, so injecting Session 2 while viewing Session 1 gives [1, 2] —
+  // not a lone [2] that drops Session 1 from view. Idempotent on re-inject.
+  const handleInject = (id) => {
+    setHome(false);
+    setGridIds((prev) => {
+      const base = prev.length === 0 && selectedId && selectedId !== id ? [selectedId] : prev;
+      return injectPane(base, id);
+    });
+    setSelectedId(id);
+  };
+  // Click a grid pane -> focus it (interactive). No grid/home change; the other
+  // panes stay attached as spectators.
+  const handleFocusPane = (id) => { setSelectedId(id); };
+  // Remove a pane from the grid (does NOT end the session). When the last pane
+  // goes, gridActive falls false and the view returns to the single terminal.
+  const handleRemovePane = (id) => { setGridIds((prev) => removePane(prev, id)); };
 
   return (
     <div className={styles.workspace}>
@@ -157,6 +213,7 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
         onQuery={setQuery}
         onHome={goHome}
         onSelect={selectSession}
+        onInject={handleInject}
         onKill={handleKill}
         onDismiss={handleDismiss}
         onNewSession={openDialog}
@@ -166,7 +223,16 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
         notifyView={notify.view}
         onToggleNotify={notify.toggle}
       />
-      {selected ? (
+      {gridActive ? (
+        <PaneGrid
+          panes={panes}
+          byId={liveById}
+          focusedId={focusedGridId}
+          theme={theme}
+          onFocus={handleFocusPane}
+          onRemove={handleRemovePane}
+        />
+      ) : selected ? (
         <DetailPane
           session={selected}
           theme={theme}

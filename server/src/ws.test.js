@@ -91,6 +91,97 @@ test('WS: AR_NO_AUTH (expectedToken null) → attach proceeds with no credential
   assert.deepStrictEqual(await attempt({ expectedToken: null, signingSecret: SECRET }, {}), { attached: true });
 });
 
+// Drive one connection (interactive or spectator) and record what the attach
+// handle received. Sends an input + a resize frame repeatedly for a settle
+// window after the socket opens (the real message listener registers only after
+// the async attach, so a single send would race it), then reports the sinks.
+function driveFrames(query) {
+  return new Promise((resolve, reject) => {
+    const wrote = [], resized = [];
+    let cleared = 0;
+    const sessions = {
+      get: async () => ({ id: ID, status: 'running' }),
+      clearAttention() { cleared++; },
+      attach: async () => ({ detach() {}, write(d) { wrote.push(d); }, resize(c, r) { resized.push([c, r]); } }),
+    };
+    const server = http.createServer();
+    createWSHub(server, sessions, cfg);
+    server.listen(0, () => {
+      const { port } = server.address();
+      const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}${query}`);
+      client.on('error', reject);
+      client.on('open', () => {
+        const input = JSON.stringify({ type: 'input', payload: 'x' });
+        const resize = JSON.stringify({ type: 'resize', cols: 80, rows: 24 });
+        const timer = setInterval(() => { client.send(input); client.send(resize); }, 40);
+        setTimeout(() => {
+          clearInterval(timer);
+          client.close();
+          server.close(() => resolve({ wrote, resized, cleared }));
+        }, 400).unref();
+      });
+    });
+  });
+}
+
+test('WS: interactive connection (no mode) delivers input and resize to the line', async () => {
+  const { wrote, resized, cleared } = await driveFrames('');
+  assert.ok(wrote.length > 0 && wrote.every(d => d === 'x'), 'input reached the line');
+  assert.ok(resized.length > 0 && resized.every(([c, r]) => c === 80 && r === 24), 'resize reached the line');
+  assert.ok(cleared > 0, 'input cleared the attention flag');
+});
+
+test('WS: ?mode=spectator drops inbound input and resize, dropped not errored (ADR-0005)', async () => {
+  const { wrote, resized, cleared } = await driveFrames('&mode=spectator');
+  assert.deepStrictEqual(wrote, [], 'spectator input never reaches the line');
+  assert.deepStrictEqual(resized, [], 'spectator resize never reaches the line — the shared PTY is not clamped');
+  assert.strictEqual(cleared, 0, 'a spectator does not clear the attention flag');
+});
+
+test('WS: a live `mode` frame toggles the input gate and control socket without reattaching (ADR-0005)', async () => {
+  // The grid flips focus by sending a `mode` frame on the OPEN socket, not by
+  // reconnecting. Assert: (1) the same attach handle is reused (attach called
+  // once), (2) setSpectator tracks the frame, (3) input is gated by the current
+  // mode — dropped while spectator, delivered once flipped back.
+  const wrote = [];
+  const spectatorCalls = [];
+  let attachCount = 0;
+  const sessions = {
+    get: async () => ({ id: ID, status: 'running' }),
+    clearAttention() {},
+    attach: async () => {
+      attachCount++;
+      return { detach() {}, write(d) { wrote.push(d); }, resize() {}, setSpectator: (on) => spectatorCalls.push(on) };
+    },
+  };
+  const server = http.createServer();
+  createWSHub(server, sessions, cfg);
+  await new Promise((res) => server.listen(0, res));
+  const { port } = server.address();
+  const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}`);
+  await new Promise((res) => client.on('open', res));
+  const send = (o) => client.send(JSON.stringify(o));
+
+  // Flip to spectator, then try to drive: input must be dropped.
+  send({ type: 'mode', spectator: true });
+  await new Promise((r) => setTimeout(r, 100));
+  send({ type: 'input', payload: 'a' });
+  await new Promise((r) => setTimeout(r, 100));
+
+  // Flip back to interactive: input now reaches the line.
+  send({ type: 'mode', spectator: false });
+  await new Promise((r) => setTimeout(r, 100));
+  send({ type: 'input', payload: 'b' });
+  await new Promise((r) => setTimeout(r, 150));
+
+  client.close();
+  await new Promise((res) => server.close(res));
+
+  assert.strictEqual(attachCount, 1, 'a mode flip reuses the connection — never a reattach');
+  assert.deepStrictEqual(spectatorCalls, [true, false], 'setSpectator follows each mode frame');
+  assert.deepStrictEqual(wrote, ['b'], 'input dropped while spectator, delivered once interactive');
+});
+
 test('WS: a sessions store missing clearAttention still delivers input, and the failure is logged', async () => {
   // The contract-drift case: clearAttention renamed/omitted. The keystroke must
   // reach the line (write happens first) and the TypeError must surface as a

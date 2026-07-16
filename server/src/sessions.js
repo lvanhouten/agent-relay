@@ -41,7 +41,7 @@ function relTime(ms) {
 // render "NaNs ago" on the card.
 function toDto(line) {
   const idleMs = Number.isFinite(line.idleMs) ? line.idleMs : 0;
-  return {
+  const dto = {
     id: line.id,
     name: line.name || `session-${line.id}`,
     shell: line.shell,
@@ -50,6 +50,15 @@ function toDto(line) {
     status: idleMs < DEFAULT_IDLE_MS ? 'running' : 'idle',
     lastActive: relTime(idleMs),
   };
+  // Live PTY grid from the board's `list` row: a spectator attach adopts these
+  // dims and CSS-scales rather than resizing the shared line (ADR-0005). Only
+  // present on live lines — the synthesized create/tombstone DTOs carry no pty,
+  // and the next poll fills the dims in once the line is listed.
+  if (Number.isFinite(line.cols) && Number.isFinite(line.rows)) {
+    dto.cols = line.cols;
+    dto.rows = line.rows;
+  }
+  return dto;
 }
 
 // board tombstone -> exited-session DTO. Built THROUGH toDto (not a parallel
@@ -382,7 +391,9 @@ class BoardSessions {
     return !!(f && f.ok);
   }
 
-  // Per-WS attach: returns { write, resize, detach }. Scrollback replays on connect.
+  // Per-WS attach: returns { write, resize, setSpectator, detach }. Scrollback
+  // replays once on data-pipe connect; setSpectator toggles clamp participation
+  // live without reattaching. handlers may carry an initial `spectator` flag.
   attach(id, handlers) {
     return this._attach(id, handlers);
   }
