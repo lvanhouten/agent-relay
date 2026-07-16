@@ -9,9 +9,9 @@ import { DirectoryPicker } from './DirectoryPicker.jsx';
 import styles from './NewSessionDialog.module.scss';
 
 // Shared new-session dialog — the one create surface both shells open (mobile:
-// SessionsScreen; desktop: the workspace sidebar). Behavior is unchanged from
-// its original inline home in SessionsScreen: templates, claude model/effort
-// chips, "save as template", and the stays-open-until-success contract.
+// SessionsScreen; desktop: the workspace sidebar). Templates, claude model/effort
+// chips, "save as template", and the stays-open-until-success contract all live
+// here.
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 

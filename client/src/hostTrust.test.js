@@ -1,6 +1,6 @@
-// Host-URL trust helpers. Covers N9's residual / new-W3: a scheme-less
-// `host:port` shorthand must be normalized so it isn't misclassified as a remote
-// host (and doesn't slip past the malformed-host guard).
+// Host-URL trust helpers. A scheme-less `host:port` shorthand must be
+// normalized so it isn't misclassified as a remote host (and doesn't slip
+// past the malformed-host guard).
 import test from 'node:test';
 import assert from 'node:assert';
 import { normalizeHost, isLocalhost } from './hostTrust.js';
@@ -17,8 +17,8 @@ test('normalizeHost: leaves an explicit scheme untouched', () => {
 });
 
 test('isLocalhost: scheme-less localhost:port is now correctly trusted (N9/new-W3)', () => {
-  // The regression: new URL('localhost:3017') has an empty hostname, so the
-  // pre-fix isLocalhost returned false and the UI warned about the user's own box.
+  // new URL('localhost:3017') parses with an empty hostname — this shorthand
+  // must be normalized explicitly or isLocalhost misses it as loopback.
   assert.strictEqual(isLocalhost('localhost:3017'), true);
   assert.strictEqual(isLocalhost('127.0.0.1:3017'), true);
   assert.strictEqual(isLocalhost('localhost'), true);

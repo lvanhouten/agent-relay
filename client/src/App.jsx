@@ -55,11 +55,11 @@ export default function App() {
     localStorage.setItem('ar-theme', theme);
   }, [theme]);
 
-  // First-paint boot decision (VC-3, VC-4, VC-5, VC-7, VC-15). The fragment is
-  // stripped from the address bar immediately, before either network call the
-  // decision might make — a rotated/stale token still leaves no trace in the
-  // URL. decideBoot itself is pure (client/src/core/boot.ts); this effect only
-  // wires it to the real fragment/login/probe calls.
+  // First-paint boot decision. The fragment is stripped from the address bar
+  // immediately, before either network call the decision might make — a
+  // rotated/stale token still leaves no trace in the URL. decideBoot itself is
+  // pure (client/src/core/boot.ts); this effect only wires it to the real
+  // fragment/login/probe calls.
   React.useEffect(() => {
     let cancelled = false;
 

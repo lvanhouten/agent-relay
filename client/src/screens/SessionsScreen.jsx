@@ -18,13 +18,13 @@ import { NewSessionDialog, rememberClaudeDefaults } from '../chrome/NewSessionDi
 import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, ChevronRight, ChevronDown, QrCode, Maximize2, Minimize2 } from 'lucide-react';
 import styles from './SessionsScreen.module.scss';
 
-// NOTE: the per-card scrollback preview was removed here — the server DTO never
-// carried a `preview` field (neither toDto() nor spawn() in server/src/sessions.js
-// populate one), so the widget rendered a permanent "no output yet" placeholder.
-// The data does exist one layer down (the board keeps a 2000-chunk scrollback per
-// line), so this can be revived by exposing a scrollback tail through the board's
-// `list` reply and threading it into toDto(). Deferred as a feature, not a bug —
-// see _docs/issues/2026-07-01-session-card-live-preview.md.
+// The session card renders no scrollback preview: the server DTO carries no
+// `preview` field (neither toDto() nor spawn() in server/src/sessions.js
+// populate one). The data exists one layer down (the board keeps a
+// 2000-chunk scrollback per line), so this can be revived by exposing a
+// scrollback tail through the board's `list` reply and threading it into
+// toDto(). Deferred as a feature, not a bug — see
+// _docs/issues/2026-07-01-session-card-live-preview.md.
 
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
@@ -108,7 +108,7 @@ function ExitedSessionCard({ session, onDismiss }) {
   );
 }
 
-// "Pair a device" dialog (VC-9, VC-10). Fetches GET /api/pairing on open (not
+// "Pair a device" dialog. Fetches GET /api/pairing on open (not
 // on page load — this component only mounts while the dialog is open, so its
 // state — including the credential-bearing pairingUrl — is discarded on close
 // rather than cached in the screen/app state) and renders a client-side QR
@@ -213,7 +213,7 @@ export default function SessionsScreen({ host, theme, onToggleTheme, onToggleShe
     // rejects on any non-ok response (expired token, 500, network drop); closing
     // first would drop that failure into an unhandled rejection with no feedback.
     //
-    // create()'s re-entrancy guard (W4) lives inside the hook, so a double-click's
+    // create()'s re-entrancy guard lives inside the hook, so a double-click's
     // second call no-ops *after* this line: anything placed before the
     // `if (!session)` check below runs on dropped calls too. Today that's only
     // this error clear (harmless — the first click just cleared it); keep any
