@@ -496,6 +496,11 @@ async function handle(m, sock) {
         joined: s.clients.size,
         uptimeMs: Date.now() - s.startedAt,
         idleMs: Date.now() - s.lastActivity,
+        // Live PTY grid, kept current by applyMin's resize; a spectator attach
+        // adopts these dims and CSS-scales rather than resizing the shared line
+        // (ADR-0005). Additive — existing consumers ignore unknown fields.
+        cols: s.pty.cols,
+        rows: s.pty.rows,
       }));
       // `ended` rides alongside `lines` (additive — sb/mcp read r.lines only).
       sock.write(JSON.stringify({ ok: true, boot: BOOT, lines, ended: endedLines.list() }) + '\n');

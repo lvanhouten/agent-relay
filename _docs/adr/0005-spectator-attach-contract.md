@@ -67,7 +67,17 @@ A **spectator** is a watch-only attach with these four properties:
   param is a *mode*, not a security boundary — a full-token client asking for
   spectator gets watch-only behavior, but only the token scope (later) makes
   watch-only *enforced against an untrusted holder*.
-- The focused pane in a grid attaches interactive (owns sizing); focus changes
-  are a detach + reattach in the other mode, not a mode-switch frame — if
-  reattach churn ever proves janky, a live mode-switch frame would be a new
-  decision superseding point 2.
+- The focused pane in a grid is interactive (owns sizing); the rest are
+  spectators. Focus changes are a **live mode-switch, not a detach + reattach**:
+  the pane keeps its data pipe open across focus changes and flips mode with a
+  `{type:'mode',spectator}` WS frame, which toggles the server's input gate and
+  opens/closes the board control socket (leaving/entering the resize clamp). This
+  supersedes the original "detach + reattach" plan — reattach re-ran the
+  reconstructed history replay (adr/0004) on every focus change, which
+  re-materialized garbled scrollback for a long inline-TUI session (Claude Code
+  renders in the normal buffer, so redraw frames pile into scrollback). Keeping
+  the data pipe open means the replay fires exactly once per pane; live output
+  just keeps appending. The control socket is the *only* thing toggled, since the
+  board frees a pane's clamped size on control-socket close (`board.js`), so a
+  spectator that closes it stops constraining the shared PTY without disturbing
+  the byte stream.

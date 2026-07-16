@@ -129,6 +129,7 @@ In production the client is served statically by Express (`server/src/static.js`
 |---|---|---|---|
 | Session cards have no live output preview (the dead placeholder widget was removed; absorbed 2026-07-07 into desktop shell v3 — `_docs/issues/2026-07-07-desktop-fleet-extras.md`) | P3 | M | `_docs/issues/2026-07-01-session-card-live-preview.md` |
 | Windows secret-file ACL is unverified — `mode` bits are inert on NTFS; the real boundary is the inherited profile ACL (deferred W1). Raised 2026-07-06: the persisted token + cookie-signing secret now live behind the same unverified assumption | P2 | S | `_docs/issues/2026-07-01-secret-file-acl-verification.md` |
+| Killing a line flashes a `conhost` window on Windows (~0.1s) — node-pty's fork-based ConPTY kill forks a console-list enumerator that `AttachConsole`s to reap the tree. The obvious fix (`useConptyDll`) drops that reaper and orphans backgrounded grandchildren (dev servers on :3017/:5173); robust fix is a `windowsHide` tree-kill in the `end` handler | P3 | S | `_docs/issues/2026-07-15-conpty-kill-console-flash.md` |
 
 ## Feature backlog (proposed, not started)
 

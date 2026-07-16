@@ -1,6 +1,6 @@
 import React from 'react';
 import { parseFrame, isValidDataPayload, isValidExitCode } from './wsFrame.ts';
-import type { ConnStatus } from './types.ts';
+import type { ConnStatus, TerminalViewMode } from './types.ts';
 
 export interface SessionWSHandlers {
   onData: (payload: string) => void;
@@ -26,6 +26,13 @@ export function useSessionWS(
   sessionId: string,
   token: string | undefined,
   { onData, onExit, onReady }: SessionWSHandlers,
+  // Interactive vs spectator. Pushed to the server as a live `mode` frame, NOT a
+  // URL param: a focus change in the grid must NOT reconnect (that would re-run
+  // the reconstructed history replay and corrupt a long session — ADR-0005), so
+  // `mode` is deliberately excluded from the connect effect's deps. The server
+  // toggles input-gating and the control socket in place; on (re)connect onopen
+  // re-sends the current mode.
+  mode: TerminalViewMode = 'interactive',
 ): SessionWS {
   // token is optional: the browser path is cookie-only post-boot (ar_auth
   // rides the upgrade), so callers pass undefined and the qs below is empty.
@@ -33,6 +40,15 @@ export function useSessionWS(
   // server-side — not this hook's concern.
   const [connStatus, setConnStatus] = React.useState<ConnStatus>('connecting');
   const wsRef = React.useRef<WebSocket | null>(null);
+
+  // Current desired mode, read at onopen and on every change. A ref (not a dep)
+  // so flipping mode pushes a frame over the live socket instead of reconnecting.
+  const modeRef = React.useRef(mode);
+  const sendMode = React.useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN)
+      wsRef.current.send(JSON.stringify({ type: 'mode', spectator: modeRef.current === 'spectator' }));
+  }, []);
+  React.useEffect(() => { modeRef.current = mode; sendMode(); }, [mode, sendMode]);
 
   React.useEffect(() => {
     if (!sessionId) return;
@@ -53,6 +69,7 @@ export function useSessionWS(
         const reconnected = attempt > 0;
         attempt = 0;
         setConnStatus('online');
+        sendMode();               // restore this connection's mode on (re)connect
         onReady?.(reconnected);   // reconnected -> caller resets the terminal before the replay
       };
 
@@ -100,7 +117,9 @@ export function useSessionWS(
       const ws = wsRef.current;
       if (ws) { ws.onclose = null; ws.close(); wsRef.current = null; }
     };
-  // onData/onExit/onReady are stable refs — intentionally excluded from deps
+  // onData/onExit/onReady are stable refs, and `mode` is pushed as a live frame
+  // (see modeRef/sendMode) — all intentionally excluded so only session/token
+  // changes reconnect.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, token]);
 

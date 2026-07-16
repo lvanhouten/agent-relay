@@ -29,6 +29,12 @@ export interface Session {
   // `end` command ('killed') or exited on its own ('exited').
   exitCode?: number | null;
   reason?: string;
+  // Live PTY grid (server toDto): present on live lines, absent on a just-created
+  // session until the first poll and on exited tombstones. A spectator
+  // TerminalView adopts these dims and CSS-scales rather than resizing the
+  // shared line (ADR-0005).
+  cols?: number;
+  rows?: number;
 }
 
 export type ConnStatus = 'connecting' | 'reconnecting' | 'online' | 'offline';

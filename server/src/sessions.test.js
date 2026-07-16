@@ -223,6 +223,25 @@ test('toDto(): a non-finite idleMs reads as just-active, never "NaNs ago"', asyn
   assert.match(dto.lastActive, /^\d+s ago$/);
 });
 
+test('toDto(): a live line\'s PTY cols/rows are surfaced; a dims-less row omits them (ADR-0005)', async () => {
+  // Spectator panes adopt these dims and CSS-scale (never resize the shared
+  // line). Present only when the board supplies finite dims — an older board,
+  // or a synthesized create/tombstone DTO, carries none and the poll fills in.
+  const s = new BoardSessions({
+    rpc: async () => ({
+      ok: true,
+      lines: [
+        { id: 'sized', name: 'sized', shell: 'bash', cwd: '/', pid: 1, idleMs: 0, cols: 97, rows: 41 },
+        { id: 'bare', name: 'bare', shell: 'bash', cwd: '/', pid: 2, idleMs: 0 },
+      ],
+    }),
+  });
+  const byId = Object.fromEntries((await s.list()).map(x => [x.id, x]));
+  assert.strictEqual(byId.sized.cols, 97);
+  assert.strictEqual(byId.sized.rows, 41);
+  assert.ok(!('cols' in byId.bare) && !('rows' in byId.bare), 'a dims-less row surfaces no cols/rows');
+});
+
 // --- flagAttentionByCwd(): the /api/notify cwd fallback (line-id bridge) ---
 
 // Build sessions whose board `list` returns the given lines; case/separator

@@ -3,8 +3,21 @@ import type { ITheme } from '@xterm/xterm';
 // xterm color themes keyed by the app theme ('dark' | 'light'). Values mirror
 // the design tokens in _docs/design-system/tokens/ — xterm can't read CSS
 // custom properties, so they're duplicated here as literals.
+//
+// The scrollbar slider (xterm v6's scrollback thumb) is themed fully transparent
+// in both palettes: the relay watches self-contained TUIs (Claude Code renders
+// inline, so every redraw frame lands in scrollback and the slider just scrolls
+// back through stale frames). Wheel-scroll and scrollback still work — only the
+// visual thumb is suppressed. See _docs/issues (desktop spectator panes).
+const HIDDEN_SLIDER = {
+  scrollbarSliderBackground: 'rgba(0, 0, 0, 0)',
+  scrollbarSliderHoverBackground: 'rgba(0, 0, 0, 0)',
+  scrollbarSliderActiveBackground: 'rgba(0, 0, 0, 0)',
+} as const;
+
 export const XTERM_THEMES: Record<string, ITheme> = {
   dark: {
+    ...HIDDEN_SLIDER,
     background: '#070b0e',
     foreground: '#d8dee2',
     cursor: '#1fce8a',
@@ -20,6 +33,7 @@ export const XTERM_THEMES: Record<string, ITheme> = {
     white: '#d8dee2', brightWhite: '#fafbfb',
   },
   light: {
+    ...HIDDEN_SLIDER,
     background: '#e9edee',
     foreground: '#2a3239',
     cursor: '#0c7650',

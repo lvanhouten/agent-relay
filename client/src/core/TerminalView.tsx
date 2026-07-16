@@ -27,11 +27,17 @@ const SEARCH_OPTS = {
 export interface TerminalViewProps {
   sessionId: string;
   theme: string;
-  // 'interactive' (the default, and the only implemented mode): fit xterm to
-  // the container and push the size to the board. 'spectator' (adopt the
-  // reported PTY dims + CSS-scale, never send resize) is a declared contract
-  // for the desktop shell — passing it today behaves as 'interactive'.
+  // 'interactive' (the default): fit xterm to the container and push the size to
+  // the board. 'spectator': adopt the reported PTY dims (cols/rows below) and
+  // CSS-scale the grid to fit the pane, never fit, never send resize — a
+  // watch-only pane for the desktop grid (ADR-0005). Mode is fixed for the
+  // component's life; a switch is a remount by the consumer.
   mode?: TerminalViewMode;
+  // Reported PTY grid from the session DTO/poll. Spectator mode adopts these and
+  // rescales when they change; ignored in interactive mode (xterm's fit owns the
+  // size there).
+  cols?: number;
+  rows?: number;
   // Ctrl+D inside the terminal — detach without ending the session.
   onDetach?: () => void;
   // Ctrl+F inside the terminal — the screen opens its find bar. Intercepted here
@@ -77,7 +83,8 @@ export interface TerminalViewHandle {
 // from outside — find bar, composer, header buttons — stays in the consuming
 // screen and reaches in through the imperative handle.
 export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewProps>(
-  function TerminalView({ sessionId, theme, onDetach, onSearchToggle, onStatusChange, onSearchResults, passthroughKeys }, handleRef) {
+  function TerminalView({ sessionId, theme, mode = 'interactive', cols, rows, onDetach, onSearchToggle, onStatusChange, onSearchResults, passthroughKeys }, handleRef) {
+    const wrapperRef = React.useRef<HTMLDivElement | null>(null);
     const containerRef = React.useRef<HTMLDivElement | null>(null);
     const termRef = React.useRef<Terminal | null>(null);
     const searchRef = React.useRef<SearchAddon | null>(null);
@@ -101,6 +108,14 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     const onDataRef = React.useRef<((data: string) => void) | null>(null);
     const onExitRef = React.useRef<((code: number | null) => void) | null>(null);
     const refitRef = React.useRef<(() => void) | null>(null);
+    // Reconfigures the live terminal for interactive vs spectator (filled by the
+    // mount effect, called by the mode-change effect) — the pane never remounts
+    // on focus change, so mode is applied in place.
+    const applyModeRef = React.useRef<((spectator: boolean) => void) | null>(null);
+    // Latest reported PTY dims, read when entering spectator mode.
+    const colsRef = React.useRef(cols);
+    const rowsRef = React.useRef(rows);
+    React.useEffect(() => { colsRef.current = cols; rowsRef.current = rows; }, [cols, rows]);
     const onDetachRef = React.useRef(onDetach);
     const onSearchToggleRef = React.useRef(onSearchToggle);
     const onSearchResultsRef = React.useRef(onSearchResults);
@@ -132,7 +147,7 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         }
         refitRef.current?.();
       }, [setPillState]),
-    });
+    }, mode);
 
     // Report status to the chrome outside. Bridged through a ref so a new
     // callback identity doesn't re-fire the effect with a stale status.
@@ -152,7 +167,13 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       },
     }), [send]);
 
-    // Mount xterm once
+    // Mount xterm once. `mode` is NOT baked in: the pane persists across focus
+    // changes (the grid keys it by id, not id:mode), so the data pipe stays open
+    // and the reconstructed history replay fires exactly once — flipping focus
+    // corrupted a long session when it reattached and re-ran that replay
+    // (ADR-0005 live mode-switch). applyMode() reconfigures the live terminal for
+    // interactive vs spectator; the mode-change effect below calls it and
+    // useSessionWS pushes the matching `mode` frame.
     React.useEffect(() => {
       const term = new Terminal({
         theme: XTERM_THEMES[theme] ?? XTERM_THEMES.dark,
@@ -169,7 +190,6 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       term.loadAddon(search);
       term.loadAddon(serialize);
       term.open(containerRef.current!);
-      term.focus();
       termRef.current = term;
       searchRef.current = search;
       serializeRef.current = serialize;
@@ -178,35 +198,85 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
 
       let disposed = false;
       let rafId = 0;
+      // Interactive: fit xterm to the container and push the size to the board.
+      // The trailing refresh forces a full client-side repaint: a (re)focused
+      // pane fits/resizes in quick succession and xterm's renderer can be left
+      // with a partially-painted frame (stale rows, a phantom scrollbar);
+      // refresh() repaints from the buffer with no PTY round-trip.
       const safeFit = () => {
         if (disposed || !containerRef.current) return;
         fit.fit();
         resize(term.cols, term.rows);
+        term.refresh(0, term.rows - 1);
       };
-      refitRef.current = safeFit;
-      // Fit after layout settles, then again once the monospace font has loaded —
-      // font swap changes cell height, and a stale row count clips the last line.
-      // The WS onReady handler also calls this once the socket opens, so the size
-      // actually reaches the board (the resize() above no-ops while it's still connecting).
-      rafId = requestAnimationFrame(safeFit);
-      document.fonts?.ready.then(safeFit);
+      // Spectator: adopt the reported PTY dims and CSS-scale the whole grid down
+      // to fit the pane — never fit, never send resize (that would clamp the
+      // shared line). `.xterm-screen`'s offset size is the true grid pixel box
+      // (transform-independent). The mount must be sized to that natural box
+      // first: left at 100% it's the pane size, so the wide grid overflows the
+      // viewport (clip + scrollbar) and scaling the pane-sized box just shrinks
+      // the visible sliver. Size mount = natural, THEN scale to fit. Top-left
+      // origin; the wrapper clips.
+      const applyScale = () => {
+        const wrap = wrapperRef.current, mount = containerRef.current;
+        if (disposed || !wrap || !mount) return;
+        const screen = mount.querySelector('.xterm-screen') as HTMLElement | null;
+        if (!screen || !screen.offsetWidth || !screen.offsetHeight) return;
+        const w = screen.offsetWidth, h = screen.offsetHeight;
+        mount.style.width = `${w}px`;
+        mount.style.height = `${h}px`;
+        const scale = Math.min(wrap.clientWidth / w, wrap.clientHeight / h);
+        mount.style.transformOrigin = 'top left';
+        mount.style.transform = `scale(${scale})`;
+      };
+      // Reconfigure the live terminal for the given mode without reattaching.
+      // Interactive reclaims the pane (drop the scale transform, accept input,
+      // fit + resize — re-entering the board clamp); spectator adopts the PTY
+      // dims and CSS-scales, captures no input, sends no resize (leaving the
+      // clamp). The relayout is deferred a frame so xterm has flushed the resize
+      // before applyScale measures `.xterm-screen`.
+      const applyMode = (spec: boolean) => {
+        if (disposed) return;
+        const mount = containerRef.current;
+        term.options.disableStdin = spec;
+        term.options.cursorBlink = !spec;
+        if (spec) {
+          const c = colsRef.current, r = rowsRef.current;
+          if (c && r) term.resize(c, r);
+          refitRef.current = applyScale;
+        } else {
+          if (mount) { mount.style.transform = 'none'; mount.style.width = ''; mount.style.height = ''; }
+          refitRef.current = safeFit;
+          term.focus();
+        }
+        rafId = requestAnimationFrame(() => refitRef.current?.());
+      };
+      applyModeRef.current = applyMode;
+
+      // Apply the initial mode, then relayout again once the monospace font has
+      // loaded (font swap changes cell size). For interactive, onReady also
+      // refits once the socket opens so the size reaches the board.
+      applyMode(mode === 'spectator');
+      document.fonts?.ready.then(() => refitRef.current?.());
 
       onDataRef.current = (data) => term.write(data);
       onExitRef.current = (code) => term.writeln(`\r\n\x1b[2m— session exited · code ${code}\x1b[0m`);
 
+      // Input, the detach/find chords, and the Alt+digit passthrough are
+      // registered once; while spectating, `disableStdin` blocks onData so none
+      // fire, and they resume when the pane is refocused (applyMode toggles it).
       term.onData((data) => {
         if (data === '\x04') { onDetachRef.current?.(); return; } // Ctrl+D — detach
         if (data === '\x06') { onSearchToggleRef.current?.(); return; } // Ctrl+F — find bar
         send(data);
       });
-
       // Runs before xterm's own keydown handling — see keyPassthrough.ts.
       term.attachCustomKeyEventHandler((e) => shouldXtermConsumeKey(passthroughKeysRef.current, e));
 
       // Scroll-pill bookkeeping: a line feed while detached counts toward the
-      // "n new" badge; any scroll recomputes pinned-ness (re-reaching bottom
-      // clears the count). onScroll's argument is the new viewportY, but we read
-      // both positions off the buffer so the two events share one source.
+      // "n new" badge; any scroll recomputes pinned-ness. onScroll's argument is
+      // the new viewportY, but we read both positions off the buffer so the two
+      // events share one source.
       const recomputeScroll = () => {
         const b = term.buffer.active;
         setPillState(pillOnScroll(pillRef.current, b.viewportY, b.baseY));
@@ -214,13 +284,17 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       term.onScroll(recomputeScroll);
       term.onLineFeed(() => setPillState(pillOnLine(pillRef.current)));
 
-      const ro = new ResizeObserver(safeFit);
-      ro.observe(containerRef.current!);
+      // Observe the wrapper (the pane) for both modes: interactive fits to it,
+      // spectator rescales to it. A mode change doesn't resize the wrapper, so
+      // applyMode drives that relayout itself.
+      const ro = new ResizeObserver(() => refitRef.current?.());
+      ro.observe(wrapperRef.current!);
 
       return () => {
         disposed = true;
         cancelAnimationFrame(rafId);
         refitRef.current = null;
+        applyModeRef.current = null;
         searchRef.current = null;
         serializeRef.current = null;
         ro.disconnect();
@@ -229,6 +303,19 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Focus/mode change: reconfigure in place (no remount, no reattach).
+    React.useEffect(() => { applyModeRef.current?.(mode === 'spectator'); }, [mode]);
+
+    // Spectator dims propagate via the sessions poll (ADR-0005: ≤5s lag is
+    // acceptable). On change, re-adopt them and rescale; no-op while interactive.
+    React.useEffect(() => {
+      if (mode !== 'spectator') return;
+      const term = termRef.current;
+      if (!term || !cols || !rows) return;
+      term.resize(cols, rows);
+      refitRef.current?.();
+    }, [mode, cols, rows]);
 
     // Sync theme changes into the live terminal
     React.useEffect(() => {
@@ -241,7 +328,7 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     };
 
     return (
-      <div className={styles.wrapper}>
+      <div ref={wrapperRef} className={`${styles.wrapper}${mode === 'spectator' ? ' ' + styles.spectator : ''}`}>
         <div ref={containerRef} className={styles.mount} />
         {!pill.atBottom && (
           <button

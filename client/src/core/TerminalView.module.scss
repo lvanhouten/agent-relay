@@ -17,6 +17,27 @@
   height: 100%;
 }
 
+// Spectator (thumbnail) pane: the grid gutter is noise at small scale, and the
+// mount is CSS-scaled from its top-left corner by TerminalView (transform set
+// inline per-frame). overflow:hidden on .wrapper already clips the scaled box.
+.spectator {
+  padding: 0;
+  cursor: default;
+}
+
+// A spectator never scrolls, and the mount is sized to the natural grid so the
+// viewport matches the screen exactly. Kill the reserved scrollbar gutter (an
+// overflow:scroll viewport reserves ~17px even when content fits) so the grid
+// doesn't overflow horizontally.
+.spectator :global(.xterm-viewport) {
+  overflow: hidden !important;
+  scrollbar-width: none;
+}
+
+.spectator :global(.xterm-viewport)::-webkit-scrollbar {
+  display: none;
+}
+
 .pill {
   position: absolute;
   bottom: var(--space-4);
