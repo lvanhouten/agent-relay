@@ -1,7 +1,7 @@
 import React from 'react';
 import { StatusDot } from '@ds/StatusDot.jsx';
 import { IconButton } from '@ds/IconButton.jsx';
-import { Terminal as TerminalIcon, Search, Download, Copy, Trash2 } from 'lucide-react';
+import { Terminal as TerminalIcon, Search, Download, Copy, Trash2, FolderPlus } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { jumpIndexFromKey } from '../core/jumpKeys.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
@@ -22,7 +22,7 @@ const isJumpChord = (e) => jumpIndexFromKey(e) !== null;
 // shows an exit banner instead of retrying the (permanently refused) attach.
 // Rendered only with a session — the no-selection state is the workspace's
 // HomePane, not this component.
-export function DetailPane({ session, theme, onKill }) {
+export function DetailPane({ session, theme, onKill, onNewInDir }) {
   const viewRef = React.useRef(null);
   const [connStatus, setConnStatus] = React.useState('connecting');
   const [showSearch, setShowSearch] = React.useState(false);
@@ -98,6 +98,9 @@ export function DetailPane({ session, theme, onKill }) {
           </IconButton>
           <IconButton label="Copy selection" onClick={() => navigator.clipboard?.writeText(viewRef.current?.getSelection() ?? '')}>
             <Copy size={15} />
+          </IconButton>
+          <IconButton label="New session here" onClick={() => onNewInDir?.(session.cwd)}>
+            <FolderPlus size={15} />
           </IconButton>
           {!exited && (
             <IconButton label="Terminate session" onClick={() => onKill(session.id)}>

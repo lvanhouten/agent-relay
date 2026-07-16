@@ -75,9 +75,12 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
   );
 }
 
-export function NewSessionDialog({ onClose, onCreate, error, busy }) {
+export function NewSessionDialog({ onClose, onCreate, error, busy, initialCwd }) {
   const [name, setName] = React.useState('');
-  const [cwd, setCwd] = React.useState('~/');
+  // Prefilled when opened from a live session's "new in this directory" action;
+  // '~/' is the from-scratch default. Read once at mount — the dialog remounts
+  // per open, so a later open with a different cwd re-seeds correctly.
+  const [cwd, setCwd] = React.useState(initialCwd || '~/');
   const [command, setCommand] = React.useState(() => withClaudeDefaults('claude'));
 
   // Spawn templates (phase 1, localStorage). Loaded once on mount; the picker

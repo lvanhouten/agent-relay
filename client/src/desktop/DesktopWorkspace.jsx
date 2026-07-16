@@ -27,6 +27,9 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
   // so the home pane isn't immediately overwritten by the most-recent session.
   const [home, setHome] = React.useState(false);
   const [dialog, setDialog] = React.useState(false);
+  // Prefilled cwd for the create dialog: set when opened from a session's "new
+  // in this directory" toolbar action, undefined for a from-scratch new session.
+  const [dialogCwd, setDialogCwd] = React.useState(undefined);
   const [createError, setCreateError] = React.useState('');
   // The spectator grid's watch set: an ordered list of session ids shown as
   // panes when non-empty (else the single-terminal / home view). Built via the
@@ -180,7 +183,13 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
     if (id === selectedId) { selectedRef.current = null; setSelectedId(null); }
   };
 
-  const openDialog = () => { setCreateError(''); setDialog(true); };
+  // cwd is a string only when invoked from a "new in this directory" action; the
+  // sidebar's button passes a click event, so anything non-string means blank.
+  const openDialog = (cwd) => {
+    setCreateError('');
+    setDialogCwd(typeof cwd === 'string' ? cwd : undefined);
+    setDialog(true);
+  };
 
   // Inject a session as a grid pane and make it the interactive one. Entering
   // grid mode from a single terminal seeds the currently-viewed session as the
@@ -237,6 +246,7 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
           session={selected}
           theme={theme}
           onKill={handleKill}
+          onNewInDir={openDialog}
         />
       ) : (
         <HomePane
@@ -251,6 +261,7 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
           onCreate={handleCreate}
           error={createError}
           busy={creating}
+          initialCwd={dialogCwd}
         />
       )}
     </div>
