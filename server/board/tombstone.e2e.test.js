@@ -38,7 +38,7 @@ const exitShell = process.platform === 'win32'
   ? { shell: 'cmd.exe', args: ['/c', 'exit 3'] }
   : { shell: 'sh', args: ['-c', 'exit 3'] };
 
-test('tombstone reason invariant: natural exit records `exited`, end-command records `killed` (W1)', async t => {
+test('tombstone reason invariant: natural exit records `exited`, end-command records `killed`', async t => {
   const child = spawn(process.execPath, [path.join(__dirname, 'board.js')], {
     stdio: 'ignore',
     env: process.env,

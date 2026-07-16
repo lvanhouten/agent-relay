@@ -9,7 +9,7 @@ const { DEFAULT_IDLE_MS } = require('../board/wait');
 
 const down = () => { const e = new Error('board rpc timed out'); return Promise.reject(e); };
 
-test('spawn(): a board-down RPC throws BoardUnreachableError (new-W1)', async () => {
+test('spawn(): a board-down RPC throws BoardUnreachableError', async () => {
   const s = new BoardSessions({ rpc: down });
   await assert.rejects(
     () => s.spawn({ name: 'x', cwd: '~/', command: 'bash' }),
@@ -25,7 +25,7 @@ test('spawn(): a board-reachable-but-not-ok reply is a plain Error, not BoardUnr
   );
 });
 
-test('kill(): a board-down RPC throws BoardUnreachableError (new-W1)', async () => {
+test('kill(): a board-down RPC throws BoardUnreachableError', async () => {
   const s = new BoardSessions({ rpc: down });
   await assert.rejects(
     () => s.kill('7'),
@@ -312,14 +312,14 @@ function beaconSessions(lines, { NOW = 1_000_000, boot = 'boot-A' } = {}) {
   return new BoardSessions({ now: () => NOW, rpc: async () => ({ ok: true, boot, lines }) });
 }
 
-test('beacon SessionStart: a quiet line is superseded to running, not quiet (VC-1)', async () => {
+test('beacon SessionStart: a quiet line is superseded to running, not quiet', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }]);
   assert.strictEqual((await s.list())[0].status, 'idle', 'baseline heuristic before the beacon');
   await s.beacon({ event: 'SessionStart', sessionId: '1' });
   assert.strictEqual((await s.list())[0].status, 'running', 'a known Claude agent that is not waiting is working');
 });
 
-test('beacon Stop: line is turn-done; output after Stop reverts to running, marker kept (VC-2/VC-5)', async () => {
+test('beacon Stop: line is turn-done; output after Stop reverts to running, marker kept', async () => {
   let now = 1_000_000;
   let idleMs = 13000;
   const s = new BoardSessions({ now: () => now, rpc: async () => ({ ok: true, boot: 'b', lines: [{ id: '1', cwd: '/r', idleMs }] }) });
@@ -330,7 +330,7 @@ test('beacon Stop: line is turn-done; output after Stop reverts to running, mark
   assert.strictEqual(s._beacons.has('1'), true, 'the Claude-line marker is retained across the clear');
 });
 
-test('beacon SessionEnd: removes the marker so the line reverts to the idleMs heuristic (VC-15)', async () => {
+test('beacon SessionEnd: removes the marker so the line reverts to the idleMs heuristic', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }]);
   await s.beacon({ event: 'Stop', sessionId: '1' });
   assert.strictEqual((await s.list())[0].status, 'turn-done');
@@ -339,7 +339,7 @@ test('beacon SessionEnd: removes the marker so the line reverts to the idleMs he
   assert.strictEqual(s._beacons.has('1'), false, 'the marker is dropped');
 });
 
-test('clearAttention(): clears a live turn-done state, keeping the marker (line -> running) (VC-6)', async () => {
+test('clearAttention(): clears a live turn-done state, keeping the marker (line -> running)', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }]);
   await s.beacon({ event: 'Stop', sessionId: '1' });
   assert.strictEqual((await s.list())[0].status, 'turn-done');
@@ -348,19 +348,19 @@ test('clearAttention(): clears a live turn-done state, keeping the marker (line 
   assert.strictEqual(s._beacons.has('1'), true);
 });
 
-test('needs-input outranks turn-done when both are live (VC-7)', async () => {
+test('needs-input outranks turn-done when both are live', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }]);
   await s.beacon({ event: 'Stop', sessionId: '1' });
   s.flagAttention('1');
   assert.strictEqual((await s.list())[0].status, 'needs-input', 'needs-input wins over turn-done');
 });
 
-test('a line that never beaconed reports exactly the pre-existing heuristic status (VC-8)', async () => {
+test('a line that never beaconed reports exactly the pre-existing heuristic status', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }, { id: '2', cwd: '/r', idleMs: 0 }]);
   assert.deepStrictEqual(await statusById(s), { 1: 'idle', 2: 'running' }, 'no beacon -> untouched heuristic');
 });
 
-test('a present sessionId naming an unknown line never falls through to a same-cwd live line (VC-12)', async () => {
+test('a present sessionId naming an unknown line never falls through to a same-cwd live line', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }]);
   const resolved = await s.beacon({ event: 'Stop', sessionId: 'ghost', cwd: '/r' });
   assert.strictEqual(resolved, 'ghost', 'a present sessionId is a dumb set — no cwd fallthrough');
@@ -375,13 +375,13 @@ test('beacon: the cwd fallback resolves a line only when sessionId is absent', a
   assert.strictEqual((await s.list())[0].status, 'turn-done');
 });
 
-test('beacon: an unmatched cwd (and no sessionId) resolves to null, flags nothing (VC-12)', async () => {
+test('beacon: an unmatched cwd (and no sessionId) resolves to null, flags nothing', async () => {
   const s = beaconSessions([{ id: '1', cwd: '/r', idleMs: 13000 }]);
   assert.strictEqual(await s.beacon({ event: 'Stop', cwd: '/elsewhere' }), null);
   assert.deepStrictEqual(await statusById(s), { 1: 'idle' });
 });
 
-test('a board-boot-nonce change voids all beacon state (VC-9 boundary)', async () => {
+test('a board-boot-nonce change voids all beacon state', async () => {
   let boot = 'boot-A';
   const s = new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, boot, lines: [{ id: '1', cwd: '/r', idleMs: 13000 }] }) });
   await s.beacon({ event: 'Stop', sessionId: '1' });
@@ -401,7 +401,7 @@ test('a beacon for a line no longer live is pruned on the next list()', async ()
   assert.strictEqual(s._beacons.has('1'), false, 'the dead id is pruned from the beacon map');
 });
 
-test('a Stop beacon never turns an exited line into turn-done (VC-14)', async () => {
+test('a Stop beacon never turns an exited line into turn-done', async () => {
   const s = new BoardSessions({
     now: () => 1_000_000,
     rpc: async () => ({ ok: true, boot: 'b', lines: [], ended: [{ id: '1', shell: 'bash', cwd: '/r', exitCode: 0, endedAt: 1_000_000, reason: 'exited' }] }),
@@ -431,7 +431,7 @@ const overlayLine = [{ id: '1', cwd: '/r', idleMs: 0 }];
 const overlaySessions = () =>
   new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, boot: 'b', lines: overlayLine }) });
 
-test('W1: _applyBeacon consults the shared _outputLandedAfter primitive', async () => {
+test('_applyBeacon consults the shared _outputLandedAfter primitive', async () => {
   const kept = overlaySessions();
   kept._outputLandedAfter = () => false;                       // "no output landed after the Stop"
   await kept.beacon({ event: 'Stop', sessionId: '1' });
@@ -443,7 +443,7 @@ test('W1: _applyBeacon consults the shared _outputLandedAfter primitive', async 
   assert.strictEqual((await cleared.list())[0].status, 'running', 'primitive says stale -> reverts to running');
 });
 
-test('W1: _applyAttention consults the shared _outputLandedAfter primitive', async () => {
+test('_applyAttention consults the shared _outputLandedAfter primitive', async () => {
   const kept = overlaySessions();
   kept._outputLandedAfter = () => false;                       // "no output landed after the flag"
   kept.flagAttention('1');

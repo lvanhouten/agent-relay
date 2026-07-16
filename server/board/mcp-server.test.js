@@ -26,7 +26,7 @@ test('advanceCursor: monotonic advance returns prior cursor and never rolls back
 
 // The cursor must be dropped ONLY when the pipe actually closed, never
 // because the stream text happened to contain the farewell substring.
-test('advanceCursor (W2): live output containing "closed (exit 0)" does NOT drop the cursor', () => {
+test('advanceCursor: live output containing "closed (exit 0)" does NOT drop the cursor', () => {
   const cache = new Map();
   // A running program echoes the farewell phrase, but the pipe is still open.
   mcp.advanceCursor(cache, 'b1:1', 500, /* pipeClosed */ false);
@@ -37,7 +37,7 @@ test('advanceCursor (W2): live output containing "closed (exit 0)" does NOT drop
 });
 
 // An unconfirmed nonce (null key) must never touch the cache.
-test('advanceCursor (C1 re-corruption): null key neither reads nor writes the cache', () => {
+test('advanceCursor: a null key neither reads nor writes the cache', () => {
   const cache = new Map();
   cache.set('stale:1', 999); // an orphaned pre-restart entry
   const already = mcp.advanceCursor(cache, null, 300, false);
@@ -52,23 +52,23 @@ test('advanceCursor (C1 re-corruption): null key neither reads nor writes the ca
 // / line gone). A quiet-but-healthy line keeps its socket open (pipeClosed=false);
 // a normal exit delivers the farewell sentinel first (text non-empty).
 
-test('readClosedBeforeOutput (W3): closed with zero bytes is a failed attach', () => {
+test('readClosedBeforeOutput: closed with zero bytes is a failed attach', () => {
   assert.strictEqual(mcp.readClosedBeforeOutput('', true), true);
 });
 
-test('readClosedBeforeOutput (W3): a quiet-but-open line (timer-driven finish) is NOT a failure', () => {
+test('readClosedBeforeOutput: a quiet-but-open line (timer-driven finish) is NOT a failure', () => {
   // The quiet/hardStop timers fire finish() with pipeClosed=false — a legit empty read.
   assert.strictEqual(mcp.readClosedBeforeOutput('', false), false);
 });
 
-test('readClosedBeforeOutput (W3): a normal exit (farewell bytes received) is NOT a failure', () => {
+test('readClosedBeforeOutput: a normal exit (farewell bytes received) is NOT a failure', () => {
   // An authed client always receives the farewell sentinel before the pipe closes.
   assert.strictEqual(mcp.readClosedBeforeOutput('[switchboard: line 1 closed (exit 0)]', true), false);
 });
 
 // --- forgetLine: the end_line leak ---
 
-test('forgetLine (C1 leak): drops every cursor for an id across all boot nonces', () => {
+test('forgetLine: drops every cursor for an id across all boot nonces', () => {
   mcp.seen.set('bootA:7', 10);
   mcp.seen.set('bootB:7', 20);   // same id, a previous board
   mcp.seen.set('bootA:8', 30);   // a different line — must survive
@@ -103,7 +103,7 @@ test('refreshBoot: a successful probe confirms the nonce and clears cache on cha
   assert.strictEqual(mcp.seen.has('old:1'), false, 'cache cleared on a boot-nonce change');
 });
 
-test('refreshBoot (N2): a fresh confirmed nonce is reused without a new round-trip', async () => {
+test('refreshBoot: a fresh confirmed nonce is reused without a new round-trip', async () => {
   let calls = 0;
   mcp.__setRpc(async () => { calls++; return { ok: true, boot: 'nonceX', lines: [] }; });
   await mcp.refreshBoot();
@@ -114,7 +114,7 @@ test('refreshBoot (N2): a fresh confirmed nonce is reused without a new round-tr
 
 // --- observeBoot: the round-2 regression — TTL trust with no live signal ---
 
-test('observeBoot (C1 re-corruption, round 2): a fresh boot observed via new/list invalidates a stale entry immediately, independent of the read-path TTL', () => {
+test('observeBoot: a fresh boot observed via new/list invalidates a stale entry immediately, independent of the read-path TTL', () => {
   mcp.observeBoot('A');           // refreshBoot's TTL is now "confirmed" fresh under A
   mcp.seen.set('A:3', 999);       // an orphaned pre-restart entry for a reused id
   mcp.observeBoot('B');           // e.g. a switchboard_new_line reply after a restart
@@ -138,7 +138,7 @@ test('observeBoot: a falsy boot (a failed RPC reply) is ignored, not treated as 
 
 // --- endLine: the round-2 regression — end_line's leak path still had no try/finally ---
 
-test('endLine (C1 leak, round 2): forgets the cursor even when the end RPC rejects', async () => {
+test('endLine: forgets the cursor even when the end RPC rejects', async () => {
   mcp.seen.set('bootA:9', 42);
   mcp.__setRpc(async () => { throw new Error('board unreachable'); });
   await assert.rejects(() => mcp.endLine('9'), /board unreachable/);

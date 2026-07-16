@@ -56,7 +56,7 @@ test('POST /sessions -> 415 on a non-JSON content type (a "simple" cross-site PO
   assert.strictEqual(status, 415);
 });
 
-test('DELETE /sessions/:id -> 503 when kill() throws BoardUnreachableError (new-W1)', async () => {
+test('DELETE /sessions/:id -> 503 when kill() throws BoardUnreachableError', async () => {
   const app = serve({ kill: async () => { throw new BoardUnreachableError(); } });
   const { status } = await request(app, 'DELETE', '/api/sessions/7');
   assert.strictEqual(status, 503);
@@ -266,7 +266,7 @@ test('POST /beacon -> 200 with id: null when nothing matched', async () => {
   assert.deepStrictEqual(JSON.parse(body), { ok: true, id: null });
 });
 
-test('POST /beacon never invokes the push notifiers (VC-10)', async () => {
+test('POST /beacon never invokes the push notifiers', async () => {
   const seen = [];
   const notifier = { name: 'fake', notify: async (p) => { seen.push(p); } };
   const app = serve({ beacon: async () => '1' }, [notifier]);
@@ -275,13 +275,13 @@ test('POST /beacon never invokes the push notifiers (VC-10)', async () => {
   assert.deepStrictEqual(seen, [], 'a beacon carries no push');
 });
 
-test('POST /beacon -> 415 on a non-JSON content type (VC-11)', async () => {
+test('POST /beacon -> 415 on a non-JSON content type', async () => {
   const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
   const { status } = await request(app, 'POST', '/api/beacon', { contentType: 'text/plain' });
   assert.strictEqual(status, 415);
 });
 
-test('POST /beacon -> 400 on an unrecognized or missing event (VC-11)', async () => {
+test('POST /beacon -> 400 on an unrecognized or missing event', async () => {
   const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
   for (const body of [{ event: 'PreToolUse', sessionId: '1' }, { sessionId: '1' }]) {
     const { status } = await request(app, 'POST', '/api/beacon', { body });
@@ -289,13 +289,13 @@ test('POST /beacon -> 400 on an unrecognized or missing event (VC-11)', async ()
   }
 });
 
-test('POST /beacon -> 400 on an oversized field (VC-11)', async () => {
+test('POST /beacon -> 400 on an oversized field', async () => {
   const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
   const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', sessionId: 'x'.repeat(201) } });
   assert.strictEqual(status, 400);
 });
 
-test('POST /beacon -> 503 when beacon() throws BoardUnreachableError (VC-13)', async () => {
+test('POST /beacon -> 503 when beacon() throws BoardUnreachableError', async () => {
   const app = serve({ beacon: async () => { throw new BoardUnreachableError(); } });
   const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', cwd: '/r' } });
   assert.strictEqual(status, 503);

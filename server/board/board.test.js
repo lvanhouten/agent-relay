@@ -49,7 +49,7 @@ test('paneSpawnDecision: a standalone {cmd} arg is spawnable', () => {
   assert.strictEqual(d.embedded, false);
 });
 
-test('paneSpawnDecision: {cmd} embedded in a larger string is refused (N7)', () => {
+test('paneSpawnDecision: {cmd} embedded in a larger string is refused', () => {
   // SWITCHBOARD_TERM="sh -c '{cmd}'" -> ["sh","-c","'{cmd}'"]
   const d = paneSpawnDecision({ file: 'sh', args: ['-c', "'{cmd}'"] });
   assert.strictEqual(d.standalone, false);
@@ -62,7 +62,7 @@ test('paneSpawnDecision: no {cmd} token at all is refused', () => {
   assert.strictEqual(d.embedded, false);
 });
 
-test('openPane: returns false (no process) when the recipe is refused (new-N1)', () => {
+test('openPane: returns false (no process) when the recipe is refused', () => {
   const opened = openPane('99', { file: 'sh', args: ['-c', "'{cmd}'"] });
   assert.strictEqual(opened, false);
 });
@@ -74,7 +74,7 @@ function capture() {
   return { sock: { write: s => chunks.push(s) }, reply: () => JSON.parse(chunks.join('')) };
 }
 
-test('join reply for a missing line reports ok:false and paneOpened:null (new-N1)', () => {
+test('join reply for a missing line reports ok:false and paneOpened:null', () => {
   const c = capture();
   handle({ cmd: 'join', id: 'no-such-line' }, c.sock);
   const r = c.reply();
@@ -85,7 +85,7 @@ test('join reply for a missing line reports ok:false and paneOpened:null (new-N1
 
 // A throwing client .end() in the line-exit path must not abort the loop or
 // propagate out (it runs in an async pty callback, uncaught == daemon down).
-test('notifyClientsClosed (N10): a throwing client does not abort the others or propagate', () => {
+test('notifyClientsClosed: a throwing client does not abort the others or propagate', () => {
   const notified = [];
   const good = suffix => ({ end: f => notified.push(suffix + f) });
   const bad = { end: () => { throw new Error('socket in a bad state'); } };
@@ -162,7 +162,7 @@ test("handle('forget') dismisses a tombstone once, then reports ok:false", () =>
 // that loses the control-pipe bind race never overwrites the winner's on-disk
 // secret. These pin the ordering invariant without binding a real pipe.
 
-test('bringOnline (C2): persists the secret ONLY after the bind succeeds, never before', () => {
+test('bringOnline: persists the secret ONLY after the bind succeeds, never before', () => {
   const calls = [];
   let bindCb = null;
   bringOnline({
@@ -182,7 +182,7 @@ test('bringOnline (C2): persists the secret ONLY after the bind succeeds, never 
     'secret persisted only inside the bind-success callback');
 });
 
-test('bringOnline (C2): a process that LOSES the bind race never persists the secret', () => {
+test('bringOnline: a process that LOSES the bind race never persists the secret', () => {
   const calls = [];
   bringOnline({
     generate: () => 'LOSER',
@@ -386,7 +386,7 @@ test('makeScreenLifecycle: dispose releases the emulator and drops the reference
 // stale scrollback or serve a grid from a terminal being torn down — it returns
 // null so the handler reports the exited line instead of a stale/torn frame.
 
-test('makeScreenLifecycle: a read after dispose refuses to rebuild and returns null (W2)', async () => {
+test('makeScreenLifecycle: a read after dispose refuses to rebuild and returns null', async () => {
   const h = screenHarness({ scrollback: ['seed'] });
   await h.life.read();               // build the emulator on the first read
   h.life.dispose();
@@ -395,7 +395,7 @@ test('makeScreenLifecycle: a read after dispose refuses to rebuild and returns n
   assert.strictEqual(h.constructed(), 1, 'no second emulator built for a dead line (no leak)');
 });
 
-test('makeScreenLifecycle: a first read after dispose builds nothing at all (W2, lazy-init leg)', async () => {
+test('makeScreenLifecycle: a first read after dispose builds nothing at all (lazy-init leg)', async () => {
   const h = screenHarness({ scrollback: ['seed'] });
   h.life.dispose();                  // line exited before it was ever screen-read
   const snap = await h.life.read();
@@ -403,7 +403,7 @@ test('makeScreenLifecycle: a first read after dispose builds nothing at all (W2,
   assert.strictEqual(h.constructed(), 0, 'no emulator ever constructed for a line that exited unread');
 });
 
-test('makeScreenLifecycle: a dispose during an in-flight read discards the grid (W2, mid-flush)', async () => {
+test('makeScreenLifecycle: a dispose during an in-flight read discards the grid (mid-flush)', async () => {
   let resolveSnap;
   const emulator = {
     write() {}, resize() {},
