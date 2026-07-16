@@ -3,11 +3,10 @@
 // plain CLI command, backgroundable via any shell's job control or a harness's
 // own background-task mechanism). Deliberately NOT also an MCP tool: a blocking
 // wait tool is only useful if the MCP client can background an arbitrary tool
-// call, and Claude Code can't — the old switchboard_wait_for_idle just wedged
-// the calling turn, so it was removed (2026-07-07).
+// call, and Claude Code can't — such a tool would just wedge the calling turn.
 const { connectPipe, dataPipe, EXIT_RE } = require('./lib');
 // EXIT_RE (the board's data-pipe farewell sentinel) and the string it matches
-// both live in lib.js now, so a reworded farewell can't silently break detection.
+// both live in lib.js, so a reworded farewell can't silently break detection.
 
 // The canonical "quiet" threshold: no new bytes for this long counts as idle.
 // Exported so every consumer — `sb wait` and the session DTO's running/idle

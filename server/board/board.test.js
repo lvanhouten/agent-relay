@@ -1,7 +1,7 @@
 'use strict';
-// Pane-spawn decision + RPC-reply signal tests. Covers N7's residual / new-N1:
-// openPane's refusal must be visible to the caller (paneOpened in the reply), not
-// just logged. Uses the pure helpers so no pty/process is launched.
+// Pane-spawn decision + RPC-reply signal tests: openPane's refusal must be visible
+// to the caller (paneOpened in the reply), not just logged. Uses the pure helpers
+// so no pty/process is launched.
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline,
@@ -83,7 +83,7 @@ test('join reply for a missing line reports ok:false and paneOpened:null (new-N1
   assert.ok('paneOpened' in r, 'the field is present so callers can branch on it');
 });
 
-// N10: a throwing client .end() in the line-exit path must not abort the loop or
+// A throwing client .end() in the line-exit path must not abort the loop or
 // propagate out (it runs in an async pty callback, uncaught == daemon down).
 test('notifyClientsClosed (N10): a throwing client does not abort the others or propagate', () => {
   const notified = [];
@@ -157,8 +157,8 @@ test("handle('forget') dismisses a tombstone once, then reports ok:false", () =>
   assert.strictEqual(c2.reply().ok, false, 'second dismiss finds nothing');
 });
 
-// --- bringOnline: C2, the write-then-listen ordering that desyncs the secret ---
-// The fix: persist the secret ONLY from the bind-success callback, so a process
+// --- bringOnline: the write-then-listen ordering that desyncs the secret ---
+// The rule: persist the secret ONLY from the bind-success callback, so a process
 // that loses the control-pipe bind race never overwrites the winner's on-disk
 // secret. These pin the ordering invariant without binding a real pipe.
 
@@ -173,7 +173,7 @@ test('bringOnline (C2): persists the secret ONLY after the bind succeeds, never 
     ready: () => calls.push(['ready']),
   });
   // Before the OS confirms the bind, the secret is set in memory + listen is
-  // attempted, but NOTHING is written to disk — the old code wrote it here.
+  // attempted, but NOTHING is written to disk yet.
   assert.deepStrictEqual(calls, [['assign', 'SEKRET'], ['listen']],
     'no persist before the bind-success callback fires');
   bindCb();  // this process won the pipe
@@ -381,7 +381,7 @@ test('makeScreenLifecycle: dispose releases the emulator and drops the reference
   assert.strictEqual(h.emulator.disposed, 1);
 });
 
-// The line-exit race (W2): a screen read can be in flight, or arrive, while
+// The line-exit race: a screen read can be in flight, or arrive, while
 // p.onExit disposes the emulator. A disposed lifecycle must never rebuild from
 // stale scrollback or serve a grid from a terminal being torn down — it returns
 // null so the handler reports the exited line instead of a stale/torn frame.

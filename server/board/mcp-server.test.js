@@ -1,6 +1,7 @@
 'use strict';
 // Cursor-cache unit tests for mcp-server.js's read-output bookkeeping. These
-// cover the three C1 sub-defects + the W2 false-positive + the N2 TTL, without a
+// cover the cursor-cache hazards — nonce namespacing, the end_line cursor leak,
+// the pipe-closed drop vs. content-sniffing, and the boot-nonce TTL — without a
 // live board (the pure decision logic is factored out of the pipe I/O).
 const test = require('node:test');
 const assert = require('node:assert');
@@ -23,7 +24,7 @@ test('advanceCursor: monotonic advance returns prior cursor and never rolls back
   assert.strictEqual(cache.get('b1:1'), 250);
 });
 
-// W2: the cursor must be dropped ONLY when the pipe actually closed, never
+// The cursor must be dropped ONLY when the pipe actually closed, never
 // because the stream text happened to contain the farewell substring.
 test('advanceCursor (W2): live output containing "closed (exit 0)" does NOT drop the cursor', () => {
   const cache = new Map();
@@ -35,7 +36,7 @@ test('advanceCursor (W2): live output containing "closed (exit 0)" does NOT drop
   assert.strictEqual(cache.has('b1:1'), false, 'cursor dropped when the line actually ended');
 });
 
-// C1 sub-defect 3: an unconfirmed nonce (null key) must never touch the cache.
+// An unconfirmed nonce (null key) must never touch the cache.
 test('advanceCursor (C1 re-corruption): null key neither reads nor writes the cache', () => {
   const cache = new Map();
   cache.set('stale:1', 999); // an orphaned pre-restart entry
@@ -45,7 +46,7 @@ test('advanceCursor (C1 re-corruption): null key neither reads nor writes the ca
   assert.strictEqual(cache.size, 1, 'nothing written under a null key');
 });
 
-// --- readClosedBeforeOutput: W3, a failed attach must not read as a quiet line ---
+// --- readClosedBeforeOutput: a failed attach must not read as a quiet line ---
 // The pure decision readOutput's finish() makes: only a pipe that closed with zero
 // bytes ever received is a failed attach (auth rejected / board restart mid-connect
 // / line gone). A quiet-but-healthy line keeps its socket open (pipeClosed=false);
@@ -65,7 +66,7 @@ test('readClosedBeforeOutput (W3): a normal exit (farewell bytes received) is NO
   assert.strictEqual(mcp.readClosedBeforeOutput('[switchboard: line 1 closed (exit 0)]', true), false);
 });
 
-// --- forgetLine: C1 sub-defect 1, the end_line leak ---
+// --- forgetLine: the end_line leak ---
 
 test('forgetLine (C1 leak): drops every cursor for an id across all boot nonces', () => {
   mcp.seen.set('bootA:7', 10);
@@ -85,7 +86,7 @@ test('forgetLine: matches the full id, not a suffix (":17" is not forgotten by "
   assert.strictEqual(mcp.seen.has('bootA:17'), true, 'id 17 must not be caught by forgetLine("7")');
 });
 
-// --- refreshBoot: the confirmed/unconfirmed contract + N2 TTL ---
+// --- refreshBoot: the confirmed/unconfirmed contract + TTL ---
 
 test('refreshBoot: a failed probe returns confirmed:false (caller must skip the cache)', async () => {
   mcp.__setRpc(async () => { throw new Error('board down'); });

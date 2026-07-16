@@ -1,6 +1,6 @@
 'use strict';
-// Integration guard for the spectator-attach dims contract (ADR-0005 point 1):
-// the `list` reply carries each live line's current PTY `cols`/`rows`. A
+// Integration guard for the spectator-attach dims contract: the `list` reply
+// carries each live line's current PTY `cols`/`rows`. A
 // spectator pane adopts these and CSS-scales rather than resizing the shared
 // line, so the field must reflect the real pty grid — not a spawn-time constant
 // that drifts. The pure board.test.js can't reach this: the fields are read off

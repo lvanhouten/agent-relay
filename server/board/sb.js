@@ -144,7 +144,7 @@ async function main() {
       if (here) { joinHere(r.id); break; }
       // paneOpened === false means the board refused the launch recipe (no
       // standalone {cmd} arg) — the line exists but no tab will appear, so say so
-      // instead of the misleading "joining a tab" (N7/new-N1).
+      // instead of the misleading "joining a tab".
       console.log(r.paneOpened === false
         ? `${started} — could NOT open a tab (check SWITCHBOARD_TERM); join it manually with \`sb join ${r.id}\``
         : `${started} — joining a tab`);
@@ -178,7 +178,7 @@ async function main() {
       const r = await rpc({ cmd: 'join', id: arg, spawn: spawnRecipe() });
       if (!r.ok) { console.log(`no such line: ${arg}`); break; }
       // A refused recipe (paneOpened === false) means no tab opened despite ok:true
-      // — surface it rather than claim success (N7/new-N1).
+      // — surface it rather than claim success.
       console.log(r.paneOpened === false
         ? `line ${arg} exists but a tab could NOT be opened (check SWITCHBOARD_TERM)`
         : `joining a tab to line ${arg}`);

@@ -33,13 +33,13 @@ const { connectPipe, dataPipe, rpc } = require('./lib');
 const seen = new Map(); // "<boot>:<id>" -> chars already returned
 let boot = null;        // the board's current boot nonce; re-probed on a TTL
 let bootTs = 0;         // when `boot` was last confirmed against a live board
-const BOOT_TTL_MS = 3000; // re-probe the nonce at most this often (N2: hot-path latency)
+const BOOT_TTL_MS = 3000; // re-probe the nonce at most this often (hot-path latency)
 
 // Every board RPC this module makes, injectable so the cursor logic (and the
 // end_line leak path) can be unit-tested without a live board. Defaults to the
-// shared lib.rpc(); tests swap it via __setRpc(). Was probe-only (refreshBoot's
-// dedicated re-probe); broadened to the new_line/list_lines/end_line call sites
-// too so their RPC failures are exercisable in tests, not just refreshBoot's.
+// shared lib.rpc(); tests swap it via __setRpc(). Wraps the new_line / list_lines /
+// end_line call sites too, not just refreshBoot's probe, so every RPC failure is
+// exercisable in tests.
 let boardRpc = (msg, opts) => rpc(msg, opts);
 
 // Fold a freshly-observed boot nonce into the cache's understanding of the
@@ -69,9 +69,9 @@ function observeBoot(freshBoot) {
 //  - monotonic advance (never roll the cursor back and re-deliver),
 //  - drop the entry only when the pipe closed (the line ended) — NOT on
 //    content-sniffing for the farewell substring, which a live program echoing
-//    "closed (exit N)" would trip (W2),
+//    "closed (exit N)" would trip,
 //  - never read from or write to the cache under a null key (unconfirmed nonce),
-//    so a stale nonce can't collide with an orphaned entry (C1 sub-defect 3).
+//    so a stale nonce can't collide with an orphaned entry.
 function advanceCursor(cache, key, textLen, pipeClosed) {
   if (!key) return 0;
   const already = cache.get(key) || 0;
@@ -89,8 +89,8 @@ function advanceCursor(cache, key, textLen, pipeClosed) {
 // failed probe returns confirmed:false with whatever stale `boot` we last had —
 // the caller MUST NOT key the cursor cache off an unconfirmed nonce, because a
 // board restart we couldn't observe + a reused id + a leaked pre-restart entry
-// would collide and silently truncate (C1 sub-defect 3, the re-corruption
-// window). N2: skip the round-trip entirely while a confirmed nonce is fresh.
+// would collide and silently truncate. Skip the round-trip entirely while a
+// confirmed nonce is fresh.
 async function refreshBoot() {
   if (boot && Date.now() - bootTs < BOOT_TTL_MS) return { boot, confirmed: true };
   const r = await boardRpc({ cmd: 'list' }, { autostart: false }).catch(() => null);
@@ -98,14 +98,14 @@ async function refreshBoot() {
   return { boot, confirmed: false };
 }
 
-// Distinguish a failed attach from a legitimately-empty read (W3). connectPipe()
+// Distinguish a failed attach from a legitimately-empty read. connectPipe()
 // resolves as soon as the pipe connects and the secret is fired-and-forgotten; it
 // never waits for the board to accept or reject it. So if the board tears the
-// socket down at (or before) the handshake — a rejected secret (e.g. the C2
-// desync), a board restart mid-connect, a line that vanished — the read used to
+// socket down at (or before) the handshake — a rejected secret (a secret desync,
+// a board restart mid-connect, a line that vanished) — the read would otherwise
 // resolve with the empty text that happened to arrive, indistinguishable from
-// "the line is just quiet". That false-quiet silently compounds C2: every read
-// during a secret-desync lockout would return nothing instead of an error.
+// "the line is just quiet". That false-quiet silently worsens a secret desync:
+// every read during the desync lockout would return nothing instead of an error.
 //
 // The tell: the pipe CLOSED (pipeClosed) with ZERO bytes ever received.
 //  - A genuinely-quiet but healthy line keeps its socket OPEN; the read ends via
@@ -147,7 +147,7 @@ async function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFA
         // A pipe that closed before a single byte arrived means the attach itself
         // failed (auth rejected / board restart mid-connect / line gone), not a
         // quiet line. Surface it as an error so it can't masquerade as an empty
-        // read (W3). Leave the cursor untouched — the line may still be alive.
+        // read. Leave the cursor untouched — the line may still be alive.
         if (readClosedBeforeOutput(text, pipeClosed)) {
           const err = new Error('read failed: the board closed the connection before any output (line missing, or the access secret was rejected)');
           err.code = 'EREADCLOSED';
@@ -169,9 +169,9 @@ async function readOutput(id, { waitMs = 400, maxWaitMs = 3000, tailChars = DEFA
 }
 
 // Drop every cursor for a line id across all boot nonces. Called when a line is
-// ended via switchboard_end_line, so its entry doesn't leak (C1 sub-defect 1:
-// end_line without a following readOutput used to orphan the cursor until the
-// next observed board restart). Nonce-agnostic on purpose — the caller ending a
+// ended via switchboard_end_line, so its entry doesn't leak — an end_line with no
+// following readOutput would otherwise orphan the cursor until the next observed
+// board restart. Nonce-agnostic on purpose — the caller ending a
 // line may not have a confirmed nonce, and stale entries under a dead nonce are
 // exactly what we want gone too.
 function forgetLine(id) {
@@ -179,9 +179,9 @@ function forgetLine(id) {
 }
 
 // End a line and drop its read cursor regardless of whether the RPC itself
-// succeeded — a failed/racy end must not leave a stale entry for a reused id
-// (the end_line leak: forgetLine used to run only after a successful rpc(),
-// so a rejected call — a timeout, a wedged board — skipped it entirely).
+// succeeded — a failed/racy end must not leave a stale entry for a reused id. The
+// forget runs in a finally, so a rejected call (a timeout, a wedged board) still
+// drops the cursor.
 async function endLine(id) {
   try {
     return await boardRpc({ cmd: 'end', id });
@@ -265,7 +265,45 @@ async function readScreen(id) {
   throw err;
 }
 
-const server = new McpServer({ name: 'switchboard', version: '1.0.0' });
+const server = new McpServer(
+  { name: 'switchboard', version: '1.0.0' },
+  {
+    instructions:
+      `Switchboard hosts Lines: persistent shell sessions on a board that keep ` +
+      `running after your tool call returns, survive Claude Code session ` +
+      `restarts, and can be joined by the user (\`sb join <id>\`) at any time.\n\n` +
+      `Use these tools whenever the user asks to spin up a line or (switchboard) ` +
+      `session to do something, run a task in a background terminal, hand work ` +
+      `to a session that outlives this one, start a claude session on a line, ` +
+      `check on / monitor / read a line, send input or answer a prompt on a ` +
+      `line, list the lines, or end / kill / spin down a line.\n\n` +
+      `Rules that prevent the common failures:\n` +
+      `- A \`switchboard_new_line\` returning without error does NOT mean the ` +
+      `initial command ran - the seed input has no delivery confirmation. Read ` +
+      `the line to confirm before treating it as live.\n` +
+      `- \`switchboard_read_screen\` answers "what is this line showing right ` +
+      `now" (stateless snapshot, re-readable). \`switchboard_read_output\` ` +
+      `returns only NEW bytes since the last read - right for scrolling shells, ` +
+      `useless against a full-screen TUI.\n` +
+      `- Sending into a Claude Code TUI takes TWO calls: the text with ` +
+      `submit:true, then a bare-Enter send ({text:"", submit:true}) to actually ` +
+      `submit. Menu dialogs: bare Enter confirms the highlighted option; don't ` +
+      `pick by number.\n` +
+      `- When the line runs \`claude\`: clear CLAUDE_CODE_CHILD_SESSION in the ` +
+      `run command first (inherited from the board; it suppresses the session's ` +
+      `transcript JSONL) and pin --model/--effort explicitly. Monitor via the ` +
+      `transcript JSONL under ~/.claude/projects/<cwd-slug>/ plus read_screen - ` +
+      `never via read_output or PTY-idle waits, which the TUI's spinner ` +
+      `defeats.\n` +
+      `- Spin down a finished line gracefully: /exit the claude session ` +
+      `(two-call submit), confirm the shell prompt returned, then ` +
+      `switchboard_end_line. Don't leave concluded lines on the board; DO ` +
+      `preserve a wedged line as evidence.\n\n` +
+      `If a \`switchboard\` skill is available in the session, invoke it for the ` +
+      `full spawn/monitor/teardown recipe instead of improvising from these ` +
+      `notes.`,
+  }
+);
 
 server.registerTool('switchboard_new_line', {
   title: 'Start a switchboard line',
@@ -331,9 +369,9 @@ server.registerTool('switchboard_read_output', {
     return { content: [{ type: 'text', text }] };
   } catch (e) {
     // EREADCLOSED carries a descriptive message (the socket closed before any
-    // output — line missing, or the access secret was rejected) that is the whole
-    // point of W3's fix; the generic `e.code || e.message` below would surface only
-    // "EREADCLOSED", indistinguishable from a plain not-found. Prefer its message.
+    // output — line missing, or the access secret was rejected), which is the whole
+    // point of surfacing it; the generic `e.code || e.message` below would surface
+    // only "EREADCLOSED", indistinguishable from a plain not-found. Prefer its message.
     const detail = e.code === 'EREADCLOSED' ? e.message : `no such line, or it has ended (${e.code || e.message})`;
     return { content: [{ type: 'text', text: detail }], isError: true };
   }

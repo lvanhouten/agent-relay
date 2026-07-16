@@ -1,6 +1,5 @@
 'use strict';
-// Integration guard for the killed-vs-exited `reason` invariant (review W1 in
-// _docs/issues/2026-07-02-review-session-exit-metadata.md). The pure registry
+// Integration guard for the killed-vs-exited `reason` invariant. The pure registry
 // tests in board.test.js inject tombstones by hand, so they can't catch a
 // regression in the path that PRODUCES one: createLine -> onExit, and the `end`
 // handler's set-endReason-BEFORE-kill ordering (onExit fires async and reads
