@@ -1,8 +1,7 @@
 'use strict';
-// Board-down classification tests for BoardSessions. C2's fix made list()/get()
-// throw BoardUnreachableError; these cover the residual (new-W1): spawn() and
-// kill() must honor the same contract so api.js can answer 503 (not 500/404)
-// when the board is down.
+// Board-down classification tests for BoardSessions: list()/get(), spawn(), and
+// kill() must all throw BoardUnreachableError when the board is down, so api.js
+// can answer 503 (not 500/404).
 const test = require('node:test');
 const assert = require('node:assert');
 const { BoardSessions, BoardUnreachableError } = require('./sessions');
@@ -248,7 +247,7 @@ test('toDto(): a live line\'s PTY cols/rows are surfaced; a dims-less row omits 
 // normalization is exercised via the cwds themselves. Fixed clock so the
 // flaggedAt vs last-output comparison in list()'s overlay is deterministic,
 // letting these tests observe flags through the public status instead of the
-// private map (N4: representation-coupled tests).
+// private map (representation-coupled tests).
 function cwdSessions(lines) {
   return new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, lines }) });
 }
@@ -421,13 +420,13 @@ test('beacon(): a board-down cwd resolution throws BoardUnreachableError (-> 503
   );
 });
 
-// --- W1 (remediation): both staleness overlays route through the one
-//     _outputLandedAfter primitive, so a future grace window can't drift
-//     between them. Override the shared primitive and confirm EACH overlay
-//     obeys it — if either _applyAttention or _applyBeacon re-inlined its own
-//     `now - idleMs` check, the override wouldn't reach it and the paired
-//     kept/cleared assertions would diverge from the stub. Mutation-checked:
-//     re-inlining either copy fails the matching case below.
+// --- Both staleness overlays route through the one _outputLandedAfter
+//     primitive, so a future grace window can't drift between them. Override
+//     the shared primitive and confirm EACH overlay obeys it — if either
+//     _applyAttention or _applyBeacon re-inlined its own `now - idleMs` check,
+//     the override wouldn't reach it and the paired kept/cleared assertions
+//     would diverge from the stub. Mutation-checked: re-inlining either copy
+//     fails the matching case below.
 const overlayLine = [{ id: '1', cwd: '/r', idleMs: 0 }];
 const overlaySessions = () =>
   new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, boot: 'b', lines: overlayLine }) });

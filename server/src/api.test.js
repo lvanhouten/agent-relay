@@ -1,7 +1,7 @@
 'use strict';
 // api.js response-code routing tests. Verifies the board-unreachable contract
-// end-to-end at the HTTP layer (new-W1 / C2): a down board is a 503 on POST and
-// DELETE, a genuine "no such line" is a 404, and a non-board error still 500s via
+// end-to-end at the HTTP layer: a down board is a 503 on POST and DELETE, a
+// genuine "no such line" is a 404, and a non-board error still 500s via
 // the error handler. Uses the real Express router with a fake sessions store.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -18,8 +18,8 @@ function serve(sessions, notifiers = [], apiOpts) {
   const app = express();
   app.use(express.json());
   app.use('/api', createAPI(sessions, notifiers, apiOpts));
-  // The real handler (index.js's own), not a duplicate — W3-new: a hand-rolled
-  // copy here had drifted from index.js's actual fix and gave it zero coverage.
+  // The real handler (index.js's own), not a hand-rolled duplicate that could
+  // drift out of sync and go uncovered.
   app.use(errorHandler);
   return app;
 }
@@ -301,8 +301,7 @@ test('POST /beacon -> 503 when beacon() throws BoardUnreachableError (VC-13)', a
   assert.strictEqual(status, 503);
 });
 
-// Direct unit tests against the real handler (W3-new: the branch below had no
-// coverage under either the old duplicate or the new shared version until now).
+// Direct unit tests against the real handler, including the headersSent branch.
 test('errorHandler: delegates to next(err) when headers are already sent, does not double-respond', () => {
   const err = new Error('boom');
   const calls = [];

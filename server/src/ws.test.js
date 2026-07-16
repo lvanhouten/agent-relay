@@ -1,5 +1,5 @@
 'use strict';
-// WS upgrade-gate credential tests (VC-6/VC-8/VC-17). The gate order is
+// WS upgrade-gate credential tests. The gate order is
 // origin → credential → session lookup; this file exercises the credential step
 // (token-or-cookie) end-to-end over a real http server + `ws` client, with the
 // board fully faked. No RPC, no AGENT_RELAY_PIPE. Credentials are injected into

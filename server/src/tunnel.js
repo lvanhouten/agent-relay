@@ -4,7 +4,7 @@
 // every failure is a degrade to local-only, surfaced through status() and the
 // onEvent seam the wiring layer (brief 07) turns into console warnings. The
 // relay must keep working local-only even when the tunnel can't come up — a
-// tunnel problem never takes down desk work (PRD story 10, VC-11/12).
+// tunnel problem never takes down desk work (PRD story 10).
 //
 // Everything the module touches beyond pure logic is an injected seam:
 //   - exec(command, args)   → a child-process-like object (spawn shape): has
@@ -133,7 +133,7 @@ function createTunnel({
       );
       return false;
     }
-    // Hard security requirement (VC-12, the ADR/issue): an unauthenticated relay
+    // Hard security requirement (the ADR/issue): an unauthenticated relay
     // must never be network-exposed. AR_NO_AUTH=1 unconditionally refuses.
     if (env.AR_NO_AUTH === '1') {
       degrade(
@@ -208,7 +208,7 @@ function createTunnel({
   // The serve child died and the relay is still running: escalate the backoff
   // counter and schedule a respawn. Between attempts, status is 'down' with a
   // retrying reason; the URL is stable so a successful respawn restores the same
-  // pairing (VC-13). Backoff is monotonic within a start cycle (reset only by
+  // pairing. Backoff is monotonic within a start cycle (reset only by
   // start()) — there is no readiness signal to safely reset it on, and a rare
   // flap escalating toward the 30s cap is the correct conservative behavior.
   function scheduleRespawn(reason) {

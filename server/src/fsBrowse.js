@@ -16,7 +16,7 @@ const ENTRY_CAP = 500;
 //
 // TRUST: gated by the same authMiddleware as every /api route — no new boundary.
 // A token holder can already spawn a shell in any cwd via POST /sessions
-// (ADR-0001's accepted ceiling); a read-only directory listing grants strictly
+// (the accepted trust ceiling); a read-only directory listing grants strictly
 // less, so this widens nothing.
 //
 // Lists real directories only (Dirent.isDirectory()) — the field only ever wants

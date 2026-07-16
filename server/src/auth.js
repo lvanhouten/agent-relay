@@ -12,11 +12,10 @@ const { safeEqual } = require('./safeCompare');
 //
 // NOT authoritative and NOT on any production path — referenced only by
 // auth.test.js. Retained deliberately as the non-persisted policy reference (and
-// its own pinned test surface): TOKEN/TOKEN_GENERATED below no longer derive from
-// this — they come from credentials.js's loadCredentials, which persists the
-// generated case across restarts (ADR 0001 — an unstable token reads as a broken
-// app) instead of minting a fresh one every run. Read loadCredentials, not this,
-// for the live token model.
+// its own pinned test surface). TOKEN/TOKEN_GENERATED below come from
+// credentials.js's loadCredentials, which persists the generated case across
+// restarts (an unstable token reads as a broken app) instead of minting a fresh
+// one every run. Read loadCredentials, not this, for the live token model.
 function resolveToken(env) {
   if (env.AR_NO_AUTH === '1') return { token: null, generated: false };
   if (env.AR_TOKEN) return { token: env.AR_TOKEN, generated: false };
@@ -42,15 +41,15 @@ function checkToken(candidate, token = TOKEN) {
 // The single "is this request authenticated?" decision, shared by the REST
 // middleware and the WS upgrade gate so the two can't drift (a browser holds a
 // cookie, not the raw token; a non-browser client holds only the token). Order
-// is load-bearing: the bearer path (checkToken) is evaluated FIRST and exactly
-// as before, so non-browser clients (VC-14) see byte-for-byte identical timing
-// and behavior — the cookie is a *fallback* consulted only when the bearer path
-// didn't already pass. Pure over its inputs (expectedToken/signingSecret are
+// is load-bearing: the bearer path (checkToken) is evaluated FIRST, so
+// non-browser clients see byte-for-byte identical timing and behavior — the
+// cookie is a *fallback* consulted only when the bearer path didn't already
+// pass. Pure over its inputs (expectedToken/signingSecret are
 // injectable, defaulting to the module credentials) so every path is unit-
 // testable without env games or a live board.
 function isAuthenticated({ token, cookieHeader, expectedToken = TOKEN, signingSecret = SIGNING_SECRET }) {
   if (!expectedToken) return true;            // auth explicitly disabled (AR_NO_AUTH=1)
-  if (checkToken(token, expectedToken)) return true;  // bearer path — unchanged, checked first
+  if (checkToken(token, expectedToken)) return true;  // bearer path, checked first
   const cookieValue = readAuthCookie(cookieHeader);   // cookie fallback
   return !!(cookieValue && verifyCookie(cookieValue, signingSecret).ok);
 }

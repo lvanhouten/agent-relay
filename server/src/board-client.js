@@ -16,7 +16,7 @@ const { EXIT_RE, DEFAULT_IDLE_MS } = require('../board/wait'); // shared exit se
 // the data pipe stays open for the attach's whole life so the reconstructed
 // replay fires exactly once, while the control socket is toggled by setSpectator
 // so a grid pane can enter/leave the clamp on focus change WITHOUT re-triggering
-// that replay (ADR-0005 live mode-switch). Mirrors patch.js: one control + one
+// that replay (live mode-switch). Mirrors patch.js: one control + one
 // data connection per interactive client.
 async function attach(id, { onData, onExit, spectator = false } = {}) {
   const data = await connectPipe(dataPipe(id), { retries: 20 });

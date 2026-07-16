@@ -1,5 +1,5 @@
 'use strict';
-// pairing.js router tests (VC-3 / VC-9 / VC-10). Exercises the real Express router
+// pairing.js router tests. Exercises the real Express router
 // mounted the way the wiring brief (07) mounts it — behind the real dual-auth gate
 // (makeAuthMiddleware from auth.js) — with the real cookie module and a fake tunnel
 // status getter. No board RPC, no live tunnel: the tunnel status is injected.

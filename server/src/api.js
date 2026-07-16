@@ -71,7 +71,7 @@ function validateBeaconBody(body) {
 
 // `url` renders as a tap-through deep link inside a TRUSTED push notification
 // on the operator's phone — a phishing surface nothing else on this API has
-// (ADR-0001's accepted XSS ceiling covers local shell spawn, not off-device
+// (the accepted XSS ceiling covers local shell spawn, not off-device
 // credential harvesting from a notification tapped days later). Default-deny:
 // the field is rejected unless AR_NOTIFY_URL_ORIGIN names the one allowed
 // origin (set it to the origin you load the relay from). Compared as parsed
@@ -190,8 +190,8 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
   });
 
   // Read-only directory listing for the create dialog's "Browse…" picker — lists
-  // the BOARD's filesystem (see fsBrowse.js for the why and the ADR-0001 trust
-  // note). No board RPC: a pure fs walk, so no 503 path. Expected filesystem
+  // the BOARD's filesystem (see fsBrowse.js for the why and the trust note). No
+  // board RPC: a pure fs walk, so no 503 path. Expected filesystem
   // conditions map to 4xx with a typed body the picker renders in place (denied ->
   // 403, missing/not-a-dir -> 400); only an unexpected fs failure reaches next(e).
   r.get('/fs/browse', async (req, res, next) => {
