@@ -3,7 +3,7 @@
 # client) after hydrating the persisted AR_* config from the User registry.
 #
 # The hydration lives HERE, in the tab itself, rather than in restart.ps1's
-# process, on purpose: restart.ps1 now opens tabs in the CURRENT Windows Terminal
+# process, on purpose: restart.ps1 opens tabs in the CURRENT Windows Terminal
 # window, and a tab added to an existing window is spawned by that window's host
 # process — so it inherits the HOST's environment, not restart.ps1's. If that
 # host started before the AR_* vars were saved it carries a stale (empty) copy,
