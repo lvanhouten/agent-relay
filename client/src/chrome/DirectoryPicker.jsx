@@ -1,9 +1,13 @@
 import React from 'react';
 import { Button } from '@ds/Button.jsx';
 import { Input } from '@ds/Input.jsx';
-import { Folder, CornerLeftUp, Search } from 'lucide-react';
+import { IconButton } from '@ds/IconButton.jsx';
+import { Folder, CornerLeftUp, Search, Star, X } from 'lucide-react';
 import { browseDir, BrowseError } from '../core/api.ts';
 import { joinChildPath } from '../core/pickerPath.ts';
+import {
+  loadFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite,
+} from '../core/favorites.ts';
 import styles from './DirectoryPicker.module.scss';
 
 // Touch-first directory picker for the create dialog's Working Directory field.
@@ -11,7 +15,8 @@ import styles from './DirectoryPicker.module.scss';
 // via GET /api/fs/browse — the browsable disk is the server's, not the phone's.
 // The current folder IS the selection: descend into the folder you want, then
 // "Use this folder". A typed-in nonexistent seed falls back to home rather than
-// stranding an empty picker.
+// stranding an empty picker. Favorites pin a folder for one-tap re-jump (stored
+// client-side; see core/favorites.ts).
 const ERROR_TEXT = {
   denied: 'Permission denied',
   'not-found': 'Folder not found',
@@ -25,6 +30,7 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
   // Client-side substring filter over the loaded entries — no extra round-trip.
   // Cleared on every navigation (a new folder is a fresh list).
   const [filter, setFilter] = React.useState('');
+  const [favorites, setFavorites] = React.useState(loadFavorites);
   // Monotonic request id: a fast tap-through must not let a slow earlier listing
   // land after a later one and show the wrong folder.
   const reqRef = React.useRef(0);
@@ -55,6 +61,16 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
     navigate((initialPath ?? '').trim() || '~', { fallbackHome: true });
   }, [initialPath, navigate]);
 
+  const persistFavorites = (next) => { setFavorites(next); saveFavorites(next); };
+
+  const pinned = result?.path ? isFavorite(favorites, result.path) : false;
+  const togglePin = () => {
+    if (!result?.path) return;
+    persistFavorites(
+      pinned ? removeFavorite(favorites, result.path) : addFavorite(favorites, result.path)
+    );
+  };
+
   const q = filter.trim().toLowerCase();
   const visible = q
     ? (result?.entries ?? []).filter((e) => e.name.toLowerCase().includes(q))
@@ -62,9 +78,49 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
 
   return (
     <div className={styles.picker}>
-      <div className={styles.pathBar} title={result?.path}>
-        {result?.path ?? '…'}
+      <div className={styles.pathRow}>
+        <div className={styles.pathBar} title={result?.path}>
+          {result?.path ?? '…'}
+        </div>
+        <IconButton
+          size="sm"
+          bordered
+          active={pinned}
+          disabled={!result?.path}
+          label={pinned ? 'Unpin this folder' : 'Pin this folder'}
+          onClick={togglePin}
+        >
+          <Star size={15} fill={pinned ? 'currentColor' : 'none'} />
+        </IconButton>
       </div>
+
+      {favorites.length > 0 && (
+        <div className={styles.favRow}>
+          {favorites.map((path) => (
+            // Tap the label to jump; the trailing × unpins without navigating.
+            <span key={path} className={styles.favChip}>
+              <button
+                type="button"
+                className={styles.favChipButton}
+                title={path}
+                onClick={() => navigate(path)}
+              >
+                <Star size={12} fill="currentColor" />
+                <span className={styles.favChipName}>{leaf(path)}</span>
+              </button>
+              <button
+                type="button"
+                className={styles.favChipDelete}
+                aria-label={`Unpin ${path}`}
+                title="Unpin"
+                onClick={() => persistFavorites(removeFavorite(favorites, path))}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {result && result.entries.length > 0 && (
         <Input
@@ -119,4 +175,10 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
       </div>
     </div>
   );
+}
+
+// Chip label: the folder's own name, not the full path (which lives in the title).
+function leaf(path) {
+  const segs = path.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
+  return segs[segs.length - 1] || path;
 }
