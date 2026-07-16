@@ -1,7 +1,7 @@
 'use strict';
-// Pairing router (VC-3 / VC-9 / VC-10). Two endpoints, both mounted under /api by
-// the wiring brief (07) behind the same dual-auth gate as createAPI — this router
-// itself applies no auth, matching api.js's style:
+// Pairing router. Two endpoints, both mounted under /api by the wiring brief
+// (07) behind the same dual-auth gate as createAPI — this router itself
+// applies no auth, matching api.js's style:
 //
 //   POST /api/login  — mints the browser's auth cookie. Demands the BEARER token
 //                      specifically (reusing auth.js's constant-time checkToken),
@@ -18,7 +18,7 @@
 //                      Tunnel down/disabled → pairingUrl: null (a localhost URL is
 //                      unreachable from the device being paired) + the status reason.
 //
-// Accepted property (ADR 0001 / PRD): any authenticated caller can recover the
+// Accepted property (PRD): any authenticated caller can recover the
 // token via GET /api/pairing — deliberate for single-operator headless pairing.
 //
 // Factory over injected collaborators, matching api.js: the access token, the

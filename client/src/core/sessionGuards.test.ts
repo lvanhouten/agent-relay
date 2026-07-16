@@ -1,6 +1,4 @@
-// Direct tests for the poll guards that useSessions consumes. These behaviors
-// previously lived inline in SessionsScreen.load()/handleKill() and were only
-// documented, never exercised.
+// Direct tests for the poll guards that useSessions consumes.
 import test from 'node:test';
 import assert from 'node:assert';
 import { createPollSequence, filterKilled } from './sessionGuards.ts';
@@ -34,9 +32,9 @@ test('pollSequence: in-order responses all apply', () => {
 });
 
 test('pollSequence: re-applying the same seq is allowed (seq < latest is the only stale case)', () => {
-  // Mirrors the original inline check `if (seq < latestApplied.current) return`
-  // exactly — equality passes. Pinned so a port to `<=` (a behavior change)
-  // fails a test instead of sliding through.
+  // Equality is intentionally allowed — only strictly-stale (seq < latestApplied)
+  // is rejected. Pinned so a port to `<=` (a behavior change) fails a test
+  // instead of sliding through.
   const guard = createPollSequence();
   const a = guard.begin();
   assert.strictEqual(guard.tryApply(a), true);

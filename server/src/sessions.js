@@ -1,9 +1,8 @@
 'use strict';
-// Board-backed session store. Presents the same surface the API + WS hub already
-// consumed from the old in-process SessionManager, but every operation now goes
-// through the board kernel (board-client) over its pipes. The web tier holds no
-// PTY state, so it can restart without dropping a single session — and sessions
-// are shared with the `sb` CLI / terminal panes.
+// Board-backed session store. Presents the session DTO/surface the API + WS hub
+// consume; every operation is an RPC to the board kernel (board-client) over its
+// pipes. The web tier holds no PTY state, so it can restart without dropping a
+// single session — and sessions are shared with the `sb` CLI / terminal panes.
 const path = require('path');
 const { rpc, attach, DEFAULT_IDLE_MS } = require('./board-client');
 const { resolveCwd } = require('./paths');
@@ -51,7 +50,7 @@ function toDto(line) {
     lastActive: relTime(idleMs),
   };
   // Live PTY grid from the board's `list` row: a spectator attach adopts these
-  // dims and CSS-scales rather than resizing the shared line (ADR-0005). Only
+  // dims and CSS-scales rather than resizing the shared line. Only
   // present on live lines — the synthesized create/tombstone DTOs carry no pty,
   // and the next poll fills the dims in once the line is listed.
   if (Number.isFinite(line.cols) && Number.isFinite(line.rows)) {
@@ -124,8 +123,8 @@ class BoardSessions {
     // future consumer (the transcript-tailer this field exists for) MUST treat it
     // as untrusted input and validate before use: canonicalize + confine to the
     // Claude projects dir, reject `..`/UNC/symlink escapes — otherwise it is an
-    // arbitrary-file-read / path-traversal sink. "Purely additive" (ADR-0003)
-    // means the STORAGE is additive, NOT that the value is trusted when consumed.
+    // arbitrary-file-read / path-traversal sink. "Purely additive" means the
+    // STORAGE is additive, NOT that the value is trusted when consumed.
     this._beacons = new Map();
     // The board boot nonce last seen in a list reply — a change means the board
     // restarted and every line id may be reused, so the flags above are void.
@@ -183,7 +182,7 @@ class BoardSessions {
   // for an exited/unknown line is set and harmlessly pruned on the next list()).
   // TRUST MODEL: any caller past the operator token can drive any live line's card
   // state (force turn-done/running, or wipe a marker with SessionEnd). This is
-  // deliberate parity with /api/notify under ADR-0001's accepted single-operator
+  // deliberate parity with /api/notify under the accepted single-operator
   // ceiling, and the blast radius is cosmetic only — no spawn, no data exposure,
   // no push (a beacon never pushes). Not a hole to close; a documented assumption.
   // The `cwd` fallback fires ONLY when `sessionId` is absent. A present-but-
@@ -270,7 +269,7 @@ class BoardSessions {
   }
 
   // Overlay beacon state onto a live-line DTO, establishing the Claude-line base
-  // that supersedes the idleMs heuristic (ADR-0003). A line with no `_beacons`
+  // that supersedes the idleMs heuristic. A line with no `_beacons`
   // entry is not a Claude line — pass through unchanged (the heuristic stays the
   // floor). A Claude line reads `running` unless a LIVE `turnDoneAt` (no output
   // landed after the Stop) makes it `turn-done`. Output arriving after turnDoneAt
@@ -367,9 +366,9 @@ class BoardSessions {
 
   async kill(id) {
     // Distinguish "board unreachable" (throw -> 503) from "board says no such
-    // line" (return false -> 404). The old `.catch(() => null)` collapsed a
-    // board-down failure into `false`, which api.js maps to a permanent 404 —
-    // "down looks indistinguishable from gone", the exact C2 bug relocated here.
+    // line" (return false -> 404). A bare `.catch(() => null)` here would
+    // collapse a board-down failure into `false`, which api.js maps to a
+    // permanent 404 — indistinguishable from gone.
     let r;
     try {
       r = await this._rpc({ cmd: 'end', id });

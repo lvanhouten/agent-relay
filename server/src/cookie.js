@@ -1,5 +1,5 @@
 'use strict';
-// Stateless HMAC-signed auth cookie (ADR 0001). This module owns the browser's
+// Stateless HMAC-signed auth cookie. This module owns the browser's
 // durable credential — always the *auth cookie*, never a "session cookie"
 // (per CONTEXT.md a session is a PTY line, not a browser identity).
 //

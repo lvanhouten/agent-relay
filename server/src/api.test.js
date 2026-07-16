@@ -1,7 +1,7 @@
 'use strict';
 // api.js response-code routing tests. Verifies the board-unreachable contract
-// end-to-end at the HTTP layer (new-W1 / C2): a down board is a 503 on POST and
-// DELETE, a genuine "no such line" is a 404, and a non-board error still 500s via
+// end-to-end at the HTTP layer: a down board is a 503 on POST and DELETE, a
+// genuine "no such line" is a 404, and a non-board error still 500s via
 // the error handler. Uses the real Express router with a fake sessions store.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -18,8 +18,8 @@ function serve(sessions, notifiers = [], apiOpts) {
   const app = express();
   app.use(express.json());
   app.use('/api', createAPI(sessions, notifiers, apiOpts));
-  // The real handler (index.js's own), not a duplicate — W3-new: a hand-rolled
-  // copy here had drifted from index.js's actual fix and gave it zero coverage.
+  // The real handler (index.js's own), not a hand-rolled duplicate that could
+  // drift out of sync and go uncovered.
   app.use(errorHandler);
   return app;
 }
@@ -56,7 +56,7 @@ test('POST /sessions -> 415 on a non-JSON content type (a "simple" cross-site PO
   assert.strictEqual(status, 415);
 });
 
-test('DELETE /sessions/:id -> 503 when kill() throws BoardUnreachableError (new-W1)', async () => {
+test('DELETE /sessions/:id -> 503 when kill() throws BoardUnreachableError', async () => {
   const app = serve({ kill: async () => { throw new BoardUnreachableError(); } });
   const { status } = await request(app, 'DELETE', '/api/sessions/7');
   assert.strictEqual(status, 503);
@@ -266,7 +266,7 @@ test('POST /beacon -> 200 with id: null when nothing matched', async () => {
   assert.deepStrictEqual(JSON.parse(body), { ok: true, id: null });
 });
 
-test('POST /beacon never invokes the push notifiers (VC-10)', async () => {
+test('POST /beacon never invokes the push notifiers', async () => {
   const seen = [];
   const notifier = { name: 'fake', notify: async (p) => { seen.push(p); } };
   const app = serve({ beacon: async () => '1' }, [notifier]);
@@ -275,13 +275,13 @@ test('POST /beacon never invokes the push notifiers (VC-10)', async () => {
   assert.deepStrictEqual(seen, [], 'a beacon carries no push');
 });
 
-test('POST /beacon -> 415 on a non-JSON content type (VC-11)', async () => {
+test('POST /beacon -> 415 on a non-JSON content type', async () => {
   const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
   const { status } = await request(app, 'POST', '/api/beacon', { contentType: 'text/plain' });
   assert.strictEqual(status, 415);
 });
 
-test('POST /beacon -> 400 on an unrecognized or missing event (VC-11)', async () => {
+test('POST /beacon -> 400 on an unrecognized or missing event', async () => {
   const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
   for (const body of [{ event: 'PreToolUse', sessionId: '1' }, { sessionId: '1' }]) {
     const { status } = await request(app, 'POST', '/api/beacon', { body });
@@ -289,20 +289,19 @@ test('POST /beacon -> 400 on an unrecognized or missing event (VC-11)', async ()
   }
 });
 
-test('POST /beacon -> 400 on an oversized field (VC-11)', async () => {
+test('POST /beacon -> 400 on an oversized field', async () => {
   const app = serve({ beacon: async () => { throw new Error('beacon must not be reached'); } });
   const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', sessionId: 'x'.repeat(201) } });
   assert.strictEqual(status, 400);
 });
 
-test('POST /beacon -> 503 when beacon() throws BoardUnreachableError (VC-13)', async () => {
+test('POST /beacon -> 503 when beacon() throws BoardUnreachableError', async () => {
   const app = serve({ beacon: async () => { throw new BoardUnreachableError(); } });
   const { status } = await request(app, 'POST', '/api/beacon', { body: { event: 'Stop', cwd: '/r' } });
   assert.strictEqual(status, 503);
 });
 
-// Direct unit tests against the real handler (W3-new: the branch below had no
-// coverage under either the old duplicate or the new shared version until now).
+// Direct unit tests against the real handler, including the headersSent branch.
 test('errorHandler: delegates to next(err) when headers are already sent, does not double-respond', () => {
   const err = new Error('boom');
   const calls = [];

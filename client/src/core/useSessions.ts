@@ -55,7 +55,7 @@ export function useSessions(): Sessions {
 
   // Synchronous re-entrancy guard: a caller's `disabled`/`loading` prop only
   // takes effect after React commits state, so a fast double-click before that
-  // re-render would otherwise fire two concurrent createSession calls (W4). A
+  // re-render would otherwise fire two concurrent createSession calls. A
   // ref flips immediately, closing that window.
   const [creating, setCreating] = React.useState(false);
   const creatingRef = React.useRef(false);
@@ -71,7 +71,7 @@ export function useSessions(): Sessions {
     }
   }, []);
 
-  // Per-id re-entrancy guard (W2): a fast double-click on the same Terminate
+  // Per-id re-entrancy guard: a fast double-click on the same Terminate
   // button before React commits any state fires two concurrent killSession
   // calls otherwise. A Set (not a single ref) because killing two *different*
   // sessions concurrently is fine — only a repeat click on the same id blocks.

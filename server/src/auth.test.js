@@ -47,7 +47,7 @@ test('checkToken: passes everything when auth is disabled (token null)', () => {
 // expectedToken/signingSecret are injected so no env games are needed.
 // ---------------------------------------------------------------------------
 
-test('isAuthenticated: valid bearer, no cookie → true (VC-14 path unchanged)', () => {
+test('isAuthenticated: valid bearer, no cookie → true', () => {
   assert.strictEqual(
     isAuthenticated({ token: EXPECTED, cookieHeader: undefined, expectedToken: EXPECTED, signingSecret: SECRET }),
     true,

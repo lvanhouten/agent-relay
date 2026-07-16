@@ -7,7 +7,7 @@ const { originAllowed } = require('./origin');
 
 // Initial spectator state for a connection: a query-param mode (`?mode=spectator`)
 // set by the desktop grid's panes; scoped tokens will later derive it from the
-// token scope, reusing this gate — one design, two consumers (ADR-0005). The
+// token scope, reusing this gate — one design, two consumers. The
 // grid then flips it live with a `mode` frame (below) so a focus change never
 // reattaches. A spectator's inbound input/resize frames are dropped, not errored,
 // and its control socket is closed so it leaves the board's resize clamp.
@@ -77,8 +77,8 @@ function createWSHub(server, sessions, authConfig = {}) {
       // the existence check and the attach. When it does, the data pipe is gone
       // and connectPipe rejects with ENOENT/ECONNREFUSED — that's "the session
       // just ended" (permanent, code 1008), NOT the generic "attach failed"
-      // (1011) the old catch reported, which misled the client into treating a
-      // normal end as a retryable error.
+      // (1011), which would mislead the client into treating a normal end as a
+      // retryable error.
       if (ws.readyState !== 1) return;
       const gone = e && (e.code === 'ENOENT' || e.code === 'ECONNREFUSED');
       gone ? ws.close(1008, 'session not found') : ws.close(1011, 'attach failed');
@@ -93,15 +93,15 @@ function createWSHub(server, sessions, authConfig = {}) {
         // spectator without reattaching: it toggles the input/resize gate and
         // opens/closes the control socket (leaving/entering the board's resize
         // clamp). The data pipe is untouched, so the reconstructed history replay
-        // never re-runs on a focus change (ADR-0005 live mode-switch).
+        // never re-runs on a focus change (live mode-switch).
         if (msg.type === 'mode') {
           spectator = !!msg.spectator;
           handle.setSpectator?.(spectator);
           return;
         }
         // Spectator connections are watch-only: input/resize are dropped (not
-        // errored) so a grid pane can't drive or resize the shared line
-        // (ADR-0005). Data still flows outbound — watching is the whole point.
+        // errored) so a grid pane can't drive or resize the shared line.
+        // Data still flows outbound — watching is the whole point.
         if (spectator) return;
         if (msg.type === 'input') {
           handle.write(msg.payload);

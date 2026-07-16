@@ -38,8 +38,8 @@ export function getFlag(command: string, name: string): string | null {
 // removal match includes the flag's leading whitespace, so no space-collapse
 // pass is needed (which would mangle runs of spaces inside quoted args).
 //
-// Two write-side hazards are guarded (both bit for real — see the branch
-// review's W1): the replacement is a function so a `$` in the value is literal
+// Two write-side hazards are guarded (both bit for real): the replacement is
+// a function so a `$` in the value is literal
 // text, never a String.replace substitution pattern; and a value containing
 // whitespace is re-quoted on write, so what getFlag read out of quotes writes
 // back into them instead of shedding tokens across a read→write round trip.

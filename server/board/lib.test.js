@@ -32,7 +32,7 @@ test('readSecret returns null when no secret file exists (board not up)', () => 
 });
 
 // sendSecret gates the handshake on the secret being READY on disk. The board
-// persists its secret just after binding the pipe (C2 ordering), so a client can
+// persists its secret just after binding the pipe, so a client can
 // connect in the gap before the file exists — or catch it empty, since
 // writeFileSync truncates to 0 bytes before writing. Presenting an empty secret
 // there gets the socket rejected+destroyed ("board closed the connection before
@@ -71,12 +71,11 @@ test('secretEqual: exact match only, constant-time-safe on type/length', () => {
 });
 
 // --- makeHandshake: the shared pre-auth handshake for both pipe planes ---
-// C1 closure check: the cap is the behavior that was MISSING on the control plane
-// (present on the data plane, never carried across — the W2 duplication). Without
-// the cap, a newline-less stream grows the accumulator until V8's max-string-length
-// RangeError throws inside the 'data' listener and crashes the whole daemon.
+// The cap matters: without it, a newline-less stream grows the accumulator until
+// V8's max-string-length RangeError throws inside the 'data' listener and crashes
+// the whole daemon.
 
-test('makeHandshake (C1): a newline-less stream past the cap returns overflow, not unbounded growth', () => {
+test('makeHandshake: a newline-less stream past the cap returns overflow, not unbounded growth', () => {
   const gate = makeHandshake('sekret', { cap: 16 });
   // Under the cap: still accumulating, no decision yet.
   assert.deepStrictEqual(gate.feed(Buffer.from('12345678')), { type: 'pending' });
@@ -85,7 +84,7 @@ test('makeHandshake (C1): a newline-less stream past the cap returns overflow, n
   assert.deepStrictEqual(gate.feed(Buffer.from('9abcdefghij')), { type: 'overflow' });
 });
 
-test('makeHandshake (C1): the real default cap is bounded well below any crash threshold', () => {
+test('makeHandshake: the real default cap is bounded well below any crash threshold', () => {
   const gate = makeHandshake('sekret');
   // A big newline-less blast at the production cap still overflows (does not grow
   // without limit). MAX_PREAUTH_BYTES is a few KB, nowhere near V8's string limit.
@@ -115,10 +114,9 @@ test('makeHandshake: the secret line may arrive split across multiple chunks', (
   assert.deepStrictEqual(gate.feed(Buffer.from('\n')), { type: 'accept', rest: '' });
 });
 
-// --- makeCommandBuffer: the post-auth control-plane accumulator + cap (C1's
-// second half). The pre-auth cap lives in makeHandshake above; this is the
-// other daemon-crash shape — an oversized newline-less command from an already-
-// authed client — that the inline control loop used to guard with no test.
+// --- makeCommandBuffer: the post-auth control-plane accumulator + cap. The
+// pre-auth cap lives in makeHandshake above; this is the other daemon-crash shape
+// — an oversized newline-less command from an already-authed client.
 test('makeCommandBuffer: extracts complete newline-terminated command lines, keeps the tail', () => {
   const cmd = makeCommandBuffer();
   assert.deepStrictEqual(cmd.feed('{"cmd":"list"}\n{"cmd":"end"'), { lines: ['{"cmd":"list"}'], overflow: false });
@@ -126,7 +124,7 @@ test('makeCommandBuffer: extracts complete newline-terminated command lines, kee
   assert.deepStrictEqual(cmd.feed(',"id":"1"}\n'), { lines: ['{"cmd":"end","id":"1"}'], overflow: false });
 });
 
-test('makeCommandBuffer (C1): an oversized newline-less command flags overflow instead of growing unbounded', () => {
+test('makeCommandBuffer: an oversized newline-less command flags overflow instead of growing unbounded', () => {
   const cmd = makeCommandBuffer('', { cap: 16 });
   assert.strictEqual(cmd.feed('x'.repeat(10)).overflow, false);   // tail under the cap
   assert.strictEqual(cmd.feed('x'.repeat(10)).overflow, true);    // tail now 20 > 16 -> overflow
@@ -139,7 +137,7 @@ test('makeCommandBuffer: seeded leftover bytes are drained by feed("") right aft
   assert.deepStrictEqual(cmd.feed(''), { lines: ['{"cmd":"list"}'], overflow: false });
 });
 
-test('makeCommandBuffer (C1): the real default cap is bounded well below a crash threshold', () => {
+test('makeCommandBuffer: the real default cap is bounded well below a crash threshold', () => {
   const cmd = makeCommandBuffer();
   assert.strictEqual(cmd.feed('x'.repeat(2 * 1024 * 1024)).overflow, true);
 });

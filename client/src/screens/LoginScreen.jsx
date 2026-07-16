@@ -45,8 +45,8 @@ export default function LoginScreen({ onConnect, theme, onToggleTheme, initialEr
     setError('');
     setLoading(true);
     try {
-      // Relative path -> same origin (or the Vite dev proxy). This is the whole
-      // point of the fix: the probe hits the same place all later traffic does.
+      // Relative path -> same origin (or the Vite dev proxy), so the probe hits
+      // the same place all later traffic does.
       const res = await fetch('/api/sessions', { headers: headers(token) });
       if (res.status === 401) { setError('Invalid access token.'); return; }
       if (!res.ok) throw new Error();

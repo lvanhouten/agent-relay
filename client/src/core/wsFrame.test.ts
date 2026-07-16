@@ -1,4 +1,4 @@
-// WS frame parsing — covers N4's residual: JSON.parse('null') and other
+// WS frame parsing — covers the residual case: JSON.parse('null') and other
 // valid-but-non-object frames must not reach a `.type` access that throws inside
 // onmessage and freezes the terminal.
 import test from 'node:test';
@@ -6,7 +6,7 @@ import assert from 'node:assert';
 import { parseFrame, isValidDataPayload, isValidExitCode } from './wsFrame.ts';
 
 test('parseFrame: the literal "null" frame returns null, not a throwing value (N4)', () => {
-  // Before the fix: JSON.parse('null') === null, then null.type threw.
+  // JSON.parse('null') === null, so a naive null.type access throws.
   assert.strictEqual(parseFrame('null'), null);
 });
 
@@ -33,7 +33,7 @@ test('parseFrame: an array is not a dispatchable message', () => {
   assert.deepStrictEqual(parseFrame('[]'), []);
 });
 
-// isValidDataPayload — W4-new: parseFrame only guarantees the envelope shape,
+// isValidDataPayload: parseFrame only guarantees the envelope shape,
 // not a given type's payload shape. A 'data' frame's payload reaches
 // term.write() directly, so anything but a string must be rejected.
 test('isValidDataPayload: a string payload is valid', () => {
@@ -47,11 +47,10 @@ test('isValidDataPayload: a non-string payload is rejected', () => {
   assert.strictEqual(isValidDataPayload({ type: 'data' }), false);
 });
 
-// isValidExitCode — N2 of the extraction review: the exit frame's code was the
-// one per-type field trusted via a type assertion instead of a runtime
-// predicate. server/src/ws.js only forwards number|null, so both are valid;
-// anything else (missing, string, object) must be rejected so the consumer
-// normalizes it rather than interpolating garbage.
+// isValidExitCode: the exit frame's code must be validated at runtime, not
+// just asserted by type. server/src/ws.js only forwards number|null, so both
+// are valid; anything else (missing, string, object) must be rejected so the
+// consumer normalizes it rather than interpolating garbage.
 test('isValidExitCode: a numeric or null code is valid', () => {
   assert.strictEqual(isValidExitCode({ type: 'exit', code: 0 }), true);
   assert.strictEqual(isValidExitCode({ type: 'exit', code: 137 }), true);

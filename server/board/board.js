@@ -40,17 +40,6 @@ const FEED_MAX_SENDS = 2;
 // unit-testable without spawning a pty. Drive it with onData() on every PTY
 // output burst and onFallback() once after FEED_FALLBACK_MS.
 //
-// Two problems it fixes over the old inline feed:
-//  1. Redundant timers — the old code scheduled a fresh setTimeout on every
-//     startup output burst (harmless via a `sent` guard, but wasteful). Here the
-//     pre-send debounce is a SINGLE timer, cancelled and rescheduled per burst.
-//  2. No delivery confirmation — the old feed wrote once and assumed it landed;
-//     a shell whose input reader wasn't ready silently ate the command. Here,
-//     after a send we watch for ANY output the shell produces in reaction (a
-//     command typed at a live prompt always echoes, before it even runs). Output
-//     after a send => delivered, stop. Total silence for FEED_CONFIRM_MS => the
-//     send was almost certainly dropped => re-send, capped at FEED_MAX_SENDS.
-//
 // Double-run safety: a re-send happens ONLY on total post-send silence. The one
 // false-positive direction — continued prompt output mistaken for a reaction —
 // leans toward "assume delivered" (skip the retry), never toward re-sending. The
@@ -313,7 +302,7 @@ function createLine(o = {}) {
   p.onExit(({ exitCode }) => {
     // This runs in an async pty callback OUTSIDE the control-plane dispatch's
     // try/catch — an uncaught throw here would take down the whole daemon (and
-    // every other live line) on one line's exit (N10). notifyClientsClosed guards
+    // every other live line) on one line's exit. notifyClientsClosed guards
     // each client .end() so one wedged pane can't abort the farewell to the rest,
     // nor the cleanup below.
     const farewell = lineClosedFarewell(id, exitCode);
@@ -365,7 +354,7 @@ function createLine(o = {}) {
 // Send the farewell to every patched-in client, guarding each write so one
 // socket in a bad state can't throw and abort the loop (leaving other panes
 // un-notified) or the caller's post-loop cleanup. Factored out of p.onExit so the
-// per-client isolation (N10) is unit-testable without spawning a pty.
+// per-client isolation is unit-testable without spawning a pty.
 function notifyClientsClosed(clients, farewell) {
   for (const c of clients) { try { c.end(farewell); } catch { /* pane already gone */ } }
 }
@@ -452,7 +441,7 @@ function paneSpawnDecision(recipe) {
 // Returns true if a pane process was spawned, false if the recipe was refused
 // (no standalone {cmd} arg). The caller threads this into the RPC reply so a
 // misconfigured SWITCHBOARD_TERM surfaces as paneOpened:false instead of a silent
-// ok:true with no window (N7's residual / new-N1). Note this reports the spawn
+// ok:true with no window. Note this reports the spawn
 // *attempt*, not the pane's eventual liveness — a spawn that later errors is
 // reported asynchronously via the child 'error' log, which openPane can't await.
 function openPane(id, recipe) {
@@ -479,7 +468,7 @@ async function handle(m, sock) {
     case 'new': {
       const id = createLine(m);
       // paneOpened: true/false when a pane was requested (so a caller learns a
-      // refused recipe didn't produce a window — N7/new-N1); null when no pane was
+      // refused recipe didn't produce a window); null when no pane was
       // requested at all (open:false — the web/MCP case, the browser is the pane).
       const paneOpened = m.open !== false ? openPane(id, m.spawn) : null;
       const s = sessions.get(id);
@@ -497,8 +486,8 @@ async function handle(m, sock) {
         uptimeMs: Date.now() - s.startedAt,
         idleMs: Date.now() - s.lastActivity,
         // Live PTY grid, kept current by applyMin's resize; a spectator attach
-        // adopts these dims and CSS-scales rather than resizing the shared line
-        // (ADR-0005). Additive — existing consumers ignore unknown fields.
+        // adopts these dims and CSS-scales rather than resizing the shared line.
+        // Additive — existing consumers ignore unknown fields.
         cols: s.pty.cols,
         rows: s.pty.rows,
       }));
@@ -509,7 +498,7 @@ async function handle(m, sock) {
     case 'join': {
       const s = sessions.get(m.id);
       // paneOpened: the result of the join's whole point (opening a pane), or null
-      // when the line doesn't exist so no pane was even attempted (N7/new-N1).
+      // when the line doesn't exist so no pane was even attempted.
       const paneOpened = s ? openPane(m.id, m.spawn) : null;
       sock.write(JSON.stringify({ ok: !!s, id: m.id, dataPipe: s ? dataPipe(m.id) : null, paneOpened }) + '\n');
       break;
@@ -628,7 +617,7 @@ const board = net.createServer(sock => {
         }
       } catch (e) { log('handle error for cmd', m && m.cmd, '-', e.message); }
     }
-    // Post-auth cap (the other half of C1): an oversized newline-less command would
+    // Post-auth cap: an oversized newline-less command would
     // otherwise grow unbounded until V8's RangeError crashes the daemon, with no
     // auth-timeout backstop once authed. makeCommandBuffer flags it; we destroy.
     if (res.overflow) { sock.destroy(); return; }
@@ -653,8 +642,8 @@ board.on('error', e => {
 // persist the secret to disk only from the bind-success callback — a process that
 // LOSES the bind race (EADDRINUSE -> the 'error' handler above -> process.exit(0))
 // never reaches persist, so it can't overwrite the winner's on-disk secret and
-// permanently desync every client from the surviving daemon's in-memory secret
-// (C2). The secret is generated and assigned to the module SECRET *before* the
+// permanently desync every client from the surviving daemon's in-memory secret.
+// The secret is generated and assigned to the module SECRET *before* the
 // bind, so any connection accepted between bind and the file-write is still
 // compared against a real secret. Injectable so the ordering is unit-testable
 // without a real pipe.

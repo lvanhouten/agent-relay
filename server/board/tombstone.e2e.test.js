@@ -1,6 +1,5 @@
 'use strict';
-// Integration guard for the killed-vs-exited `reason` invariant (review W1 in
-// _docs/issues/2026-07-02-review-session-exit-metadata.md). The pure registry
+// Integration guard for the killed-vs-exited `reason` invariant. The pure registry
 // tests in board.test.js inject tombstones by hand, so they can't catch a
 // regression in the path that PRODUCES one: createLine -> onExit, and the `end`
 // handler's set-endReason-BEFORE-kill ordering (onExit fires async and reads
@@ -39,7 +38,7 @@ const exitShell = process.platform === 'win32'
   ? { shell: 'cmd.exe', args: ['/c', 'exit 3'] }
   : { shell: 'sh', args: ['-c', 'exit 3'] };
 
-test('tombstone reason invariant: natural exit records `exited`, end-command records `killed` (W1)', async t => {
+test('tombstone reason invariant: natural exit records `exited`, end-command records `killed`', async t => {
   const child = spawn(process.execPath, [path.join(__dirname, 'board.js')], {
     stdio: 'ignore',
     env: process.env,

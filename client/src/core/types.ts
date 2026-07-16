@@ -1,7 +1,7 @@
-// Contracts at the client-core seam. These pin the shapes that used to be
-// implicit in the screens: the session DTO the server emits, the WS frame
-// vocabulary, and TerminalView's mode axis. Consumers outside core/ (screens,
-// future shells) import from here instead of re-deriving shapes from usage.
+// Contracts at the client-core seam: the session DTO the server emits, the WS
+// frame vocabulary, and TerminalView's mode axis. Consumers outside core/
+// (screens, future shells) import from here instead of re-deriving shapes
+// from usage.
 
 // Mirrors server/src/sessions.js toDto() — the one shape both GET /sessions and
 // POST /sessions return.
@@ -18,7 +18,7 @@ export interface Session {
   // the line as blocked on a prompt (server sets it via POST /api/notify,
   // clears it on next input/output). 'turn-done' is a beaconed Claude line
   // whose agent ended its turn — the process is still alive and waiting on
-  // the user, distinct from 'exited' (see ADR-0003). 'exited' is a
+  // the user, distinct from 'exited'. 'exited' is a
   // recently-ended tombstone from the board's capped ring. Kept string (not a
   // union) so an older/newer server can't type-error the client; render
   // unknown values as-is.
@@ -32,7 +32,7 @@ export interface Session {
   // Live PTY grid (server toDto): present on live lines, absent on a just-created
   // session until the first poll and on exited tombstones. A spectator
   // TerminalView adopts these dims and CSS-scales rather than resizing the
-  // shared line (ADR-0005).
+  // shared line.
   cols?: number;
   rows?: number;
 }

@@ -22,8 +22,8 @@ const DEFAULT_ROWS = 24;
 // raw byte-log is itself capped (SCROLLBACK chunks), so reconstructing it here
 // bounds the *replayed* history to this many lines — more than any joiner scrolls
 // through, and finite so a repaint-heavy line can't balloon the transient
-// emulator. This is the one place a very long session shows slightly less history
-// than the old raw-byte-log dump would have.
+// emulator. A very long session shows slightly less history here than the full
+// raw byte-log would.
 const REPLAY_SCROLLBACK = 5000;
 
 // createScreen(cols, rows) -> { write, resize, snapshot, dispose }

@@ -39,7 +39,7 @@ const secretPath = () => path.join(SECRET_DIR, `board.${PIPE_BASE}.secret`);
 // A fresh high-entropy secret, in memory only. Split out from persistence so the
 // daemon can generate + hold the secret BEFORE it wins the control-pipe bind, and
 // write it to disk ONLY after the bind succeeds — a process that loses the bind
-// race then never overwrites the winner's on-disk secret (C2).
+// race then never overwrites the winner's on-disk secret.
 function generateSecret() {
   return crypto.randomBytes(32).toString('base64url');
 }
@@ -53,9 +53,9 @@ function persistSecret(secret, file = secretPath()) {
   return secret;
 }
 
-// Generate a fresh secret and persist it in one step (owner-only). Retained for
-// callers/tests that want the old atomic behavior; the daemon now uses the
-// generate/persist split above so it can order persistence after the bind (C2).
+// Generate a fresh secret and persist it in one step (owner-only), for callers
+// that want the atomic behavior; the daemon uses the generate/persist split above
+// instead, so it can order persistence after the bind.
 function writeBootSecret(file = secretPath()) {
   return persistSecret(generateSecret(), file);
 }
@@ -86,23 +86,19 @@ const AUTH_TIMEOUT_MS = 5000;
 // bytes with no newline; without a cap the accumulated string grows until it hits
 // V8's max string length, whose RangeError throws SYNCHRONOUSLY inside the
 // 'data' listener — and there is no uncaughtException handler in the board, so
-// that one connection crashes the whole daemon and every live line with it (C1).
+// that one connection crashes the whole daemon and every live line with it.
 // A legitimate secret line is ~43 bytes, so 4096 is generous headroom.
 const MAX_PREAUTH_BYTES = 4096;
 
 // The shared pre-auth handshake used by BOTH pipe planes (data + control). Each
 // plane must: accumulate incoming bytes until the first newline, cap that pre-auth
-// buffer (C1), strip a trailing \r, and constant-time-compare the first line to
-// the secret. This logic was previously hand-rolled TWICE in board.js; the cap
-// landed in the data-plane copy and was never carried to the control-plane twin —
-// which is exactly how the control plane shipped uncapped and crash-prone (W2 is
-// the root cause of C1). Centralized here, with secretEqual/AUTH_TIMEOUT_MS/the
-// cap, so the compare and the cap can never diverge from each other again.
+// buffer, strip a trailing \r, and constant-time-compare the first line to the
+// secret. Centralized here, with secretEqual/AUTH_TIMEOUT_MS/the cap, so the
+// compare and the cap can never diverge between the two planes.
 //
 // Per-connection: create one, feed() each raw 'data' chunk to it until it returns
-// a terminal result. Note it decodes each chunk independently (utf8), matching the
-// prior data-plane behavior verbatim — the split-multibyte edge (a separate, out-
-// of-scope note) is intentionally NOT changed here.
+// a terminal result. Note it decodes each chunk independently (utf8); the split-
+// multibyte edge is a known, out-of-scope limitation, intentionally NOT handled here.
 //   { type: 'pending' }         still accumulating, under the cap — caller waits
 //   { type: 'overflow' }        pre-auth cap exceeded — caller destroys the socket
 //   { type: 'reject' }          first line != secret — caller destroys the socket
@@ -126,7 +122,7 @@ function makeHandshake(secret, { cap = MAX_PREAUTH_BYTES } = {}) {
 // Cap on the post-auth control-plane command buffer. Pre-auth is capped by
 // makeHandshake; post-auth an authenticated client still accumulates bytes until a
 // newline before a JSON command is parsed, so an oversized newline-less command
-// has the same unbounded-growth → RangeError → daemon-crash shape (C1). Set well
+// has the same unbounded-growth → RangeError → daemon-crash shape. Set well
 // above any legitimate command (a `new` with a long `run` field is still tiny
 // relative to this) and far below V8's limit, so only a pathological stream trips
 // it. The data plane needs no post-auth cap: after auth it pumps raw bytes
@@ -182,8 +178,8 @@ const TRANSIENT = ['ENOENT', 'ECONNREFUSED', 'EBUSY'];
 // reading, never dropped in the gap.
 //
 // Returns false when the secret file isn't on disk yet. The board persists its
-// secret just AFTER binding the pipe (the C2 ordering: a bind-race loser must not
-// reach persist and clobber the winner's on-disk secret), so there's a narrow
+// secret just AFTER binding the pipe (a bind-race loser must not reach persist and
+// clobber the winner's on-disk secret), so there's a narrow
 // window — widened under concurrent load — where the pipe accepts a connection
 // before the secret exists. Writing an empty secret there gets the socket rejected
 // and destroyed ("board closed the connection before replying"), so instead the

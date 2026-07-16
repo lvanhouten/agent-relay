@@ -1,8 +1,8 @@
 'use strict';
 // Persisted server credentials: the access token and the cookie-signing secret,
 // stored together in one owner-only JSON file so a restart doesn't silently
-// invalidate every logged-in client (ADR 0001 — an unstable token reads as a
-// broken app). Mirrors the board's per-boot pipe-secret pattern
+// invalidate every logged-in client (an unstable token reads as a broken app).
+// Mirrors the board's per-boot pipe-secret pattern
 // (server/board/lib.js SECRET_DIR/persistSecret) but is deliberately NOT
 // imported from there: the board kernel is an independent package that runs
 // standalone (sb / mcp-server) with no dependency on server/src, so the
@@ -18,7 +18,7 @@ const CREDENTIALS_DIR = process.platform === 'win32'
   : path.join(os.homedir(), '.agent-relay');
 const credentialsPath = () => path.join(CREDENTIALS_DIR, 'credentials.json');
 
-// Same entropy as the token resolveToken used to generate per-run.
+// Same entropy as auth.js's resolveToken generates.
 function generateToken() {
   return crypto.randomBytes(24).toString('base64url');
 }

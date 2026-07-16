@@ -3,7 +3,7 @@
 // API access here; the notifications hook owns permission/firing/click wiring, this
 // module owns only the "what" and "whether".
 //
-// Transition-based, not state-based (VC-23): the pulsing sidebar dot is the
+// Transition-based, not state-based: the pulsing sidebar dot is the
 // persistent needs-input signal, so this reducer only fires the instant a
 // session *enters* needs-input, never for staying in it or for a session that
 // arrives already flagged (a first poll after page load or a web-tier

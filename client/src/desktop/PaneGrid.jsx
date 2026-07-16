@@ -10,7 +10,7 @@ import styles from './PaneGrid.module.scss';
 
 // One grid cell: a slim header (attention dot, name, interactive badge, remove)
 // over a TerminalView. The focused cell is interactive; the rest are spectators
-// that adopt the reported PTY dims and CSS-scale (ADR-0005). `mode` is a live
+// that adopt the reported PTY dims and CSS-scale. `mode` is a live
 // prop, NOT part of the key: the pane must NOT remount on focus change, or the
 // data pipe tears down and re-runs the reconstructed replay — which corrupts a
 // long session's history. TerminalView reconfigures interactive/spectator in
