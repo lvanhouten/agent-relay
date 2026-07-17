@@ -101,6 +101,46 @@ test('list(): an older board reply without `ended` still lists live lines', asyn
   assert.strictEqual(list[0].status, 'running');
 });
 
+// --- preview tail: list() opts in per request; toDto threads a non-empty tail ---
+
+test('list(): requests previews and threads a live line\'s tail into the DTO', async () => {
+  const calls = [];
+  const s = new BoardSessions({
+    rpc: async (m) => {
+      calls.push(m);
+      return { ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: 0, preview: ['$ ls', 'a.txt'] }] };
+    },
+  });
+  const list = await s.list();
+  assert.strictEqual(calls[0].preview, true, 'the web list opts into previews');
+  assert.deepStrictEqual(list[0].preview, ['$ ls', 'a.txt']);
+});
+
+test('list(): an empty or absent preview adds no DTO field (fresh/quiet lines stay clean)', async () => {
+  const s = new BoardSessions({
+    rpc: async () => ({
+      ok: true,
+      lines: [
+        { id: '1', name: 'empty', shell: 'bash', cwd: '/', pid: 1, idleMs: 0, preview: [] },
+        { id: '2', name: 'absent', shell: 'bash', cwd: '/', pid: 2, idleMs: 0 },
+      ],
+    }),
+  });
+  const [empty, absent] = await s.list();
+  assert.ok(!('preview' in empty), 'empty tail -> no field');
+  assert.ok(!('preview' in absent), 'absent tail -> no field');
+});
+
+test('flagAttentionByCwd(): the cwd resolver lists WITHOUT a preview (no emulator warm off notify/beacon)', async () => {
+  const calls = [];
+  const s = new BoardSessions({
+    rpc: async (m) => { calls.push(m); return { ok: true, lines: [], ended: [] }; },
+  });
+  await s.flagAttentionByCwd('/nope');
+  assert.strictEqual(calls[0].cmd, 'list');
+  assert.ok(!('preview' in calls[0]), 'notify/beacon cwd resolution never asks the board to render screens');
+});
+
 // --- attention states: status derives from idleMs against wait.js's threshold ---
 
 test('list(): idleMs at/beyond the shared threshold is idle, below is running, absent is running', async () => {

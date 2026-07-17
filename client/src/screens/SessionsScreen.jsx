@@ -16,20 +16,13 @@ import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
 import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, ChevronRight, ChevronDown, QrCode, Maximize2, Minimize2 } from 'lucide-react';
 import styles from './SessionsScreen.module.scss';
 
-// The session card renders no scrollback preview: the server DTO carries no
-// `preview` field (neither toDto() nor spawn() in server/src/sessions.js
-// populate one). The data exists one layer down (the board keeps a
-// 2000-chunk scrollback per line), so this can be revived by exposing a
-// scrollback tail through the board's `list` reply and threading it into
-// toDto(). Deferred as a feature, not a bug — see
-// _docs/issues/2026-07-01-session-card-live-preview.md.
-
 function SessionCard({ session, onAttach, onKill }) {
   const shellLabel = session.shell.split(/[/\\]/).pop();
   // status decode lives in core/attention.ts (the vocabulary sync point with
   // server/src/sessions.js) — see the rationale + tests there.
   const attention = attentionFor(session.status);
   const pulse = attention.pulse;
+  const preview = session.preview ?? [];
   return (
     <Card interactive padding="md" onClick={() => onAttach(session)}
       className={styles.cardBody}>
@@ -47,6 +40,12 @@ function SessionCard({ session, onAttach, onKill }) {
           <Trash2 size={14} />
         </IconButton>
       </div>
+
+      {/* Rendered-screen tail — decorative echo of the line's bottom rows; the
+          card's name/cwd/status carry the semantics, so it's out of the a11y tree. */}
+      {preview.length > 0 && (
+        <pre className={styles.cardPreview} aria-hidden="true">{preview.join('\n')}</pre>
+      )}
 
       <div className={styles.cardFooter}>
         <div className={styles.cardBadges}>

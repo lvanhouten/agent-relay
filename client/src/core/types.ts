@@ -35,6 +35,12 @@ export interface Session {
   // shared line.
   cols?: number;
   rows?: number;
+  // Live rendered-screen tail (server toDto, from the board's `preview:true`
+  // list): the last few plain-text rows of the line's VT-emulated grid — a
+  // glance-level "what's on screen" for the fleet views, not a substitute for
+  // attaching. Present only on live lines that have produced output; absent on
+  // fresh/quiet lines and tombstones.
+  preview?: string[];
 }
 
 export type ConnStatus = 'connecting' | 'reconnecting' | 'online' | 'offline';

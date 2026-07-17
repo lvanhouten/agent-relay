@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline,
-  makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
+  makeEndedRegistry, endedLines, makeScreenLifecycle, screenPreview, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
 
 test('scrubClaudeSessionMarkers: removes every allowlisted marker and reports them', () => {
   const env = {};
@@ -130,11 +130,11 @@ test('makeEndedRegistry: list() returns a copy, not the live ring', () => {
   assert.strictEqual(reg.list().length, 1, 'mutating a listing must not drop a tombstone');
 });
 
-test("handle('list') carries the ended tombstones alongside live lines", () => {
+test("handle('list') carries the ended tombstones alongside live lines", async () => {
   endedLines.record({ id: 'tomb-1', name: 'x', exitCode: 3, reason: 'exited' });
   try {
     const c = capture();
-    handle({ cmd: 'list' }, c.sock);
+    await handle({ cmd: 'list' }, c.sock);   // list is async (it may await per-line screen reads)
     const r = c.reply();
     assert.strictEqual(r.ok, true);
     assert.ok(Array.isArray(r.ended), 'list reply has an ended array');
@@ -522,4 +522,23 @@ test('attachWithReplay: reconstruction failure falls back to the raw byte-log', 
   await attachWithReplay(s, '1', sock, reconstruct);
   assert.deepStrictEqual(sock.writes, ['aaabbb'], 'raw log concatenated as the fallback');
   assert.ok(s.clients.has(sock), 'still joins as a live client after the fallback');
+});
+
+// --- screenPreview: the `preview:true` list tail (grid slicing/capping) ---
+
+const previewSession = grid => ({ screen: { read: async () => (grid == null ? null : { grid }) } });
+
+test('screenPreview: returns the last few rendered rows of the grid', async () => {
+  const out = await screenPreview(previewSession('l1\nl2\nl3\nl4\nl5'));
+  assert.deepStrictEqual(out, ['l3', 'l4', 'l5'], 'the bottom rows — what is on screen now');
+});
+
+test('screenPreview: hard-caps each row so a wide grid cannot bloat the reply', async () => {
+  const out = await screenPreview(previewSession('x'.repeat(300)));
+  assert.deepStrictEqual(out, ['x'.repeat(160)]);
+});
+
+test('screenPreview: an unreadable (exited mid-read) or empty grid yields []', async () => {
+  assert.deepStrictEqual(await screenPreview(previewSession(null)), [], 'read() returned null -> []');
+  assert.deepStrictEqual(await screenPreview(previewSession('')), [], 'blank grid -> [] (no phantom empty row)');
 });
