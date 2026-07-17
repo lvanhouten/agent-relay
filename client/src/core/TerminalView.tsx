@@ -8,6 +8,8 @@ import { useSessionWS } from './useSessionWS.ts';
 import { XTERM_THEMES } from './xtermThemes.ts';
 import { PILL_INIT, onScroll as pillOnScroll, onLine as pillOnLine } from './scrollPill.ts';
 import type { PillState } from './scrollPill.ts';
+import { wheelScrollLines, touchScrollLines, takeWholeLines } from './terminalScroll.ts';
+import type { ScrollEnv } from './terminalScroll.ts';
 import type { ConnStatus, TerminalViewMode, SearchResults } from './types.ts';
 import { shouldXtermConsumeKey } from './keyPassthrough.ts';
 import styles from './TerminalView.module.scss';
@@ -279,6 +281,56 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       term.onScroll(recomputeScroll);
       term.onLineFeed(() => setPillState(pillOnLine(pillRef.current)));
 
+      // Reclaim local scrollback scroll from a mouse-grabbing app (Claude Code,
+      // vim, less) and give the phone a working touch scroll xterm 6 otherwise
+      // lacks entirely. The decision + line math is in core/terminalScroll; here
+      // we own the xterm wiring and a fractional-line accumulator per input so
+      // sub-line trackpad/touch deltas stay smooth. css cell height is read off
+      // `.xterm-screen` (rows * cell), transform-independent so it holds while
+      // spectating. See adr/0002 / the reconstructReplay excludeModes note.
+      const scrollEnv = (): ScrollEnv => {
+        const screen = containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null;
+        const cellHeight = screen && term.rows ? screen.clientHeight / term.rows : 20;
+        return { bufferType: term.buffer.active.type, mouseTracking: term.modes.mouseTrackingMode, cellHeight, rows: term.rows };
+      };
+      let wheelCarry = 0;
+      // Returning false suppresses xterm's default (forward-to-PTY); returning
+      // true defers to it — either the app owns the alt screen or, with no mouse
+      // tracking, xterm's own viewport already scrolls and taking over would
+      // double-scroll.
+      term.attachCustomWheelEventHandler((ev) => {
+        const lines = wheelScrollLines(ev.deltaY, ev.deltaMode, scrollEnv());
+        if (lines === null) return true;
+        const { whole, rest } = takeWholeLines(wheelCarry, lines);
+        wheelCarry = rest;
+        if (whole !== 0) term.scrollLines(whole);
+        return false;
+      });
+
+      // Touch: xterm 6's viewport wires up no gesture handling, so a one-finger
+      // drag scrolls nothing on a phone regardless of mouse mode. Translate the
+      // drag into local scrollback ourselves; multitouch is left to the browser.
+      let lastTouchY: number | null = null;
+      let touchCarry = 0;
+      const el = containerRef.current!;
+      const onTouchStart = (e: TouchEvent) => { lastTouchY = e.touches.length === 1 ? e.touches[0].clientY : null; };
+      const onTouchMove = (e: TouchEvent) => {
+        if (lastTouchY === null || e.touches.length !== 1) return;
+        const y = e.touches[0].clientY;
+        const lines = touchScrollLines(y - lastTouchY, scrollEnv());
+        if (lines === null) return;
+        lastTouchY = y;
+        const { whole, rest } = takeWholeLines(touchCarry, lines);
+        touchCarry = rest;
+        if (whole !== 0) term.scrollLines(whole);
+        e.preventDefault();
+      };
+      const onTouchEnd = () => { lastTouchY = null; touchCarry = 0; };
+      el.addEventListener('touchstart', onTouchStart, { passive: true });
+      el.addEventListener('touchmove', onTouchMove, { passive: false });
+      el.addEventListener('touchend', onTouchEnd, { passive: true });
+      el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
       // Observe the wrapper (the pane) for both modes: interactive fits to it,
       // spectator rescales to it. A mode change doesn't resize the wrapper, so
       // applyMode drives that relayout itself.
@@ -292,6 +344,10 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         applyModeRef.current = null;
         searchRef.current = null;
         serializeRef.current = null;
+        el.removeEventListener('touchstart', onTouchStart);
+        el.removeEventListener('touchmove', onTouchMove);
+        el.removeEventListener('touchend', onTouchEnd);
+        el.removeEventListener('touchcancel', onTouchEnd);
         ro.disconnect();
         term.dispose();
         termRef.current = null;

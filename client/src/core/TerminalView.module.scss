@@ -15,6 +15,10 @@
 .mount {
   width: 100%;
   height: 100%;
+  // We translate one-finger drags into scrollback scroll ourselves (xterm 6
+  // wires up no touch scroll); claim the vertical pan gesture so the browser
+  // doesn't page-scroll or overscroll-bounce instead. Taps still focus.
+  touch-action: none;
 }
 
 // Spectator (thumbnail) pane: the grid gutter is noise at small scale, and the
