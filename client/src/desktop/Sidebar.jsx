@@ -16,6 +16,7 @@ import styles from './Sidebar.module.scss';
 function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
   const attention = attentionFor(session.status);
   const shellLabel = session.shell.split(/[/\\]/).pop();
+  const preview = session.preview ?? [];
   return (
     <div
       role="button"
@@ -25,27 +26,34 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
       className={`${styles.row}${selected ? ' ' + styles.rowSelected : ''}`}
       aria-current={selected ? 'true' : undefined}
     >
-      {/* Additive action on the LEFT, terminate on the far right — deliberately
-          opposite ends so a cheap "watch this" click can't be mistaken for the
-          destructive kill (revealed on hover like rowKill). */}
-      <span className={styles.rowInject}>
-        <IconButton label="Add to grid" size="sm" onClick={(e) => { e.stopPropagation(); onInject(session.id); }}>
-          <ArrowRightToLine size={13} />
-        </IconButton>
-      </span>
-      <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={attention.pulse} />
-      <span className={styles.rowMain}>
-        <span className={styles.rowName}>{session.name}</span>
-        <span className={styles.rowHint}>
-          <Folder size={11} /> {shellLabel} · {session.cwd}
+      <div className={styles.rowTop}>
+        {/* Additive action on the LEFT, terminate on the far right — deliberately
+            opposite ends so a cheap "watch this" click can't be mistaken for the
+            destructive kill (revealed on hover like rowKill). */}
+        <span className={styles.rowInject}>
+          <IconButton label="Add to grid" size="sm" onClick={(e) => { e.stopPropagation(); onInject(session.id); }}>
+            <ArrowRightToLine size={13} />
+          </IconButton>
         </span>
-      </span>
-      {index < 9 && <span className={styles.jump}>⌥{index + 1}</span>}
-      <span className={styles.rowKill}>
-        <IconButton label="Terminate" size="sm" onClick={(e) => { e.stopPropagation(); onKill(session.id); }}>
-          <Trash2 size={13} />
-        </IconButton>
-      </span>
+        <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={attention.pulse} />
+        <span className={styles.rowMain}>
+          <span className={styles.rowName}>{session.name}</span>
+          <span className={styles.rowHint}>
+            <Folder size={11} /> {shellLabel} · {session.cwd}
+          </span>
+        </span>
+        {index < 9 && <span className={styles.jump}>⌥{index + 1}</span>}
+        <span className={styles.rowKill}>
+          <IconButton label="Terminate" size="sm" onClick={(e) => { e.stopPropagation(); onKill(session.id); }}>
+            <Trash2 size={13} />
+          </IconButton>
+        </span>
+      </div>
+      {/* Rendered-screen tail (decorative — the row's own name/cwd/status carry
+          the semantics), so it's hidden from the accessibility tree. */}
+      {preview.length > 0 && (
+        <pre className={styles.rowPreview} aria-hidden="true">{preview.join('\n')}</pre>
+      )}
     </div>
   );
 }

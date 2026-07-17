@@ -57,6 +57,11 @@ function toDto(line) {
     dto.cols = line.cols;
     dto.rows = line.rows;
   }
+  // Rendered-screen tail from a `preview:true` list row (board screenPreview):
+  // the last few plain-text grid rows, for the fleet views' glance preview. Only
+  // attached when non-empty, so a fresh/quiet line adds no field and tombstones
+  // (endedToDto, built with no preview) never carry one.
+  if (Array.isArray(line.preview) && line.preview.length) dto.preview = line.preview;
   return dto;
 }
 
@@ -293,7 +298,11 @@ class BoardSessions {
   async list() {
     let r;
     try {
-      r = await this._rpc({ cmd: 'list' });
+      // `preview:true` asks the board for each live line's rendered tail (the
+      // fleet-view glance preview). Deliberately only here — the cwd resolver's
+      // list stays preview-less so /api/notify + /api/beacon don't warm every
+      // line's screen emulator.
+      r = await this._rpc({ cmd: 'list', preview: true });
     } catch (e) {
       console.error('[sessions] board list RPC failed:', e.message);
       throw new BoardUnreachableError(e);

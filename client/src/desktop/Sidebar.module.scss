@@ -88,8 +88,8 @@
 
 .row {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
   border: 1px solid transparent;
@@ -99,6 +99,13 @@
   padding: var(--space-2) var(--space-3);
   color: var(--text-body);
   transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.rowTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
 }
 
 .row:hover {
@@ -178,6 +185,28 @@
 .row:hover .rowInject,
 .row:focus-within .rowInject {
   opacity: 1;
+}
+
+/* Rendered-screen tail: a dim, clipped monospace echo of the line's bottom
+   rows. Fixed height for exactly PREVIEW_ROWS lines so rows don't jump as a
+   line's output length changes; each line clips at the edge rather than wrapping
+   (a wrapped grid row would misrepresent the terminal). */
+.rowPreview {
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowSelected .rowPreview {
+  background: color-mix(in srgb, var(--surface-sunken) 60%, transparent);
 }
 
 .empty {

@@ -23,6 +23,13 @@ const DEFAULT_SHELL = process.platform === 'win32'
 
 const SCROLLBACK = 2000; // chunks of output replayed to a freshly-patched pane
 
+// `list` preview tail: the last few rendered rows a `preview:true` list carries
+// per live line, for the fleet views' glance-level "what's on screen". Rows come
+// from the line's VT-emulated grid (already plain text, no ANSI), hard-capped so
+// a wide grid can't bloat a reply that fans out to every card every poll.
+const PREVIEW_ROWS = 3;
+const PREVIEW_ROW_MAX = 160;
+
 // Initial-command ("run" field) keystroke-feed timing. ConPTY drops keystrokes
 // fed before the shell's input reader is ready, so we wait for the shell's first
 // output (prompt up) — debounced by FEED_DEBOUNCE_MS after each output burst —
@@ -463,6 +470,18 @@ function openPane(id, recipe) {
   return true;
 }
 
+// The last non-blank rendered rows of a line, for a `preview:true` list. Reads
+// the per-line screen emulator — which is lazy-init, so requesting previews
+// warms an emulator for every live line and keeps it fed (the accepted cost of
+// the opt-in: non-preview list callers — sb, MCP, the notify/beacon cwd resolver
+// — allocate nothing). Returns [] when the screen can't be read (a line that
+// exited mid-read); each row is hard-capped to PREVIEW_ROW_MAX chars.
+async function screenPreview(s, rows = PREVIEW_ROWS) {
+  const snap = await s.screen.read();
+  if (!snap || !snap.grid) return [];
+  return snap.grid.split('\n').slice(-rows).map(r => (r.length > PREVIEW_ROW_MAX ? r.slice(0, PREVIEW_ROW_MAX) : r));
+}
+
 async function handle(m, sock) {
   switch (m.cmd) {
     case 'new': {
@@ -476,20 +495,27 @@ async function handle(m, sock) {
       break;
     }
     case 'list': {
-      const lines = [...sessions].map(([id, s]) => ({
-        id,
-        name: s.name,
-        pid: s.pty.pid,
-        shell: s.shell,
-        cwd: s.cwd,
-        joined: s.clients.size,
-        uptimeMs: Date.now() - s.startedAt,
-        idleMs: Date.now() - s.lastActivity,
-        // Live PTY grid, kept current by applyMin's resize; a spectator attach
-        // adopts these dims and CSS-scales rather than resizing the shared line.
-        // Additive — existing consumers ignore unknown fields.
-        cols: s.pty.cols,
-        rows: s.pty.rows,
+      // Opt-in per request: only a `preview:true` list (the web poll) reads each
+      // line's rendered tail — see screenPreview for why that's not free.
+      const wantPreview = m.preview === true;
+      const lines = await Promise.all([...sessions].map(async ([id, s]) => {
+        const line = {
+          id,
+          name: s.name,
+          pid: s.pty.pid,
+          shell: s.shell,
+          cwd: s.cwd,
+          joined: s.clients.size,
+          uptimeMs: Date.now() - s.startedAt,
+          idleMs: Date.now() - s.lastActivity,
+          // Live PTY grid, kept current by applyMin's resize; a spectator attach
+          // adopts these dims and CSS-scales rather than resizing the shared line.
+          // Additive — existing consumers ignore unknown fields.
+          cols: s.pty.cols,
+          rows: s.pty.rows,
+        };
+        if (wantPreview) line.preview = await screenPreview(s);
+        return line;
       }));
       // `ended` rides alongside `lines` (additive — sb/mcp read r.lines only).
       sock.write(JSON.stringify({ ok: true, boot: BOOT, lines, ended: endedLines.list() }) + '\n');
@@ -671,4 +697,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, screenPreview, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };

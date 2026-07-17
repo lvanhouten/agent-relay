@@ -44,6 +44,24 @@
   white-space: nowrap;
 }
 
+/* Rendered-screen tail: a dim, clipped monospace echo of the line's bottom rows.
+   Fixed height for exactly PREVIEW_ROWS lines so cards don't jump as output
+   length changes; each line clips at the card edge rather than wrapping (a
+   wrapped grid row would misrepresent the terminal). */
+.cardPreview {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cardFooter {
   display: flex;
   align-items: center;
