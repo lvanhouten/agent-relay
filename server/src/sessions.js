@@ -4,6 +4,7 @@
 // pipes. The web tier holds no PTY state, so it can restart without dropping a
 // single session — and sessions are shared with the `sb` CLI / terminal panes.
 const path = require('path');
+const os = require('os');
 const { rpc, attach, DEFAULT_IDLE_MS } = require('./board-client');
 const { resolveCwd } = require('./paths');
 
@@ -19,6 +20,22 @@ function normalizeCwdForMatch(cwd) {
   if (!raw) return '';
   const resolved = path.resolve(raw);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+// Collapse a home-rooted absolute cwd to a `~/`-prefixed string for display;
+// leave anything outside home untouched. Display-only - the board's raw cwd
+// (not this) backs the /api/notify + /api/beacon cwd matching, and `~/` re-
+// expands through resolveCwd on the round trips this feeds (the "new session
+// here" prefill, the picker seed). Case-insensitive prefix on Windows; the
+// remainder renders with forward slashes to match the `~/` it joins.
+function homeRelativeCwd(cwd, home = os.homedir()) {
+  if (!cwd || !home) return cwd;
+  const rc = path.resolve(cwd);
+  const rh = path.resolve(home);
+  const [ci, hi] = process.platform === 'win32' ? [rc.toLowerCase(), rh.toLowerCase()] : [rc, rh];
+  if (ci === hi) return '~';
+  if (!ci.startsWith(hi + path.sep)) return cwd;
+  return '~/' + rc.slice(rh.length + 1).split(path.sep).join('/');
 }
 
 function relTime(ms) {
@@ -44,7 +61,10 @@ function toDto(line) {
     id: line.id,
     name: line.name || `session-${line.id}`,
     shell: line.shell,
-    cwd: line.cwd,
+    // Home-collapsed for display (`~/…`); see homeRelativeCwd. Round-trips
+    // (the "new session here" prefill, the picker seed) re-expand `~` via
+    // resolveCwd, and cwd matching reads the board's raw line.cwd, not this.
+    cwd: homeRelativeCwd(line.cwd),
     pid: line.pid ?? null,
     status: idleMs < DEFAULT_IDLE_MS ? 'running' : 'idle',
     lastActive: relTime(idleMs),
@@ -407,4 +427,4 @@ class BoardSessions {
   }
 }
 
-module.exports = { BoardSessions, BoardUnreachableError };
+module.exports = { BoardSessions, BoardUnreachableError, homeRelativeCwd };

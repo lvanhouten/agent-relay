@@ -35,12 +35,7 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
           </IconButton>
         </span>
         <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={attention.pulse} />
-        <span className={styles.rowMain}>
-          <span className={styles.rowName}>{session.name}</span>
-          <span className={styles.rowHint}>
-            <Folder size={11} /> {session.cwd}
-          </span>
-        </span>
+        <span className={styles.rowName}>{session.name}</span>
         {index < 9 && <span className={styles.jump}>⌥{index + 1}</span>}
         <span className={styles.rowKill}>
           <IconButton label="Terminate" size="sm" onClick={(e) => { e.stopPropagation(); onKill(session.id); }}>
@@ -48,6 +43,10 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
           </IconButton>
         </span>
       </div>
+      <span className={styles.rowCwd}>
+        <Folder size={11} />
+        <span className={styles.rowCwdPath}>{session.cwd}</span>
+      </span>
       {/* Rendered-screen tail (decorative — the row's own name/cwd/status carry
           the semantics), so it's hidden from the accessibility tree. */}
       {preview.length > 0 && (
