@@ -1,14 +1,10 @@
-// The one definition of "a session-jump chord": Alt + a bare digit 1-9, and
-// nothing else. Shared by TerminalView's passthrough (so it knows which
-// keydowns to let escape uneaten) and the workspace shell's document-level
-// listener — both call this, so they can never disagree about
-// what counts as a jump chord.
+// The one definition of "a session-jump chord": Alt + a bare digit 1-9.
+// Shared by TerminalView's passthrough and the workspace's document-level
+// listener so the two can never disagree on what counts as a jump chord.
 
-// Recognized via event.code (the physical key, e.g. 'Digit3') rather than
-// event.key: Alt is a common layout/dead-key modifier, and on layouts where
-// Alt remaps event.key (e.g. AltGr-adjacent European layouts) the physical
-// digit row still reports Digit1..Digit9 regardless of what character it
-// would otherwise produce.
+// Uses event.code (physical key, e.g. 'Digit3') not event.key: on layouts
+// where Alt remaps event.key (AltGr-adjacent European layouts), the physical
+// digit row still reports Digit1..Digit9 regardless of the produced character.
 const DIGIT_CODE = /^Digit([1-9])$/;
 
 export function jumpIndexFromKey(
@@ -20,14 +16,11 @@ export function jumpIndexFromKey(
   return Number(match[1]);
 }
 
-// Whether the currently-focused element should SWALLOW a jump chord instead of
-// letting it switch sessions. The workspace listens for Alt+digit on the whole
-// document (so the chord works even while the terminal is focused), which means
-// it would otherwise also fire while the operator is typing in the sidebar
-// filter, a dialog field, or the find bar — eating the keystroke and swapping
-// the selection behind whatever's on top. xterm's own hidden textarea (inside a
-// `.xterm` container) is the deliberate exception: the chord is designed to fire
-// there, since TerminalView's passthrough leaves the keydown uneaten.
+// Whether the focused element should SWALLOW a jump chord instead of switching
+// sessions. The workspace listens for Alt+digit on the whole document, which
+// would otherwise also fire while typing in the sidebar filter, a dialog, or
+// the find bar. xterm's hidden textarea (inside `.xterm`) is the deliberate
+// exception — the chord is meant to fire there, per TerminalView's passthrough.
 export interface FocusProbe {
   tagName: string;
   isContentEditable?: boolean;

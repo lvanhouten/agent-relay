@@ -1,24 +1,19 @@
-// Favorite folders (phase 1, client-only): a small set of pinned directory paths
-// the create dialog's browse picker can jump to in one tap, instead of re-descending
-// the same tree every open. Lighter than a spawn template ([[templates]]): a favorite
-// is JUST a starting folder for the browser, not a whole {name, cwd, command} spawn
-// shape. The array ops are pure and unit-tested here; the localStorage I/O is a thin
-// wrapper below. load guards a corrupt/foreign store the same way parseTemplates does —
-// a hand-edited or partially-written value must never throw inside the picker's mount.
+// Pinned directory paths the create dialog's browse picker can jump to in one
+// tap. Lighter than a spawn template: just a starting folder, not a whole
+// {name, cwd, command} shape. Array ops are pure and unit-tested; load() must
+// never throw on a corrupt/hand-edited store inside the picker's mount.
 //
-// Phase 2 migrates this into the server-side store (alongside templates' /api/templates)
-// so favorites follow the operator across devices — see
-// _docs/issues/2026-07-16-directory-picker-favorites.md.
+// Phase 2 moves this server-side (alongside templates) so favorites follow
+// the operator across devices.
 
 const KEY = 'ar-fav-folders';
 
 // Cap so the favorites strip can't grow unbounded and crowd out the folder list.
 export const MAX_FAVORITES = 20;
 
-// Compare/dedupe form: drop a trailing separator so "C:\foo" and "C:\foo\" are one
-// favorite. Casing and separators are left as the server returned them (fsBrowse's
-// path.resolve output) — we favorite that string verbatim and compare against it,
-// rather than normalizing in two places that could disagree.
+// Compare/dedupe form: drop a trailing separator so "C:\foo" and "C:\foo\" are
+// one favorite. Casing/separators are left as the server returned them —
+// favorited and compared verbatim, never normalized twice.
 function canonical(path: string): string {
   return path.trim().replace(/[\\/]+$/, '');
 }

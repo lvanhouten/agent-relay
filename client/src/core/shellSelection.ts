@@ -1,14 +1,12 @@
 // Boot-time shell selection: decides `mobile` vs `desktop` from window
-// geometry, with a per-window manual override that beats the heuristic in
-// both directions. Pure — no DOM access — so the caller (app boot) measures
-// the window and passes plain numbers; see _docs/CONTEXT.md "Shell
-// selection" / "Phone-shaped window".
+// geometry, with a per-window manual override that beats the heuristic either
+// way. Pure — no DOM access — the caller measures the window and passes plain
+// numbers.
 //
-// Storage is injected rather than touched globally so this module (and its
-// tests) never assume a global `sessionStorage`. Production callers pass
-// `window.sessionStorage`: the override is scoped per-window (sessionStorage,
-// never localStorage) because a desk-side "force desktop" must never leak
-// into a phone-over-RDP window that happens to share the same origin.
+// Storage is injected so this module never assumes a global `sessionStorage`.
+// The override is scoped per-window (sessionStorage, never localStorage): a
+// desk-side "force desktop" must never leak into a phone-over-RDP window
+// sharing the same origin.
 
 export type ShellKind = 'mobile' | 'desktop';
 
@@ -20,9 +18,9 @@ export interface StorageLike {
 
 const OVERRIDE_KEY = 'ar-shell-override';
 
-// A window is phone-shaped iff it's portrait (taller than wide) or narrower
-// than 768 CSS px. Deliberately width/height only, no pointer/UA sniffing —
-// see the glossary entry for why (phone-over-RDP is desktop Chrome + mouse).
+// A window is phone-shaped iff portrait (taller than wide) or narrower than
+// 768 CSS px. Deliberately width/height only, no pointer/UA sniffing —
+// phone-over-RDP is desktop Chrome + mouse, so those would misclassify it.
 function isPhoneShaped(width: number, height: number): boolean {
   return height > width || width < 768;
 }
@@ -36,9 +34,8 @@ function isShellKind(value: unknown): value is ShellKind {
   return value === 'mobile' || value === 'desktop';
 }
 
-// Garbage in storage (unset key, a hand-edited/foreign value, or a storage
-// that throws on read — e.g. private-mode restrictions) reads as "no
-// override", never an exception and never a truthy misread of junk.
+// Garbage in storage (unset key, foreign value, or a storage that throws on
+// read) reads as "no override" — never an exception, never a misread of junk.
 export function readShellOverride(storage: StorageLike): ShellKind | null {
   let raw: string | null;
   try {

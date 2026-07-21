@@ -1,9 +1,6 @@
 // Filename formatting for the transcript download. Pure over an explicit ISO
-// timestamp (the caller passes new Date().toISOString()) so it's unit-testable
-// without a clock. The download itself — pulling the serialized buffer and
-// triggering a Blob save — is an impure one-liner in the screen; only the naming
-// has edge cases worth pinning (a session name with slashes/spaces, an empty
-// name), so only that lives here.
+// timestamp (caller passes new Date().toISOString()) so it's unit-testable
+// without a clock; the Blob-save itself is an impure one-liner in the screen.
 
 // `<slug>-<stamp>.txt`, where slug is the session name reduced to filesystem-safe
 // characters and stamp is the ISO instant with colons swapped for dashes and the
@@ -17,14 +14,11 @@ export function transcriptFilename(name: string, iso: string): string {
   return `${slug}-${stamp}.txt`;
 }
 
-// SerializeAddon reproduces terminal STATE — colors, attributes, cursor moves —
-// as escape sequences, which is right for replaying into another terminal and
-// wrong for the .txt we actually ship: Notepad shows the raw \x1b[...m noise.
-// Strip CSI (colors/cursor), OSC (titles/hyperlinks, BEL- or ST-terminated),
-// and stray single-char escapes before the Blob. Text content is untouched.
-// Deliberate scope limit: DCS/APC/PM/SOS (ESC P/_/^/X … ST) payloads are NOT
-// stripped — SerializeAddon never emits them, so handling them here would be
-// dead code. If the input source ever changes, add an ESC[P_^X]…ST pass.
+// SerializeAddon reproduces terminal STATE (colors, attributes, cursor moves)
+// as escape sequences — right for replaying, wrong for the .txt we ship
+// (Notepad shows raw \x1b[...m noise). Strips CSI, OSC, and stray single-char
+// escapes; text content untouched. DCS/APC/PM/SOS payloads are NOT stripped —
+// SerializeAddon never emits them, so handling them would be dead code.
 export function stripAnsi(text: string): string {
   return text
     // eslint-disable-next-line no-control-regex

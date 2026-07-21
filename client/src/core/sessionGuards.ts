@@ -1,7 +1,5 @@
-// The pure halves of useSessions' polling guards, kept here so they're
-// unit-tested directly instead of only proven as named guarded code paths
-// inside SessionsScreen. React-free by design: useSessions holds an
-// instance in a ref precisely so the counters never retrigger effects.
+// The pure halves of useSessions' polling guards. React-free by design:
+// useSessions holds an instance in a ref so the counters never retrigger effects.
 
 import type { Session } from './types.ts';
 
@@ -28,11 +26,10 @@ export function createPollSequence(): PollSequence {
   };
 }
 
-// Kill suppression: ids killed locally but possibly still present in an
-// in-flight poll's stale list are filtered out, so a just-killed session can't
-// flicker back for a poll cycle. The caller owns the set's lifecycle (add
-// before the DELETE, remove after reconciling against a fresh list, so a
-// future reused id isn't permanently hidden).
+// Kill suppression: filters out ids killed locally but still present in an
+// in-flight poll's stale list, so a just-killed session can't flicker back.
+// Caller owns the set's lifecycle (add before DELETE, remove after reconciling)
+// so a future reused id isn't permanently hidden.
 export function filterKilled(list: Session[], killed: ReadonlySet<string>): Session[] {
   return list.filter((s) => !killed.has(s.id));
 }

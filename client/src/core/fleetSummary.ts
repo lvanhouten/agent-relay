@@ -1,13 +1,8 @@
-// Fleet counts for the desktop home/overview pane — the "state of everything"
-// tally the sidebar's narrow list can't give at a glance. Pure so the
-// bucketing rule is unit-tested rather than living inline in the pane.
-//
-// Buckets mirror the status vocabulary `server/src/sessions.js` emits and
-// `core/attention.ts` decodes: a non-exited session always increments `live`,
-// then its known status increments one sub-bucket. An UNKNOWN live status
-// (a newer server behind an older bundle) still counts toward `live` but no
-// sub-bucket, so the sub-tallies never over-count a status this build can't
-// name — the headline stays honest even when the breakdown can't explain it.
+// Fleet counts for the desktop overview pane, mirroring the status vocabulary
+// server/src/sessions.js emits and core/attention.ts decodes: a non-exited
+// session always increments `live`, then its known status increments one
+// sub-bucket. An unknown live status still counts toward `live` but no
+// sub-bucket, so the breakdown never over-counts a status this build can't name.
 
 import type { Session } from './types.ts';
 

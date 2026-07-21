@@ -1,13 +1,9 @@
 // Pure reducer deciding which needs-input transitions deserve a desktop
-// notification. Diffs two consecutive session-poll results — no Notification
-// API access here; the notifications hook owns permission/firing/click wiring, this
-// module owns only the "what" and "whether".
+// notification. Diffs two consecutive polls; the hook owns permission/firing.
 //
-// Transition-based, not state-based: the pulsing sidebar dot is the
-// persistent needs-input signal, so this reducer only fires the instant a
-// session *enters* needs-input, never for staying in it or for a session that
-// arrives already flagged (a first poll after page load or a web-tier
-// restart would otherwise burst-notify for every already-blocked session).
+// Transition-based, not state-based: fires only the instant a session *enters*
+// needs-input, never for staying in it or arriving already flagged — otherwise
+// a first poll after page load would burst-notify every already-blocked session.
 
 import type { Session } from './types.ts';
 
@@ -18,14 +14,10 @@ export interface NotificationSpec {
   body: string;
 }
 
-// The session name is operator- (or, in the pairing model, paired-device-)
-// supplied and flows straight into the OS notification title/body — the
-// least-context surface there is, where a garbled or spoofed name is least
-// likely to be caught. Strip C0/C1 controls, zero-width joiners/marks, and
-// bidi-override characters (which can reorder or hide text), then cap the
-// length before interpolating. Rendering-only defense — crosses no
-// code-execution boundary — but cheap, mirroring transcript.ts's allowlist.
-// Built from a string so the source stays pure ASCII (no literal control chars).
+// Session names are operator/paired-device-supplied and flow straight into the
+// OS notification title/body, the least-context surface for a spoofed name to
+// slip by. Strip C0/C1 controls, zero-width/bidi-override chars, then cap
+// length. Rendering-only defense, cheap, mirrors transcript.ts's allowlist.
 const UNSAFE_NAME_CHARS = new RegExp(
   '[\\u0000-\\u001F\\u007F-\\u009F\\u200B-\\u200F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]',
   'g',
@@ -41,8 +33,8 @@ export function notifyTransitions(
   next: Session[],
   windowFocused: boolean,
 ): NotificationSpec[] {
-  // The pulsing dot already carries the signal while focused; notifications
-  // are the pull-back channel for when the user isn't looking.
+  // The pulsing dot covers the focused case; notifications are the pull-back
+  // channel for when the user isn't looking.
   if (windowFocused) return [];
 
   const prevById = new Map(prev.map((s) => [s.id, s]));

@@ -7,8 +7,7 @@ const session = (id: string, status: string, name = `s-${id}`): Session => ({
   id, name, shell: 'bash', cwd: '~', pid: 1, status, lastActive: 'just now',
 });
 
-// Build strings carrying invisible characters from code points so the source
-// stays pure ASCII (a literal ZWSP/RLO in a test file is itself unreviewable).
+// Built from code points (not literal ZWSP/RLO) so the source stays pure ASCII and reviewable.
 const cc = String.fromCharCode;
 const ZWSP = cc(0x200b), RLO = cc(0x202e), LRI = cc(0x2066), BEL = cc(0x07), ESC = cc(0x1b);
 
@@ -39,8 +38,7 @@ test('entering needs-input while the window is focused emits nothing', () => {
 });
 
 test('a session absent from the previous list arriving already flagged emits nothing', () => {
-  // First poll after page load or a web-tier restart: no prior observation
-  // means no observed transition, however the session's status reads now.
+  // First poll after load/restart has no prior state, so no transition fires regardless of status.
   const prev: Session[] = [];
   const next = [session('1', 'needs-input')];
   assert.deepStrictEqual(notifyTransitions(prev, next, false), []);
@@ -69,7 +67,7 @@ test('a transition between two non-needs-input statuses emits nothing', () => {
 
 test('an unrelated session exiting alongside a real transition does not add a spec', () => {
   const prev = [session('1', 'running'), session('2', 'running')];
-  const next = [session('1', 'needs-input')]; // session 2 exited/vanished
+  const next = [session('1', 'needs-input')];
   const specs = notifyTransitions(prev, next, false);
   assert.deepStrictEqual(specs.map((s) => s.sessionId), ['1']);
 });

@@ -1,21 +1,13 @@
 // Pure helpers for reading/splicing `--flag value` pairs in a claude CLI
-// command string. The create dialog's model/effort chips are a structured
-// editor over the command field, not a separate source of truth: a chip click
-// edits only its own flag in place (add / replace / remove), preserving
-// whatever else the user typed — which is how the "never rewrite text the user
-// has edited" rule and the last-writer-wins ambiguity both resolve (see
-// _docs/issues/2026-07-02-claude-model-effort-selection.md).
+// command string. The create dialog's model/effort chips edit only their own
+// flag in place (add/replace/remove), preserving whatever else the user typed.
 //
-// Deliberately shell-naive: values are matched as one quoted string or one
-// bare token, which covers every real `--model`/`--effort` value. This is not
-// a shell parser and must never validate values — the CLI is the validator.
+// Deliberately shell-naive: values match as one quoted string or one bare
+// token — never a shell parser, never a validator (the CLI is).
 
-// Does the model/effort axis apply? True for a command that invokes `claude`
-// (optionally after whitespace), including Windows-style qualified and cased
-// forms — `claude.cmd`, `claude.exe`, `CLAUDE` — but not `claudette` or a
-// path prefix: the optional `.ext` suffix and the case-insensitive flag widen
-// the binary name only; the (\s|$) boundary still requires the name to end
-// there.
+// True for a command invoking `claude`, incl. Windows-qualified/cased forms
+// (`claude.cmd`, `CLAUDE`) but not `claudette` or a path prefix — the (\s|$)
+// boundary requires the binary name to end there.
 export function isClaudeCommand(command: string): boolean {
   return /^\s*claude(\.\w+)?(\s|$)/i.test(command);
 }
@@ -33,18 +25,15 @@ export function getFlag(command: string, name: string): string | null {
   return m[1].replace(/^(["'])(.*)\1$/, '$2');
 }
 
-// Return the command with the flag set to `value`, or removed when `value` is
-// null. Present flags are replaced in place; absent ones are appended. The
-// removal match includes the flag's leading whitespace, so no space-collapse
-// pass is needed (which would mangle runs of spaces inside quoted args).
+// Sets the flag to `value`, or removes it when `value` is null. Present flags
+// are replaced in place; absent ones appended. The removal match includes the
+// flag's leading whitespace, so no space-collapse pass is needed.
 //
-// Two write-side hazards are guarded (both bit for real): the replacement is
-// a function so a `$` in the value is literal
-// text, never a String.replace substitution pattern; and a value containing
-// whitespace is re-quoted on write, so what getFlag read out of quotes writes
-// back into them instead of shedding tokens across a read→write round trip.
-// A value containing a double quote itself is beyond this module's shell-naive
-// contract (see the header) and is not handled.
+// Two write hazards guarded: the replacement is a function so a `$` in the
+// value is literal text, never a String.replace substitution pattern; and a
+// value containing whitespace is re-quoted on write, matching what getFlag
+// read. A value containing a double quote is outside this module's shell-naive
+// contract and unhandled.
 export function setFlag(command: string, name: string, value: string | null): string {
   const re = new RegExp(`\\s*--${name}(?:=|\\s+)(?:"[^"]*"|'[^']*'|[^\\s]+)`);
   if (value === null) return command.replace(re, '');

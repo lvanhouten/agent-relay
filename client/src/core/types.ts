@@ -11,35 +11,29 @@ export interface Session {
   shell: string;
   cwd: string;
   pid: number | null;
-  // Attention state. Live lines are 'running' (output within the board's
-  // shared idle threshold) or 'idle' (quiet beyond it — which may mean
-  // thinking, blocked on a prompt, or finished; PTY bytes can't tell), or
-  // 'needs-input' when a Claude Code Notification hook has explicitly reported
-  // the line as blocked on a prompt (server sets it via POST /api/notify,
-  // clears it on next input/output). 'turn-done' is a beaconed Claude line
-  // whose agent ended its turn — the process is still alive and waiting on
-  // the user, distinct from 'exited'. 'exited' is a
-  // recently-ended tombstone from the board's capped ring. Kept string (not a
-  // union) so an older/newer server can't type-error the client; render
-  // unknown values as-is.
+  // Attention state: 'running' (output within the idle threshold) or 'idle'
+  // (quiet beyond it — thinking, blocked, or finished; PTY bytes can't tell).
+  // 'needs-input' is a Claude Code Notification hook explicitly reporting a
+  // blocked prompt (server sets via POST /api/notify, clears on next I/O).
+  // 'turn-done' is a beaconed Claude line whose agent ended its turn, process
+  // still alive. 'exited' is a tombstone from the board's capped ring. Kept
+  // string (not a union) so an older/newer server can't type-error the
+  // client; unknown values render as-is.
   status: string;
   lastActive: string;
-  // Present only on status 'exited' (sessions.js endedToDto): the process's
-  // exit code (null if unknown) and whether it was killed via the board's
-  // `end` command ('killed') or exited on its own ('exited').
+  // Present only on status 'exited': the process's exit code (null if
+  // unknown) and whether it was killed ('killed') or exited on its own
+  // ('exited').
   exitCode?: number | null;
   reason?: string;
-  // Live PTY grid (server toDto): present on live lines, absent on a just-created
-  // session until the first poll and on exited tombstones. A spectator
-  // TerminalView adopts these dims and CSS-scales rather than resizing the
-  // shared line.
+  // Live PTY grid: present on live lines, absent on a just-created session
+  // until the first poll and on exited tombstones. A spectator TerminalView
+  // adopts these dims and CSS-scales rather than resizing the shared line.
   cols?: number;
   rows?: number;
-  // Live rendered-screen tail (server toDto, from the board's `preview:true`
-  // list): the last few plain-text rows of the line's VT-emulated grid — a
-  // glance-level "what's on screen" for the fleet views, not a substitute for
-  // attaching. Present only on live lines that have produced output; absent on
-  // fresh/quiet lines and tombstones.
+  // Live rendered-screen tail: last few plain-text rows of the line's
+  // VT-emulated grid, a glance-level preview for fleet views, not a substitute
+  // for attaching. Present only on live lines that have produced output.
   preview?: string[];
 }
 
@@ -64,16 +58,14 @@ export interface ResizeFrame { type: 'resize'; cols: number; rows: number }
 export type ClientFrame = InputFrame | ResizeFrame;
 
 // TerminalView's mode axis. 'interactive' fits the container and sends resize;
-// 'spectator' adopts the reported PTY dims and CSS-scales the grid to fit the
-// pane, sending no resize so it never clamps the shared line — the desktop
-// grid's watch-only panes. Mode is fixed per mount; a switch is a remount.
+// 'spectator' adopts reported PTY dims and CSS-scales, sending no resize so it
+// never clamps the shared line — the desktop grid's watch-only panes. Fixed
+// per mount; a switch is a remount.
 export type TerminalViewMode = 'interactive' | 'spectator';
 
-// Mirrors server/src/fsBrowse.js — the GET /api/fs/browse reply for the create
-// dialog's directory picker. `parent` is null at a filesystem root (drive root /
-// POSIX /), so the picker hides the "up" affordance there. `entries` is
-// directories only (isDir always true in v1; kept explicit for a future files
-// pass). `truncated` means the directory held more than the server cap.
+// Mirrors GET /api/fs/browse's reply. `parent` is null at a filesystem root,
+// so the picker hides the "up" affordance there. `entries` is directories only
+// (isDir always true in v1). `truncated` means the dir held more than the server cap.
 export interface BrowseEntry {
   name: string;
   isDir: boolean;
@@ -90,10 +82,9 @@ export interface BrowseResult {
 // instead of a 500 — the picker renders each in place and stays put.
 export type BrowseErrorCode = 'denied' | 'not-found' | 'not-a-directory';
 
-// Mirrors server/src/pairing.js's GET /api/pairing response. pairingUrl is a
-// full `https://<tunnel-host>/#token=<token>` string IFF tunnel.state==='up';
-// null otherwise (down/disabled never expose a URL — a localhost URL would be
-// unreachable from the device being paired).
+// Mirrors GET /api/pairing's response. pairingUrl is a full
+// `https://<tunnel-host>/#token=<token>` string IFF tunnel.state==='up', null
+// otherwise (a localhost URL would be unreachable from the paired device).
 export type TunnelState = 'up' | 'down' | 'disabled';
 
 export interface PairingInfo {

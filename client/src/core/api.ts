@@ -9,9 +9,8 @@ export interface CreateSessionOpts {
   command?: string; // optional; runs in the shell, which stays open
 }
 
-// Single source of truth for request headers (incl. the Bearer scheme). Exported
-// so other call sites — e.g. LoginScreen's connection probe — don't re-implement
-// the auth-header construction and silently drift if the scheme ever changes.
+// Single source of truth for request headers (incl. the Bearer scheme), so
+// other call sites (e.g. LoginScreen's probe) can't drift on the auth scheme.
 export function headers(token?: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -46,11 +45,8 @@ export async function killSession(id: string, token?: string): Promise<void> {
   if (!res.ok && res.status !== 404) throw new Error('failed to kill session');
 }
 
-// Exchanges a bearer token for the ar_auth cookie (POST /api/login — no body,
-// bearer required). 204 means the cookie was granted and the browser can drop
-// the token from memory; anything else (401 on a rotated/stale token) means
-// it wasn't. Never throws on a non-2xx response — the caller (boot flow /
-// manual login) only cares about the boolean.
+// Exchanges a bearer token for the ar_auth cookie (POST /api/login). Resolves
+// true only on 204 (cookie granted); never throws — callers only need the bool.
 export async function login(token: string): Promise<boolean> {
   const res = await fetch(`${BASE}/login`, {
     method: 'POST',
@@ -59,10 +55,9 @@ export async function login(token: string): Promise<boolean> {
   return res.status === 204;
 }
 
-// Thrown by browseDir for the typed filesystem conditions the endpoint reports
-// (denied / not-found / not-a-directory) — carries the machine-readable `code`
-// and the server-resolved `path` so the picker can show the message in place and
-// stay at the folder it was on, rather than treating it like a network failure.
+// Typed filesystem conditions from browseDir (denied/not-found/not-a-directory)
+// carry `code` + the server-resolved `path` so the picker can show the message
+// in place and stay put, instead of treating it as a network failure.
 export class BrowseError extends Error {
   code: BrowseErrorCode | undefined;
   path: string | undefined;
@@ -74,10 +69,9 @@ export class BrowseError extends Error {
   }
 }
 
-// Lists a directory on the BOARD's filesystem for the create dialog's picker
-// (GET /api/fs/browse). Cookie-authed like every post-boot call. A blank `path`
-// lets the server resolve to home. Throws BrowseError on the typed 4xx
-// conditions; a truly unexpected failure throws a plain Error.
+// Lists a directory on the BOARD's filesystem for the create dialog's picker.
+// A blank `path` resolves to home. Throws BrowseError on a typed 4xx condition,
+// a plain Error on anything else unexpected.
 export async function browseDir(path?: string): Promise<BrowseResult> {
   const q = path ? `?path=${encodeURIComponent(path)}` : '';
   const res = await fetch(`${BASE}/fs/browse${q}`, { headers: headers() });
@@ -91,11 +85,10 @@ export async function browseDir(path?: string): Promise<BrowseResult> {
   return body as BrowseResult;
 }
 
-// Fetches tunnel status + (when up) the pairing URL. Cookie-authed like every
-// other call post-boot (see App.jsx) — no bearer header, since the caller (the
-// pair-device dialog) only ever renders after the sessions screen is reachable.
-// Throws on any non-ok response (network failure, 401) so the caller can show
-// an inline dialog error instead of an unhandled rejection.
+// Fetches tunnel status + (when up) the pairing URL. No bearer header — the
+// pair-device dialog only renders once cookie auth is already established.
+// Throws on any non-ok response so the caller shows an inline error, not an
+// unhandled rejection.
 export async function getPairing(): Promise<PairingInfo> {
   const res = await fetch(`${BASE}/pairing`, { headers: headers() });
   if (!res.ok) throw new Error('failed to fetch pairing info');

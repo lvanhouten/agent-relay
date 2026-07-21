@@ -1,5 +1,4 @@
-// Fragment-token parsing for the QR-pairing handoff — see fragmentPairing.ts
-// for why this stays window-free and lives in core/.
+// Fragment-token parsing for the QR-pairing handoff; stays window-free so it's pure and unit-testable.
 import test from 'node:test';
 import assert from 'node:assert';
 import { readFragmentToken, stripFragment } from './fragmentPairing.ts';

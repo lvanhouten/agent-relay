@@ -32,9 +32,7 @@ test('pollSequence: in-order responses all apply', () => {
 });
 
 test('pollSequence: re-applying the same seq is allowed (seq < latest is the only stale case)', () => {
-  // Equality is intentionally allowed — only strictly-stale (seq < latestApplied)
-  // is rejected. Pinned so a port to `<=` (a behavior change) fails a test
-  // instead of sliding through.
+  // Only strictly-stale (seq < latestApplied) is rejected; pins against a future `<=` port breaking this.
   const guard = createPollSequence();
   const a = guard.begin();
   assert.strictEqual(guard.tryApply(a), true);

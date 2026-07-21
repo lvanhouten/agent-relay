@@ -1,11 +1,8 @@
 // Picks the initial desktop-shell selection: the most recently active live
-// session. The session DTO carries only a *formatted* relative time
-// (`lastActive`, e.g. "43s ago" / "2m ago" / "just now") — no raw timestamp
-// (server/src/sessions.js relTime()) — so recency has to be recovered from that
-// string. activityRank maps it back to an approximate age in seconds (lower =
-// more recent); an unrecognized shape ranks last rather than throwing, so a
-// future relTime format degrades to "least recent" instead of crashing the
-// boot selection.
+// session. The DTO carries only a *formatted* relative time (`lastActive`,
+// e.g. "43s ago"/"2m ago"/"just now"), no raw timestamp, so activityRank
+// recovers an approximate age in seconds (lower = more recent); an
+// unrecognized shape ranks last rather than throwing.
 
 import type { Session } from './types.ts';
 
@@ -19,9 +16,8 @@ export function activityRank(lastActive: string): number {
   return unit === 'h' ? n * 3600 : unit === 'm' ? n * 60 : n;
 }
 
-// The most recently active non-exited session, or null when none are live.
-// Stable on ties (the first in list order wins) so a steady set of equally
-// "just now" sessions doesn't reshuffle the auto-selection every poll.
+// Most recently active non-exited session, or null. Stable on ties (first in
+// list order wins) so equally "just now" sessions don't reshuffle every poll.
 export function pickMostRecentLive(sessions: Session[]): Session | null {
   let best: Session | null = null;
   let bestRank = Number.POSITIVE_INFINITY;

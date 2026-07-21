@@ -1,19 +1,15 @@
 import React from 'react';
 
-// Every header action button is the same fixed square (see IconButton's --md
-// size) plus the row's own gap, so "how many fit" is a single division - no
-// per-element measurement needed.
+// Every header action button is the same fixed square (IconButton's --md size)
+// plus the row's gap, so "how many fit" is a single division.
 export const ACTION_SLOT_PX = 36 + 8;
 
-// How many trailing action buttons fit in the space CSS flex-grow actually
-// hands the actions row: the row has flex:'1 1 0' and minWidth:0, with a
-// fixed-width slot always reserved for the "…" trigger, so its resolved
-// clientWidth already IS "room for buttons" - no inference or subtraction
-// needed, and it's correct in both directions (shrinking AND growing back)
-// since flex-grow, not the row's own content, drives its size. This avoids
-// the header's scrollWidth, which only reflects true content width while
-// overflowing - once things fit, scrollWidth just collapses to clientWidth
-// and the signal is lost.
+// Trailing action buttons that fit the actions row's flex-grow space: the row
+// is flex:'1 1 0'/minWidth:0 with a fixed "…" trigger slot always reserved, so
+// its clientWidth already IS "room for buttons" — correct both shrinking and
+// growing back, since flex-grow drives its size, not its content. Avoids the
+// header's scrollWidth, which collapses to clientWidth (losing the signal)
+// once things fit.
 export function useVisibleActionCount(actionsRowRef: React.RefObject<HTMLElement>, totalActions: number) {
   const [visibleCount, setVisibleCount] = React.useState(totalActions);
 

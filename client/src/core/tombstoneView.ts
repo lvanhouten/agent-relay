@@ -1,16 +1,12 @@
 // DTO tombstone fields -> the status decode every "recently exited" surface
-// shares. This is the one place the client turns a tombstone's `reason` +
-// `exitCode` into a dot color, a crash predicate, and a short status word — the
-// same role core/attention.ts plays for LIVE lines. It lives here with tests
-// (not inline per-screen) so a future board `reason` value fails at one sync
-// point instead of silently diverging across the sidebar, the session card, and
-// the detail pane.
+// shares (the same role core/attention.ts plays for LIVE lines). Kept here
+// with tests so a future board `reason` value fails at one sync point instead
+// of diverging across the sidebar, card, and detail pane.
 //
-// `failed` is the crash predicate: dot color and badge variant must agree on it.
-// A kill is expected and an UNKNOWN (null) exit code is not presented as a crash
-// — only a known non-zero code earns the error styling. `label` is the terse
-// status word ('killed' / 'exit N' / 'exit ?'); a fuller sentence for the detail
-// banner is built by the caller from `killed`.
+// `failed` is the crash predicate: a kill or an unknown (null) exit code is
+// never a crash — only a known non-zero code earns error styling. `label` is
+// the terse word ('killed'/'exit N'/'exit ?'); the caller builds a fuller
+// sentence from `killed`.
 
 import type { Session } from './types.ts';
 

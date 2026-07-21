@@ -18,26 +18,22 @@ export interface SessionWS {
   resize: (cols: number, rows: number) => void;
 }
 
-// WS lifecycle for one session: reconnect with exponential backoff, permanent
-// stop on session exit / 1008, frame guards on every inbound message. Handlers
-// must be stable references (the effect intentionally excludes them from its
-// deps) — callers bridge through refs; see TerminalView.
+// WS lifecycle for one session: exponential-backoff reconnect, permanent stop
+// on exit/1008, frame guards on every inbound message. Handlers must be stable
+// refs (excluded from the effect's deps) — callers bridge through refs.
 export function useSessionWS(
   sessionId: string,
   token: string | undefined,
   { onData, onExit, onReady }: SessionWSHandlers,
-  // Interactive vs spectator. Pushed to the server as a live `mode` frame, NOT a
-  // URL param: a focus change in the grid must NOT reconnect (that would re-run
-  // the reconstructed history replay and corrupt a long session), so
-  // `mode` is deliberately excluded from the connect effect's deps. The server
-  // toggles input-gating and the control socket in place; on (re)connect onopen
-  // re-sends the current mode.
+  // Interactive vs spectator, pushed as a live `mode` frame, NOT a URL param:
+  // a grid focus change must NOT reconnect (would re-run the history replay
+  // and corrupt a long session), so mode is excluded from the connect effect's
+  // deps. Server toggles input-gating in place; onopen re-sends current mode.
   mode: TerminalViewMode = 'interactive',
 ): SessionWS {
-  // token is optional: the browser path is cookie-only post-boot (ar_auth
-  // rides the upgrade), so callers pass undefined and the qs below is empty.
-  // Non-browser callers of the underlying WS endpoint may still use ?token=
-  // server-side — not this hook's concern.
+  // Optional: the browser path is cookie-only post-boot (ar_auth rides the
+  // upgrade), so callers pass undefined and qs stays empty. Non-browser WS
+  // callers may still use ?token= server-side — not this hook's concern.
   const [connStatus, setConnStatus] = React.useState<ConnStatus>('connecting');
   const wsRef = React.useRef<WebSocket | null>(null);
 
@@ -74,14 +70,10 @@ export function useSessionWS(
       };
 
       ws.onmessage = (e) => {
-        // A throw here (e.g. a malformed frame that isn't valid JSON) does NOT
-        // close the socket or fire onerror/onclose — the connection would look
-        // "online" but silently stop processing output, and the reconnect logic
-        // would never engage. Swallow a bad frame instead of freezing the terminal.
-        // parseFrame returns null for unparseable JSON AND for valid-but-non-object
-        // frames (`null`, a bare number, a string) — a naive JSON.parse().type on
-        // those would throw *outside* the parse try, reproducing the "online but
-        // silently stops receiving" freeze this handler exists to prevent.
+        // A throw here (bad JSON) does NOT close the socket or fire onclose —
+        // the connection would look 'online' but silently stop, and reconnect
+        // would never engage. parseFrame returns null for unparseable JSON and
+        // for valid-but-non-object frames, so a bad one is dropped, not thrown.
         const msg = parseFrame(e.data);
         if (!msg) return;
         if (msg.type === 'data' && isValidDataPayload(msg)) onData(msg.payload);

@@ -6,13 +6,12 @@ import type { Session } from './types.ts';
 
 // The desktop shell's notification wiring: permission state, the Notification
 // constructor, and the click handler. Every decision about *whether* a spec
-// fires lives in notifyTransitions — this hook adds only the
-// enable/permission gate around it, no ad-hoc focus checks.
+// fires lives in notifyTransitions — this hook adds only the enable/permission
+// gate around it.
 //
-// Desktop-only: the mobile shell never mounts this. localStorage (not
-// sessionStorage) is deliberate — Notification permission is origin-global and
-// the mobile shell never notifies, so sharing the opt-in across windows is
-// harmless, unlike the per-window shell override.
+// Desktop-only (mobile never mounts this). localStorage, not sessionStorage:
+// Notification permission is origin-global and mobile never notifies, so
+// sharing the opt-in across windows is harmless here.
 
 const STORAGE_KEY = 'ar-desktop-notify';
 
@@ -40,8 +39,7 @@ export function useDesktopNotifications(
   const [permission, setPermission] = React.useState<PermissionState>(currentPermission);
 
   // onSelect's identity may change across renders; a stable ref keeps a fired
-  // notification's click handler pointed at the latest selector without making
-  // the diff effect re-subscribe.
+  // notification's click handler current without re-subscribing the diff effect.
   const onSelectRef = React.useRef(onSelect);
   onSelectRef.current = onSelect;
 
@@ -67,8 +65,7 @@ export function useDesktopNotifications(
 
   // Diff consecutive poll results and fire per returned spec. prevRef always
   // advances (even while disabled) so enabling mid-stream never retroactively
-  // fires for a transition observed while off — we only ever diff the two most
-  // recent polls, and gate the firing on canNotify.
+  // fires for a transition observed while off.
   const prevRef = React.useRef<Session[]>(sessions);
   React.useEffect(() => {
     const prev = prevRef.current;

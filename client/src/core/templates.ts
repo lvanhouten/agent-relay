@@ -1,15 +1,12 @@
 // Spawn templates (phase 1, client-only): saved {name, cwd, command} shapes so
-// re-spawning "Claude in agent-relay" is one tap instead of re-typing a Windows
-// path on a soft keyboard. The array ops are pure and unit-tested here (the
-// localStorage I/O is a thin wrapper below); load guards a corrupt/foreign store
-// the same way wsFrame guards a bad frame — a hand-edited or partially-written
-// value must never throw inside the create dialog's mount.
+// re-spawning "Claude in agent-relay" is one tap instead of retyping a path on
+// a soft keyboard. load() must never throw on a corrupt/hand-edited store
+// inside the create dialog's mount.
 //
-// A template is identified by its trimmed label: saving under an existing label
-// overwrites it (an upsert), so "save as template" twice with the same name
-// updates rather than duplicates. Phase 2 migrates this into the server-side
-// store behind /api/templates so templates follow the operator across devices —
-// see _docs/issues/2026-07-02-fleet-spawn-templates.md.
+// Identified by trimmed label: saving under an existing label upserts, so
+// "save as template" twice with the same name updates, not duplicates. Phase 2
+// moves this server-side (/api/templates) so templates follow the operator
+// across devices.
 
 export interface SpawnTemplate {
   label: string;
@@ -20,10 +17,9 @@ export interface SpawnTemplate {
 
 const KEY = 'ar-spawn-templates';
 
-// A record survives parsing only if every field is a string. Anything else
-// (an older/foreign shape, a truncated write) is dropped rather than trusted —
-// a template drives command execution on tap, so a malformed one is discarded,
-// not coerced.
+// Survives parsing only if every field is a string; anything else (an
+// older/foreign shape, a truncated write) is dropped, not coerced — a
+// template drives command execution on tap.
 function isTemplate(v: unknown): v is SpawnTemplate {
   if (typeof v !== 'object' || v === null) return false;
   const t = v as Record<string, unknown>;
@@ -66,12 +62,10 @@ export function removeTemplate(list: SpawnTemplate[], label: string): SpawnTempl
   return list.filter((t) => t.label !== label);
 }
 
-// Label fallback when the session-name field is blank: derive it from what the
-// template actually does ("claude · agent-relay") instead of a literal
-// 'template' — under which every blank-name save collided and silently
-// overwrote the previous one. Content-derived labels make genuinely different
-// templates distinct; two saves that DO produce the same label (same leading
-// command word, same directory name) still upsert, which is the intended
+// Label fallback when the name field is blank: derive from what the template
+// does ("claude · agent-relay") instead of a literal 'template', under which
+// every blank-name save collided and silently overwrote the previous one.
+// Two saves that DO produce the same label still upsert — the intended
 // same-template re-save semantics.
 export function fallbackLabel(cwd: string, command: string): string {
   const dir = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd.trim() || '~';
@@ -79,12 +73,11 @@ export function fallbackLabel(cwd: string, command: string): string {
   return `${cmd} · ${dir}`;
 }
 
-// fallbackLabel still collides when two DIFFERENT directories share a basename
-// and leading command word ('/work/api' vs '/home/api' → both 'claude · api'),
-// and an upsert there silently replaces a genuinely different template. Given
-// the existing list, widen the label with the parent segment on such a clash
-// (then the full cwd if even that collides); a clash with the SAME cwd keeps
-// the base label — that's the intended re-save collapse.
+// fallbackLabel still collides when two DIFFERENT dirs share a basename and
+// leading command ('/work/api' vs '/home/api' -> both 'claude · api'), which
+// would silently replace a different template. Widen with the parent segment
+// on such a clash (then the full cwd if that still collides); a clash with the
+// SAME cwd keeps the base label — the intended re-save collapse.
 export function uniqueFallbackLabel(list: SpawnTemplate[], cwd: string, command: string): string {
   const cmd = command.trim().split(/\s+/)[0] || 'shell';
   const segs = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).filter((s) => s);
@@ -106,9 +99,9 @@ export function loadTemplates(): SpawnTemplate[] {
   try { return parseTemplates(localStorage.getItem(KEY)); } catch { return []; }
 }
 
-// Returns whether the write actually persisted. Quota/private-mode failures
-// are non-fatal, but the caller must know: showing "Saved" for a template
-// that's gone on reload is a lie the UI otherwise has no way to catch.
+// Returns whether the write persisted. Quota/private-mode failures are
+// non-fatal, but the caller must know — else "Saved" lies about a template
+// that's gone on reload.
 export function saveTemplates(list: SpawnTemplate[]): boolean {
   try { localStorage.setItem(KEY, serializeTemplates(list)); return true; }
   catch { return false; }

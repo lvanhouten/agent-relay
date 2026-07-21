@@ -25,8 +25,7 @@ test('a transiently-absent LIVE selection falls back to the cache (fresh create 
 });
 
 test('an evicted TOMBSTONE selection resolves to null, not the stale cache', () => {
-  // The cached selection is a tombstone that has dropped out of the poll (board
-  // ring eviction). It must NOT be returned — that is the frozen-ghost bug.
+  // Cached tombstone evicted from the poll (board ring) must resolve null — the frozen-ghost bug.
   const evicted = s('gone', 'exited');
   assert.strictEqual(resolveSelection([s('1'), s('2')], 'gone', evicted), null);
 });
