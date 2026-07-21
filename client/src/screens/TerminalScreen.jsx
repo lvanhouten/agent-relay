@@ -15,28 +15,25 @@ import { useFullscreen } from '../core/useFullscreen.ts';
 import { useVisibleActionCount } from '../core/useVisibleActionCount.ts';
 import styles from './TerminalScreen.module.scss';
 
-// Default the composer visible on touch/small viewports, hidden on a desktop
-// with a real keyboard (toggleable either way). Read once at mount — a device's
-// pointer class doesn't change mid-session.
+// Defaults visible on touch/small viewports, hidden on desktop; read once at
+// mount since a device's pointer class doesn't change mid-session.
 function prefersComposer() {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse)').matches;
 }
 
-// An explicit toggle (either way) should stick across sessions instead of
-// re-deriving from pointer type every time a terminal screen mounts — the
-// device heuristic above is only the first-ever default.
+// An explicit toggle sticks across sessions; prefersComposer is only the
+// first-ever default.
 const COMPOSER_PREF_KEY = 'ar-composer-open';
 function loadComposerPref() {
   const stored = localStorage.getItem(COMPOSER_PREF_KEY);
   return stored === null ? prefersComposer() : stored === '1';
 }
 
-// Chrome around the terminal: header, footer, status dot, find bar, and the
-// mobile composer (canned-key chips). The terminal itself — xterm, the
-// WS lifecycle, the mount dance, the scroll-to-bottom pill — lives in
-// core/TerminalView; this screen drives it through the imperative handle.
+// Chrome around the terminal (header, footer, find bar, composer). The
+// terminal itself lives in core/TerminalView; this screen drives it through
+// the imperative handle.
 export default function TerminalScreen({ session, host, theme, onToggleTheme, onBack, onNewInDir }) {
   const viewRef = React.useRef(null);
   const actionsRowRef = React.useRef(null);
@@ -83,8 +80,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
   };
 
   const downloadTranscript = () => {
-    // serialize() reproduces terminal state incl. ANSI escapes; the export is
-    // a .txt, so strip them (core/transcript.ts) or Notepad shows \x1b[ noise.
+    // serialize() includes ANSI escapes; strip them or Notepad shows \x1b[ noise.
     const text = stripAnsi(viewRef.current?.serialize() ?? '');
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -97,16 +93,14 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
     URL.revokeObjectURL(url);
   };
 
-  // Chips send raw bytes straight to the PTY. They're gated off connStatus so a
-  // mid-reconnect tap can't silently drop into a closed socket.
+  // Gated off connStatus so a mid-reconnect tap can't drop into a closed socket.
   const composerReady = connStatus === 'online';
   const sendChip = (seq) => viewRef.current?.send(seq);
 
   const matchReadout = searchReadout(searchTerm, searchResults);
 
-  // Priority order - the last entries are the first pushed into the overflow
-  // menu when the header runs out of room (download is the one operators are
-  // least likely to reach for on a phone).
+  // Priority order - last entries are first pushed into the overflow menu
+  // when the header runs out of room.
   const actions = [
     { key: 'search', label: 'Search output', menuLabel: 'Search output', active: showSearch, onClick: toggleSearch, icon: <Search size={15} /> },
     { key: 'composer', label: 'Toggle composer', menuLabel: 'Toggle composer', active: showComposer, onClick: () => setShowComposer((v) => !v), icon: <Keyboard size={15} /> },
@@ -122,7 +116,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
 
   return (
     <div className={styles.screen}>
-      {/* session header */}
       <header className={styles.header}>
         <IconButton label="Back to sessions" onClick={onBack}>
           <ChevronLeft size={18} />
@@ -148,7 +141,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         </div>
       </header>
 
-      {/* find bar */}
       {showSearch && (
         <div className={styles.findBar}>
           <Search size={14} className={styles.findIcon} />
@@ -157,8 +149,7 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
             value={searchTerm}
             onChange={(e) => runSearch(e.target.value)}
             onKeyDown={(e) => {
-              // A CJK/predictive-keyboard candidate confirmation arrives as
-              // Enter mid-composition — it must not run the search early.
+              // A CJK candidate confirmation arrives as Enter mid-composition.
               if (e.nativeEvent.isComposing) return;
               if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? viewRef.current?.searchPrev(searchTerm) : viewRef.current?.searchNext(searchTerm); }
               else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
@@ -191,7 +182,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         onSearchResults={setSearchResults}
       />
 
-      {/* mobile answer mode: canned-key chips */}
       {showComposer && (
         <div className={styles.composer}>
           <div className={styles.chipRow}>
@@ -212,7 +202,6 @@ export default function TerminalScreen({ session, host, theme, onToggleTheme, on
         </div>
       )}
 
-      {/* status strip */}
       <footer className={styles.footer}>
         <span className={styles.hostAccent}>● {hostLabel}</span>
         <span>utf-8</span>
