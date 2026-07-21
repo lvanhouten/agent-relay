@@ -4,8 +4,38 @@
 // can answer 503 (not 500/404).
 const test = require('node:test');
 const assert = require('node:assert');
-const { BoardSessions, BoardUnreachableError } = require('./sessions');
+const path = require('path');
+const { BoardSessions, BoardUnreachableError, homeRelativeCwd } = require('./sessions');
 const { DEFAULT_IDLE_MS } = require('../board/wait');
+
+// homeRelativeCwd collapses a home-rooted cwd to `~/` for display. Pin `home`
+// explicitly (don't read the runner's real HOME) and build paths with the
+// native separator so the one suite proves both platforms' behavior.
+const HOME = process.platform === 'win32' ? 'C:\\Users\\dev' : '/home/dev';
+const j = (...segs) => [HOME, ...segs].join(path.sep);
+
+test('homeRelativeCwd: a path under home collapses to ~/ with forward slashes', () => {
+  assert.strictEqual(homeRelativeCwd(j('Fork', 'ContractDomain'), HOME), '~/Fork/ContractDomain');
+});
+test('homeRelativeCwd: home itself is ~', () => {
+  assert.strictEqual(homeRelativeCwd(HOME, HOME), '~');
+});
+test('homeRelativeCwd: a path outside home is returned untouched', () => {
+  const outside = process.platform === 'win32' ? 'D:\\work\\repo' : '/srv/work/repo';
+  assert.strictEqual(homeRelativeCwd(outside, HOME), outside);
+});
+test('homeRelativeCwd: a sibling that only shares the home prefix is not collapsed', () => {
+  // C:\Users\dev-other must NOT match home C:\Users\dev (prefix without a separator boundary).
+  assert.strictEqual(homeRelativeCwd(HOME + '-other', HOME), HOME + '-other');
+});
+test('homeRelativeCwd: empty/absent cwd is passed through', () => {
+  assert.strictEqual(homeRelativeCwd('', HOME), '');
+});
+if (process.platform === 'win32') {
+  test('homeRelativeCwd: Windows prefix match is case-insensitive', () => {
+    assert.strictEqual(homeRelativeCwd('c:\\users\\DEV\\Fork', HOME), '~/Fork');
+  });
+}
 
 const down = () => { const e = new Error('board rpc timed out'); return Promise.reject(e); };
 

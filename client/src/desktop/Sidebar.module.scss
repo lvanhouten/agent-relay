@@ -123,15 +123,9 @@
   border-color: var(--border-accent);
 }
 
-.rowMain {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
 .rowName {
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: var(--text-sm);
@@ -141,6 +135,27 @@
   text-overflow: ellipsis;
 }
 
+/* Full-width path row below rowTop (like the preview), so the cwd gets the
+   whole row width instead of the button-flanked slot rowMain gave it. The path
+   span owns the ellipsis so the folder icon never clips. */
+.rowCwd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.rowCwdPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tombstone-row cwd hint (compact, still inline beside the name column). */
 .rowHint {
   display: inline-flex;
   align-items: center;

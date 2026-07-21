@@ -26,19 +26,18 @@ function SessionCard({ session, onAttach, onKill }) {
     <Card interactive padding="md" onClick={() => onAttach(session)}
       className={styles.cardBody}>
       <div className={styles.cardHeader}>
-        <div className={styles.cardTitleBlock}>
-          <span className={styles.cardName}>
-            <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={pulse} />
-            {session.name}
-          </span>
-          <span className={styles.cardCwd}>
-            <Folder size={12} /> {session.cwd}
-          </span>
-        </div>
+        <span className={styles.cardName}>
+          <StatusDot status={attention.dot} size="sm" showLabel={false} pulse={pulse} />
+          {session.name}
+        </span>
         <IconButton label="Terminate" size="sm" onClick={(e) => { e.stopPropagation(); onKill(session.id); }}>
           <Trash2 size={14} />
         </IconButton>
       </div>
+      <span className={styles.cardCwd}>
+        <Folder size={12} />
+        <span className={styles.cardCwdPath}>{session.cwd}</span>
+      </span>
 
       {/* Rendered-screen tail — decorative echo of the line's bottom rows; the
           card's name/cwd/status carry the semantics, so it's out of the a11y tree. */}
@@ -75,19 +74,18 @@ function ExitedSessionCard({ session, onDismiss }) {
   return (
     <Card padding="md" className={`${styles.cardBody} ${styles.exitedBody}`}>
       <div className={styles.cardHeader}>
-        <div className={styles.cardTitleBlock}>
-          <span className={styles.cardName}>
-            <StatusDot status={dot} pulse={false} size="sm" showLabel={false} />
-            {session.name}
-          </span>
-          <span className={styles.cardCwd}>
-            <Folder size={12} /> {session.cwd}
-          </span>
-        </div>
+        <span className={styles.cardName}>
+          <StatusDot status={dot} pulse={false} size="sm" showLabel={false} />
+          {session.name}
+        </span>
         <IconButton label="Dismiss" size="sm" onClick={() => onDismiss(session.id)}>
           <X size={14} />
         </IconButton>
       </div>
+      <span className={styles.cardCwd}>
+        <Folder size={12} />
+        <span className={styles.cardCwdPath}>{session.cwd}</span>
+      </span>
 
       <div className={styles.cardFooter}>
         <div className={styles.cardBadges}>
