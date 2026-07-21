@@ -2,6 +2,7 @@ import React from 'react';
 import SessionsScreen from './screens/SessionsScreen.jsx';
 import TerminalScreen from './screens/TerminalScreen.jsx';
 import { useSessions } from './core/useSessions.ts';
+import { useToast } from './core/useToast.tsx';
 import { NewSessionDialog, rememberClaudeDefaults } from './chrome/NewSessionDialog.jsx';
 
 // The mobile shell: the login → sessions → terminal screen stack over the shared
@@ -11,7 +12,8 @@ import { NewSessionDialog, rememberClaudeDefaults } from './chrome/NewSessionDia
 // SessionsScreen) is what lets the terminal spawn a sibling in its own directory
 // without bouncing back through the list.
 export default function MobileShell({ host, theme, onToggleTheme, onToggleShell }) {
-  const { sessions, create, kill, creating } = useSessions();
+  const { notifier } = useToast();
+  const { sessions, create, kill, creating } = useSessions(notifier);
   const [screen, setScreen] = React.useState('sessions'); // 'sessions' | 'terminal'
   const [activeSession, setActiveSession] = React.useState(null);
   const [dialog, setDialog] = React.useState(false);
@@ -42,7 +44,10 @@ export default function MobileShell({ host, theme, onToggleTheme, onToggleShell 
       setDialog(false);
       attach(session);
     } catch {
-      setCreateError('Could not create the session. Check the server and try again.');
+      // Inline text covers the dialog-open case; the toast survives it closing.
+      const msg = 'Could not create the session. Check the server and try again.';
+      setCreateError(msg);
+      notifier.notify({ severity: 'error', message: msg });
     }
   };
 

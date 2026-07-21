@@ -1,0 +1,29 @@
+// Above the create dialog (z-index 40) so a failed-create toast shows over it.
+// pointer-events: none on the container lets clicks pass through the empty
+// region around the stack; each toast re-enables them for itself.
+.host {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
+}
+
+.corner {
+  right: var(--space-4);
+  bottom: var(--space-4);
+  align-items: flex-end;
+  width: min(380px, calc(100vw - 2 * var(--space-4)));
+}
+
+.bottom {
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: var(--space-4);
+  align-items: stretch;
+}
