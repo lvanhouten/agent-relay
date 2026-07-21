@@ -1,8 +1,7 @@
-// Pure resolution of the bell toggle's two inputs — the user's persisted opt-in
-// and the origin-global Notification permission — into the one boolean the hook
-// fires on and the one enum the chrome renders. No Notification API access here;
-// the platform-support probe and permission read live in the hook, this module
-// only combines their results so the combination logic is unit-testable.
+// Pure resolution of the bell toggle's two inputs — persisted opt-in and the
+// origin-global Notification permission — into the boolean the hook fires on
+// and the enum the chrome renders. No Notification API access here; the hook
+// owns the probe/read, this module only combines the results.
 
 export type PermissionState = 'default' | 'granted' | 'denied';
 
@@ -31,12 +30,10 @@ export function canNotify(
   return supported && enabled && permission === 'granted';
 }
 
-// The bell toggle's branch decision, pure over the same two inputs the view
-// reads. Disable ONLY when notifications are actually live (opted in AND
-// granted); otherwise request permission. A stale enabled=true paired with a
-// non-granted permission — browser auto-revocation of an unused permission, or
-// a manual reset to 'default', neither of which clears localStorage — must fall
-// through to a fresh request instead of silently no-opping on the first click.
+// The bell toggle's branch decision. Disable ONLY when actually live (opted in
+// AND granted); otherwise request permission. A stale enabled=true paired with
+// a lapsed permission (auto-revocation, or a manual reset — neither clears
+// localStorage) must fall through to a fresh request, not silently no-op.
 export function toggleAction(
   enabled: boolean,
   permission: PermissionState,

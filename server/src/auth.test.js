@@ -1,8 +1,6 @@
 'use strict';
-// Token-policy tests. resolveToken is pure over an env object, so the three
-// shapes (opt-out / pinned / generated) are pinned here without mutating
-// process.env; checkToken takes the token as an injectable second parameter for
-// the same reason.
+// Pure over injected env/token, so opt-out/pinned/generated are tested
+// without touching process.env.
 const test = require('node:test');
 const assert = require('node:assert');
 const express = require('express');
@@ -42,10 +40,8 @@ test('checkToken: passes everything when auth is disabled (token null)', () => {
   assert.strictEqual(checkToken('anything', null), true);
 });
 
-// ---------------------------------------------------------------------------
-// isAuthenticated — the shared REST/WS decision (bearer-or-cookie).
-// expectedToken/signingSecret are injected so no env games are needed.
-// ---------------------------------------------------------------------------
+// isAuthenticated: shared REST/WS bearer-or-cookie decision; token/secret
+// injected, no env needed.
 
 test('isAuthenticated: valid bearer, no cookie → true', () => {
   assert.strictEqual(
@@ -62,7 +58,7 @@ test('isAuthenticated: no bearer, valid cookie → true', () => {
 });
 
 test('isAuthenticated: no bearer, tampered cookie → false', () => {
-  const tampered = `ar_auth=${issue(SECRET)}x`; // mutate the signature
+  const tampered = `ar_auth=${issue(SECRET)}x`;
   assert.strictEqual(
     isAuthenticated({ token: undefined, cookieHeader: tampered, expectedToken: EXPECTED, signingSecret: SECRET }),
     false,
@@ -106,9 +102,7 @@ test('isAuthenticated: a wrong bearer still passes on a valid cookie (fallback, 
   );
 });
 
-// ---------------------------------------------------------------------------
-// makeAuthMiddleware — the REST gate end-to-end (real Express + http).
-// ---------------------------------------------------------------------------
+// makeAuthMiddleware: the REST gate end-to-end (real Express + http).
 
 function serve(mwOpts) {
   const app = express();

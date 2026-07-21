@@ -1,27 +1,22 @@
-// Pure decision logic for the client boot flow: which screen to land on at
-// first paint, given a possible
-// QR-pairing fragment token and/or an ambient auth cookie. Kept side-effect
-// free — network calls (login exchange, ambient-cookie probe) are injected
-// via BootDeps — so the branching is unit-testable without a real fetch or
-// window. See App.jsx for the wiring: reading/stripping the fragment
-// (fragmentPairing.ts) happens there, BEFORE this is called, so the token
-// never lingers in the address bar regardless of the outcome.
+// Pure decision logic for which screen to land on at boot, given a possible
+// QR-pairing fragment token and/or an ambient auth cookie. Network calls are
+// injected via BootDeps so the branching is unit-testable with no real fetch.
+// App.jsx strips the fragment (fragmentPairing.ts) BEFORE calling this, so the
+// token never lingers in the address bar regardless of outcome.
 //
-// Contract: BootDeps functions must resolve to a boolean, never throw/reject
-// — a network failure is "not authenticated", not an exception the decision
-// logic has to know about. Callers (App.jsx) wrap the real login()/probe
-// calls accordingly.
+// Contract: BootDeps functions must resolve to a boolean, never throw/reject —
+// a network failure just means "not authenticated".
 
 export type BootOutcome =
   | { screen: 'sessions' }
   | { screen: 'login'; error?: string };
 
 export interface BootDeps {
-  // Exchanges a fragment token at the login endpoint. Resolves to whether a
-  // cookie was granted (POST /api/login: 204 -> true, 401 -> false).
+  // Exchanges a fragment token at the login endpoint (POST /api/login: 204 ->
+  // true, 401 -> false).
   login: (token: string) => Promise<boolean>;
-  // Ambient-cookie probe: a credentialed request carrying no bearer.
-  // Resolves true if it authenticates (cookie present and valid).
+  // Ambient-cookie probe: a credentialed request with no bearer; true iff a
+  // valid cookie is already present.
   probe: () => Promise<boolean>;
 }
 

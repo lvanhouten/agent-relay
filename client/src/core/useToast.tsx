@@ -8,14 +8,13 @@ import {
 import type { Toast, ToastInput, Notifier } from './toastQueue.ts';
 
 // The React seam over toastQueue.ts: holds the visible list, exposes an
-// imperative notify()/dismiss() the whole client can push into, and renders
-// nothing itself — the host (chrome/ToastHost) is a separate consumer, so this
-// core module never imports app UI. The list-mutation rules all live in the
-// pure module; this file owns only id assignment and the React wiring.
+// imperative notify()/dismiss(), renders nothing itself — the host
+// (chrome/ToastHost) is a separate consumer, so this core module never
+// imports app UI. List-mutation rules live in the pure module; this file owns
+// only id assignment and React wiring.
 
-// Everything a consumer needs: the list for the host, plus the Notifier the
-// pushers use. notify/dismiss/dismissKey are stable, so `notifier` keeps a
-// stable identity — useSessions can safely list it in its effect deps.
+// notify/dismiss/dismissKey are stable, so `notifier` keeps a stable identity —
+// useSessions can safely list it in its effect deps.
 export interface ToastApi extends Notifier {
   toasts: Toast[];
   notifier: Notifier;
@@ -39,8 +38,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       action: input.action,
     };
     setToasts((list) => enqueue(list, toast));
-    // On a keyed coalesce the surviving toast keeps its original id, so callers
-    // that need to clear a keyed toast use dismissKey, not this return value.
+    // A keyed coalesce keeps the surviving toast's original id, so callers
+    // clearing a keyed toast use dismissKey, not this return value.
     return id;
   }, []);
 

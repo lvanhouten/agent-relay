@@ -1,5 +1,4 @@
-// claudeFlags — the pure half of the model/effort chips. The dialog is
-// harness-exempt per repo convention; these functions carry the behavior.
+// Pure logic behind the model/effort chips; the dialog itself is harness-exempt (no UI test).
 import test from 'node:test';
 import assert from 'node:assert';
 import { isClaudeCommand, getFlag, setFlag } from './claudeFlags.ts';
@@ -71,10 +70,8 @@ test('setFlag: removing an absent flag is a no-op', () => {
   assert.strictEqual(setFlag('claude --effort high', 'model', null), 'claude --effort high');
 });
 
-// Both write paths must treat the value as literal text, and a value getFlag
-// read out of quotes must write back into them.
+// Values are treated as literal text on write; a quoted getFlag read round-trips back into quotes.
 test('setFlag: a $ in the value is literal, not a replace-pattern', () => {
-  // A naive String.replace would re-insert the matched flag via $&: 'claude --model a --model xb'.
   assert.strictEqual(setFlag('claude --model x', 'model', 'a$&b'), 'claude --model a$&b');
   assert.strictEqual(setFlag('claude', 'model', 'a$&b'), 'claude --model a$&b');
 });

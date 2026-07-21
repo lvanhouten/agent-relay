@@ -4,18 +4,8 @@ import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { searchReadout } from '../core/searchReadout.ts';
 import styles from './FindBar.module.scss';
 
-// Terminal find bar — the one piece of chrome shared across shells (every
-// other screen affordance is deliberately per-shell). Owns its own input
-// state and keyboard handling; talks outward only through callbacks + the
-// `results` prop, never touching the terminal view directly, so each shell
-// wires it to its own view ref.
-//
-// Props:
-//   results: SearchResults (core/types.ts) — resultIndex/resultCount for the readout
-//   onQuery(term: string): void — fired as the term changes; empty term = caller clears
-//   onNext(term: string): void
-//   onPrev(term: string): void
-//   onClose(): void
+// Chrome shared across both shells; talks outward only through callbacks and
+// `results`, never touching the terminal view directly — each shell wires its own ref.
 export function FindBar({ results, onQuery, onNext, onPrev, onClose }) {
   const [term, setTerm] = React.useState('');
   const inputRef = React.useRef(null);
@@ -30,8 +20,7 @@ export function FindBar({ results, onQuery, onNext, onPrev, onClose }) {
   };
 
   const handleKeyDown = (e) => {
-    // A CJK/predictive-keyboard candidate confirmation arrives as Enter
-    // mid-composition — it must not run the search early.
+    // IME candidate confirmation arrives as Enter mid-composition; must not run search early.
     if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? onPrev(term) : onNext(term); }
     else if (e.key === 'Escape') { e.preventDefault(); onClose(); }

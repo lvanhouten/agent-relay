@@ -1,8 +1,7 @@
 'use strict';
-// pairing.js router tests. Exercises the real Express router
-// mounted the way the wiring brief (07) mounts it — behind the real dual-auth gate
-// (makeAuthMiddleware from auth.js) — with the real cookie module and a fake tunnel
-// status getter. No board RPC, no live tunnel: the tunnel status is injected.
+// Mounts the real router behind the real dual-auth gate (makeAuthMiddleware)
+// with the real cookie module and a fake tunnel status getter — no board
+// RPC, no live tunnel.
 const test = require('node:test');
 const assert = require('node:assert');
 const express = require('express');
@@ -14,9 +13,8 @@ const { issue, setCookieHeader, verify, COOKIE_NAME } = require('./cookie');
 const TOKEN = 'test-access-token-abc123';
 const SECRET = 'test-signing-secret-xyz';
 
-// Mount exactly as index.js/brief 07 does: the dual-auth gate in front of the
-// router at /api. The router itself applies no auth (api.js style), so this proves
-// the whole stack — gate + handler — end to end.
+// Mounts the dual-auth gate in front of /api exactly as index.js does; the
+// router applies no auth of its own, so this proves gate + handler end to end.
 function serve(tunnelStatus = () => ({ state: 'disabled', url: null, reason: null })) {
   const app = express();
   app.use(express.json());
@@ -50,7 +48,6 @@ function request(app, method, path, { headers = {} } = {}) {
   });
 }
 
-// A freshly minted, valid auth cookie value for cookie-path tests.
 function validCookie() {
   return `${COOKIE_NAME}=${issue(SECRET)}`;
 }
@@ -74,8 +71,6 @@ test('pairingUrl: extracts host from a URL carrying a port/path', () => {
   assert.strictEqual(pairingUrl('https://host.ts.net:8443/serve', 'tok'), 'https://host.ts.net:8443/#token=tok');
 });
 
-// ---- POST /api/login ------------------------------------------------------
-
 test('POST /api/login with valid bearer -> 204 + a durable Set-Cookie (HttpOnly/SameSite=Strict/Path=//Max-Age)', async () => {
   const app = serve();
   const { status, headers } = await request(app, 'POST', '/api/login', {
@@ -90,7 +85,6 @@ test('POST /api/login with valid bearer -> 204 + a durable Set-Cookie (HttpOnly/
   assert.match(cookie, /SameSite=Strict/);
   assert.match(cookie, /Path=\//);
   assert.match(cookie, /Max-Age=\d+/);
-  // The minted cookie value verifies against the signing secret.
   const value = cookie.slice(`${COOKIE_NAME}=`.length).split(';')[0];
   assert.strictEqual(verify(value, SECRET).ok, true);
 });
@@ -136,8 +130,6 @@ test('POST /api/login with no credentials at all -> 401, no Set-Cookie', async (
   assert.strictEqual(headers['set-cookie'], undefined);
 });
 
-// ---- GET /api/pairing -----------------------------------------------------
-
 test('GET /api/pairing unauthenticated -> 401', async () => {
   const app = serve();
   const { status } = await request(app, 'GET', '/api/pairing');
@@ -153,7 +145,6 @@ test('GET /api/pairing authed (cookie) with tunnel UP -> pairing URL uses tunnel
   const parsed = JSON.parse(body);
   assert.deepStrictEqual(parsed.tunnel, { state: 'up', reason: null });
   assert.strictEqual(parsed.pairingUrl, `https://box.tail1234.ts.net/#token=${TOKEN}`);
-  // Token in the fragment, never a query string.
   assert.ok(parsed.pairingUrl.includes(`#token=${TOKEN}`), 'token after #token=');
   assert.ok(!parsed.pairingUrl.includes('?'), 'no query string in the pairing URL');
   assert.ok(parsed.pairingUrl.startsWith('https://box.tail1234.ts.net/'), 'uses the tunnel host');

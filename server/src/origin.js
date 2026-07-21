@@ -1,16 +1,10 @@
 'use strict';
-// Origin policy shared by the REST CORS config (index.js) and the WS upgrade
-// gate (ws.js). The operator's browser is a bridge: any page it visits can issue
-// requests to localhost, so "listening on localhost" filters nothing by itself.
-// This module decides which *pages* (origins) may talk to the relay:
-//   - non-browser clients (no Origin header) pass — the token is their gate;
-//   - loopback origins pass (the Vite dev client on :5173, a same-machine page);
-//   - same-origin passes (the production client served by this server, or a
-//     tunnel in front of it — the Origin's host equals the request's Host);
-//   - anything else must be allowlisted via AR_CORS_ORIGIN (comma-separated
-//     full origins, e.g. https://relay.example.com).
-// An Origin of "null" (sandboxed iframe, file:// page) fails URL parsing and is
-// denied — such a page has no identity to trust.
+// Origin policy shared by REST CORS (index.js) and the WS upgrade gate (ws.js):
+// the browser is a bridge (any page it visits can hit localhost), so listening on
+// localhost filters nothing by itself. Passes: no-Origin (non-browser,
+// token-gated), loopback, same-origin, or AR_CORS_ORIGIN-allowlisted (comma-
+// separated full origins). An Origin of "null" (sandboxed iframe/file://) fails
+// URL parsing and is denied — such a page has no identity to trust.
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -20,25 +14,21 @@ function parseAllowlist(raw) {
 
 const ALLOWLIST = parseAllowlist(process.env.AR_CORS_ORIGIN);
 
-// Runtime-registered origins: additive to (never a replacement for) the
-// static AR_CORS_ORIGIN allowlist. Populated at startup by the wiring layer
-// once the tunnel supervisor discovers the tailnet URL (see allowRuntimeOrigin
-// below) — a tunneled page's Origin won't necessarily match the request's Host
-// header (unverified proxy Host-passthrough), so it needs its own gate rather
-// than relying on the same-origin check.
+// Additive to (never a replacement for) the static AR_CORS_ORIGIN allowlist —
+// populated once the tunnel supervisor discovers the tailnet URL (see
+// allowRuntimeOrigin below), since a tunneled page's Origin may not match the
+// request's Host (unverified proxy passthrough).
 const RUNTIME_ORIGINS = new Set();
 
-// Registers a full origin (scheme + host + port) so `originAllowed` treats it
-// exactly like an allowlisted origin, regardless of the request's Host header.
-// Idempotent — registering the same origin twice is a no-op (backed by a Set).
+// Registers a full origin so `originAllowed` treats it like an allowlisted one,
+// regardless of the request's Host header. Idempotent (backed by a Set).
 function allowRuntimeOrigin(origin) {
   if (!origin) return;
   RUNTIME_ORIGINS.add(origin);
 }
 
-// origin = the request's Origin header (undefined for non-browser clients),
-// host = its Host header. allowlist is injectable for tests; runtimeOrigins
-// defaults to the module-level set mutated by allowRuntimeOrigin.
+// origin = the request's Origin header (undefined for non-browser clients);
+// host = its Host header. allowlist/runtimeOrigins are injectable for tests.
 function originAllowed(origin, host, allowlist = ALLOWLIST, runtimeOrigins = RUNTIME_ORIGINS) {
   if (origin === undefined || origin === '') return true;
   let url;

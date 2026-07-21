@@ -1,8 +1,6 @@
-// The scroll-to-bottom pill's state math, extracted from TerminalView so the
-// "am I detached from the tail, and how many lines have I missed" logic is a
-// pure reducer rather than imperative bookkeeping tangled into xterm event
-// handlers. No component-test harness exists (CLAUDE.md), so the counting rules
-// live here and are unit-tested directly.
+// The scroll-to-bottom pill's state math: "am I detached from the tail, and
+// how many lines have I missed" as a pure reducer, kept out of the xterm
+// event handlers so the counting rules are unit-tested directly.
 
 export interface PillState {
   // true when the viewport is pinned to the newest output (no pill shown).

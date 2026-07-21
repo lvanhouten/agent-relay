@@ -11,10 +11,9 @@ import { ToastHost } from './chrome/ToastHost.jsx';
 import styles from './App.module.scss';
 
 export default function App() {
-  // 'boot' is a transient loading state — first paint decides among the
-  // three boot paths (fragment login, ambient-cookie probe, manual form)
-  // before committing to 'login' or 'sessions', so a valid cookie or a QR
-  // fragment never flashes the login form first.
+  // 'boot' is transient: first paint decides among fragment login,
+  // ambient-cookie probe, or manual form before committing to 'login' or
+  // 'sessions', so a valid cookie/QR fragment never flashes the login form.
   const [screen, setScreen] = React.useState('boot');
   const [host, setHost] = React.useState('');
   const [loginError, setLoginError] = React.useState('');
@@ -22,11 +21,11 @@ export default function App() {
     () => localStorage.getItem('ar-theme') ?? 'dark'
   );
 
-  // Shell selection (glossary: "Shell selection"). Measured ONCE at page load
-  // and sticky for the window's lifetime — no resize listener, so crossing the
-  // 768px/portrait boundary after load never swaps shells. The manual override
-  // lives in sessionStorage (per-window: a desk-side "force desktop" must not
-  // leak into a phone-over-RDP window sharing the origin). See core/shellSelection.ts.
+  // Shell selection: measured once at load, sticky for the window's lifetime -
+  // no resize listener, so crossing the layout boundary never swaps shells.
+  // Override lives in sessionStorage (per-window, so a desk "force desktop"
+  // can't leak into a phone-over-RDP window sharing the origin). See
+  // core/shellSelection.ts.
   const [shell, setShell] = React.useState(() =>
     decideShell({
       width: window.innerWidth,
@@ -40,14 +39,9 @@ export default function App() {
     return next;
   });
 
-  // Captured once via useState's lazy initializer — NOT re-read inside the
-  // boot effect below. React 18 StrictMode double-invokes effects in dev
-  // (mount -> cleanup -> mount again) to surface missing-cleanup bugs; if the
-  // token were read from window.location.hash inside the effect, the first
-  // invocation's history.replaceState would strip it before the second
-  // invocation ever ran, silently losing the fragment (and the stale-pairing
-  // error path) on every dev boot. The lazy initializer runs against the
-  // still-intact hash regardless of how many times React invokes it.
+  // Captured via useState's lazy initializer, not re-read in the effect below:
+  // StrictMode's dev double-invoke would otherwise strip the hash on the first
+  // pass and lose the fragment before the second invocation ever ran.
   const [fragmentToken] = React.useState(() => readFragmentToken(window.location.hash));
 
   React.useEffect(() => {
@@ -55,11 +49,9 @@ export default function App() {
     localStorage.setItem('ar-theme', theme);
   }, [theme]);
 
-  // First-paint boot decision. The fragment is stripped from the address bar
-  // immediately, before either network call the decision might make — a
-  // rotated/stale token still leaves no trace in the URL. decideBoot itself is
-  // pure (client/src/core/boot.ts); this effect only wires it to the real
-  // fragment/login/probe calls.
+  // The fragment is stripped from the address bar before either network call,
+  // so a rotated/stale token leaves no trace in the URL. decideBoot itself is
+  // pure (core/boot.ts); this effect just wires it to the real calls.
   React.useEffect(() => {
     let cancelled = false;
 
@@ -105,14 +97,10 @@ export default function App() {
           onConnect={(h) => { setHost(h); setScreen('sessions'); }}
         />
       )}
-      {/* Authenticated: the desktop shell is one master-detail workspace, the
-          mobile shell its own screen stack — each owns its data layer + create
-          dialog over the shared core. Both sub-navigate internally, so App only
-          gates on the authenticated `sessions` state. The shell toggle is
-          reachable from both (sidebar / sessions header). ToastProvider wraps
-          both so their data layers (useSessions) and create flows can push
-          in-app toasts; the host renders corner-anchored on desktop,
-          bottom-anchored on the narrower mobile stack. */}
+      {/* Each shell owns its data layer + create dialog and sub-navigates
+          internally; App only gates on authenticated `sessions` state.
+          ToastProvider wraps both so their data layers can push in-app toasts;
+          host renders corner-anchored on desktop, bottom-anchored on mobile. */}
       {screen === 'sessions' && (
         <ToastProvider>
           {shell === 'desktop' ? (

@@ -1,14 +1,10 @@
-// Reads the pairing token carried in a URL fragment (`#token=<value>`) — the
-// QR-pairing handoff (PRD.md's pairing-endpoints brief prints
-// `https://<tunnel-host>/#token=<access token>` as a QR code). Fragments never
-// reach the server (no Referer, no server access log line, unlike a query
-// string), which is why the token rides here instead of `?token=`.
+// Reads the pairing token from a URL fragment (`#token=<value>`), used instead
+// of `?token=` because fragments never reach the server (no Referer, no
+// access-log line).
 //
-// Deliberately window-free: callers pass `location.hash` (or `.href` to
-// stripFragment) so this module stays pure and unit-testable. The strip side
-// effect itself — `history.replaceState` on the stripped href, done
-// immediately after reading and before any network call — belongs to the
-// caller (client-boot-flow brief), not here.
+// Window-free by design: callers pass `location.hash`/`.href` so this stays
+// pure. The strip side effect (`history.replaceState`, done before any network
+// call) belongs to the caller, not here.
 
 // Accepts the hash with or without its leading '#' (callers may pass
 // `location.hash`, which always includes it, or a bare fragment body).
@@ -17,9 +13,8 @@ export function readFragmentToken(hash: string): string | null {
   const body = hash.startsWith('#') ? hash.slice(1) : hash;
   if (!body) return null;
 
-  // Only the first '&'-delimited segment is considered — the pairing URL
-  // shape is exactly one key. A malformed/extra segment after '&' doesn't
-  // resurrect a non-pairing fragment into a match.
+  // Only the first '&'-delimited segment counts — the pairing URL is exactly
+  // one key, so a malformed/extra segment can't resurrect a non-match.
   const first = body.split('&', 1)[0];
   const eq = first.indexOf('=');
   if (eq === -1) return null;

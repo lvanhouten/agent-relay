@@ -1,8 +1,6 @@
 'use strict';
-// api.js response-code routing tests. Verifies the board-unreachable contract
-// end-to-end at the HTTP layer: a down board is a 503 on POST and DELETE, a
-// genuine "no such line" is a 404, and a non-board error still 500s via
-// the error handler. Uses the real Express router with a fake sessions store.
+// api.js response-code routing: board-down -> 503, "no such line" -> 404,
+// other errors -> 500, via the real Express router + a fake sessions store.
 const test = require('node:test');
 const assert = require('node:assert');
 const express = require('express');
@@ -18,8 +16,7 @@ function serve(sessions, notifiers = [], apiOpts) {
   const app = express();
   app.use(express.json());
   app.use('/api', createAPI(sessions, notifiers, apiOpts));
-  // The real handler (index.js's own), not a hand-rolled duplicate that could
-  // drift out of sync and go uncovered.
+  // index.js's real errorHandler, not a duplicate that could drift uncovered.
   app.use(errorHandler);
   return app;
 }
@@ -190,9 +187,8 @@ test('POST /notify -> 503 when the cwd resolution RPC finds the board down', asy
   assert.strictEqual(status, 503);
 });
 
-// --- POST /notify url policy: the deep link rides a TRUSTED push notification,
-// so it is default-deny (rejected unless AR_NOTIFY_URL_ORIGIN names the one
-// allowed origin) and compared by parsed origin, never a string prefix. ---
+// --- POST /notify url: default-deny; only AR_NOTIFY_URL_ORIGIN's origin
+// passes, matched by parsed origin, never a string prefix ---
 
 test('POST /notify url -> 400 when no origin is configured (default-deny), sink never reached', async () => {
   const seen = [];

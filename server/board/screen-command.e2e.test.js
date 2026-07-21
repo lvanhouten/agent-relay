@@ -1,15 +1,13 @@
 'use strict';
-// Integration guard for the `screen` control command. The live-line path builds
-// a real @xterm/headless emulator from a line's actual scrollback + live feed,
-// and the resize path is keyed by a persistent control socket — neither is
-// reachable from a pure unit test, so this spawns a REAL board daemon on an
-// isolated pipe and drives a real line end to end: seeded read, live-feed read,
-// resize tracking, and the two DISTINCT failure replies (never-existed vs exited).
+// Guards the `screen` control command: the live-line path builds a real @xterm/headless
+// emulator from a line's scrollback + live feed, and resize is keyed by a persistent
+// control socket - neither reachable from a unit test. This spawns a real board and drives
+// a real line through seeded read, live-feed read, resize tracking, and the two distinct
+// failure replies (never-existed vs exited).
 //
-// The pipe override must be set before lib.js is required (PIPE_BASE is read at
-// module load). node --test runs each test file in its own process, so this
-// can't leak into the other board tests. Every RPC below goes through this
-// isolated namespace — a bare RPC would hit the production board.
+// AGENT_RELAY_PIPE must be set before lib.js is required (PIPE_BASE reads it at load);
+// every RPC below goes through this isolated namespace - a bare RPC would hit the
+// production board.
 process.env.AGENT_RELAY_PIPE = `ar-screen-test-${process.pid}`;
 
 const test = require('node:test');
@@ -31,15 +29,13 @@ async function pollFor(fn, { timeout = 10000, interval = 150 } = {}) {
   }
 }
 
-// Highest TICK<n> currently rendered on the grid (older ticks scroll off the top
-// of the visible rows). -1 when none are present yet.
+// Highest TICK<n> on the grid (older ticks scroll off top); -1 when none present yet.
 function maxTick(grid) {
   let max = -1;
   for (const m of grid.matchAll(/TICK(\d+)/g)) max = Math.max(max, Number(m[1]));
   return max;
 }
 
-// A shell invocation that exits on its own with code 3.
 const exitShell = process.platform === 'win32'
   ? { shell: 'cmd.exe', args: ['/c', 'exit 3'] }
   : { shell: 'sh', args: ['-c', 'exit 3'] };
@@ -54,7 +50,6 @@ test('screen command: seeded live read, live-feed freshness, resize tracking, an
     try { fs.unlinkSync(lib.secretPath()); } catch { /* best effort */ }
   });
 
-  // (1) An id that never existed: ok:false, ended:false.
   const none = await rpc({ cmd: 'screen', id: 'no-such-line' });
   assert.strictEqual(none.ok, false, 'never-existed line is not ok');
   assert.strictEqual(none.ended, false, 'never-existed is not an exit');
@@ -65,8 +60,8 @@ test('screen command: seeded live read, live-feed freshness, resize tracking, an
   const r = await rpc({ cmd: 'new', open: false, name: 'screenprobe', shell: process.execPath, args: ['-e', probe] });
   assert.strictEqual(r.ok, true, 'board spawned the screen probe line');
 
-  // (2) First screen read: lazy-init seeds from scrollback, so the frame the line
-  // already produced is present immediately, at the line's PTY dims (defaults).
+  // Lazy-init seeds from scrollback, so already-produced output appears immediately,
+  // at the line's PTY defaults.
   const first = await pollFor(async () => {
     const s = await rpc({ cmd: 'screen', id: r.id });
     return (s.ok && maxTick(s.grid) >= 0) ? s : null;
@@ -80,16 +75,14 @@ test('screen command: seeded live read, live-feed freshness, resize tracking, an
     'cursor is reported as integer row/col');
   const firstMax = maxTick(first.grid);
 
-  // (3) Live feed: a subsequent read reflects newer output (higher tick).
   const later = await pollFor(async () => {
     const s = await rpc({ cmd: 'screen', id: r.id });
     return (s.ok && maxTick(s.grid) > firstMax) ? s : null;
   });
   assert.ok(later, 'a later read shows newer output — the live feed keeps the emulator current');
 
-  // (4) Resize tracking. The resize command is keyed by the (long-lived) control
-  // socket that sent it — an rpc() socket closes immediately and would revert the
-  // size — so hold one open across the read, then drop it.
+  // Resize is keyed by the sending control socket; a one-shot rpc() socket closing
+  // would revert it, so hold one open across the read.
   const ctl = await lib.connectControl({ autostart: false });
   ctl.on('data', () => {});   // drain; resize sends no reply
   ctl.write(JSON.stringify({ cmd: 'resize', id: r.id, cols: 40, rows: 12 }) + '\n');
@@ -102,8 +95,6 @@ test('screen command: seeded live read, live-feed freshness, resize tracking, an
   const widest = Math.max(0, ...resized.grid.split('\n').map(l => l.length));
   assert.ok(widest <= 40, 'the grid is laid out to the new width — no row exceeds it');
 
-  // (5) An exited line: ok:false, ended:true, carrying its exit code — and this
-  // reply must be DISTINCT from the never-existed one, not merely both falsy.
   const dead = await rpc({ cmd: 'new', open: false, name: 'diesoon', shell: exitShell.shell, args: exitShell.args });
   assert.strictEqual(dead.ok, true, 'board spawned the self-exiting line');
   assert.ok(await pollFor(async () =>

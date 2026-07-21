@@ -1,9 +1,5 @@
 'use strict';
-// Access-secret tests (the named-pipe read-disclosure fix). The secret helpers
-// are the boundary that replaces a pipe security descriptor Node can't set, so
-// the generate/persist/read round-trip and the constant-time compare get pinned
-// here. writeBootSecret/readSecret take an injectable file path so the tests hit
-// a scratch file, never the real per-user secret under %LOCALAPPDATA%.
+// Secret round-trip/compare replace a pipe ACL Node can't set; tests use an injectable path, never the real %LOCALAPPDATA% secret.
 const test = require('node:test');
 const assert = require('node:assert');
 const os = require('os');
@@ -31,13 +27,8 @@ test('readSecret returns null when no secret file exists (board not up)', () => 
   assert.strictEqual(readSecret(path.join(os.tmpdir(), 'ar-nonexistent-' + process.pid)), null);
 });
 
-// sendSecret gates the handshake on the secret being READY on disk. The board
-// persists its secret just after binding the pipe, so a client can
-// connect in the gap before the file exists — or catch it empty, since
-// writeFileSync truncates to 0 bytes before writing. Presenting an empty secret
-// there gets the socket rejected+destroyed ("board closed the connection before
-// replying") — the concurrent-load e2e flake. sendSecret must return false (and
-// write nothing) so the caller retries instead.
+// sendSecret must return false (write nothing) for a missing or truncated-empty secret file
+// (writeFileSync truncates before writing) so callers retry instead of sending a broken secret.
 function fakeSock() {
   const writes = [];
   return { writes, write(s) { writes.push(s); } };
@@ -70,24 +61,18 @@ test('secretEqual: exact match only, constant-time-safe on type/length', () => {
   assert.strictEqual(secretEqual(s, null), false);
 });
 
-// --- makeHandshake: the shared pre-auth handshake for both pipe planes ---
-// The cap matters: without it, a newline-less stream grows the accumulator until
-// V8's max-string-length RangeError throws inside the 'data' listener and crashes
-// the whole daemon.
+// Cap matters: uncapped, a newline-less stream grows till V8's max-string RangeError crashes the daemon.
 
 test('makeHandshake: a newline-less stream past the cap returns overflow, not unbounded growth', () => {
   const gate = makeHandshake('sekret', { cap: 16 });
   // Under the cap: still accumulating, no decision yet.
   assert.deepStrictEqual(gate.feed(Buffer.from('12345678')), { type: 'pending' });
-  // Crossing the cap with still no newline: the caller is told to destroy the
-  // socket instead of letting the string grow toward the RangeError crash.
   assert.deepStrictEqual(gate.feed(Buffer.from('9abcdefghij')), { type: 'overflow' });
 });
 
 test('makeHandshake: the real default cap is bounded well below any crash threshold', () => {
   const gate = makeHandshake('sekret');
-  // A big newline-less blast at the production cap still overflows (does not grow
-  // without limit). MAX_PREAUTH_BYTES is a few KB, nowhere near V8's string limit.
+  // MAX_PREAUTH_BYTES is a few KB, nowhere near V8's string limit; a blast at cap still overflows, not grows unbounded.
   assert.strictEqual(gate.feed(Buffer.from('x'.repeat(MAX_PREAUTH_BYTES + 1))).type, 'overflow');
 });
 
@@ -114,9 +99,7 @@ test('makeHandshake: the secret line may arrive split across multiple chunks', (
   assert.deepStrictEqual(gate.feed(Buffer.from('\n')), { type: 'accept', rest: '' });
 });
 
-// --- makeCommandBuffer: the post-auth control-plane accumulator + cap. The
-// pre-auth cap lives in makeHandshake above; this is the other daemon-crash shape
-// — an oversized newline-less command from an already-authed client.
+// Post-auth cap (pre-auth cap is makeHandshake, above) guards the same daemon-crash shape post-auth.
 test('makeCommandBuffer: extracts complete newline-terminated command lines, keeps the tail', () => {
   const cmd = makeCommandBuffer();
   assert.deepStrictEqual(cmd.feed('{"cmd":"list"}\n{"cmd":"end"'), { lines: ['{"cmd":"list"}'], overflow: false });
@@ -131,8 +114,7 @@ test('makeCommandBuffer: an oversized newline-less command flags overflow instea
 });
 
 test('makeCommandBuffer: seeded leftover bytes are drained by feed("") right after auth', () => {
-  // mirrors board.js: makeCommandBuffer(r.rest) then feed('') to run a command
-  // that arrived bundled in the same chunk as the secret line.
+  // Mirrors board.js: a command bundled in the same chunk as the secret line is drained via feed('').
   const cmd = makeCommandBuffer('{"cmd":"list"}\n');
   assert.deepStrictEqual(cmd.feed(''), { lines: ['{"cmd":"list"}'], overflow: false });
 });

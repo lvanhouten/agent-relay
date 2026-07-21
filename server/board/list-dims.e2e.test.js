@@ -1,14 +1,12 @@
 'use strict';
-// Integration guard for the spectator-attach dims contract: the `list` reply
-// carries each live line's current PTY `cols`/`rows`. A
-// spectator pane adopts these and CSS-scales rather than resizing the shared
-// line, so the field must reflect the real pty grid — not a spawn-time constant
-// that drifts. The pure board.test.js can't reach this: the fields are read off
-// a real node-pty (`s.pty.cols`/`rows`), so this spawns a REAL board on an
-// isolated pipe and reads them back end to end.
+// Guards the spectator-attach dims contract (ADR-0005): `list` carries each live line's
+// current PTY cols/rows so a spectator pane can CSS-scale instead of resizing the shared
+// line - the field must track the real pty grid, not a stale spawn-time constant.
+// board.test.js can't reach this (fields come off a real node-pty), so this spawns a real
+// board on an isolated pipe and reads them back end to end.
 //
-// The pipe override must be set before lib.js is required (PIPE_BASE is read at
-// module load). node --test runs each file in its own process, so it can't leak.
+// AGENT_RELAY_PIPE must be set before lib.js is required (PIPE_BASE reads it at load);
+// node --test isolates each file's process so it can't leak.
 process.env.AGENT_RELAY_PIPE = `ar-listdims-test-${process.pid}`;
 
 const test = require('node:test');

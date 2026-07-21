@@ -1,16 +1,14 @@
 'use strict';
-// Board-down classification tests for BoardSessions: list()/get(), spawn(), and
-// kill() must all throw BoardUnreachableError when the board is down, so api.js
-// can answer 503 (not 500/404).
+// list/get/spawn/kill must all throw BoardUnreachableError when the board
+// is down, so api.js can 503 (not 500/404).
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 const { BoardSessions, BoardUnreachableError, homeRelativeCwd } = require('./sessions');
 const { DEFAULT_IDLE_MS } = require('../board/wait');
 
-// homeRelativeCwd collapses a home-rooted cwd to `~/` for display. Pin `home`
-// explicitly (don't read the runner's real HOME) and build paths with the
-// native separator so the one suite proves both platforms' behavior.
+// Pin `home` explicitly (never the runner's real HOME) and use the native
+// separator so one suite proves both platforms' behavior.
 const HOME = process.platform === 'win32' ? 'C:\\Users\\dev' : '/home/dev';
 const j = (...segs) => [HOME, ...segs].join(path.sep);
 
@@ -212,11 +210,10 @@ test('get(): finds a tombstone by id (so the WS hub can refuse it as exited)', a
   assert.strictEqual(got.status, 'exited');
 });
 
-// --- needs-input: a hook-set flag overlays 'needs-input' until output/input
-//     moves past it (a web-tier-only Map; the board owns no such notion) ---
+// --- needs-input: hook-set flag overlays status until output moves past it
+//     (a web-tier-only Map; the board owns no such notion) ---
 
-// A line whose last output was `idleMs` ago, evaluated against a fixed clock so
-// the flaggedAt vs last-output comparison is deterministic.
+// A fixed clock makes the flaggedAt-vs-last-output comparison deterministic.
 function attnSessions(idleMs, { NOW = 1_000_000 } = {}) {
   return new BoardSessions({
     now: () => NOW,
@@ -231,9 +228,8 @@ test('flagAttention(): a quiet line (no output since the flag) reports needs-inp
 });
 
 test('list(): output arriving after the flag clears it (stale flag dropped)', async () => {
-  // Flag at t=990s via the public surface (mutable injected clock), then list
-  // at t=1000s with the line's last output 1s ago (idleMs=1000) — output
-  // landed AFTER the flag, so the agent moved on.
+  // Flag at t=990s, then list at t=1000s with idleMs=1000 (output at
+  // t=999s) — output landed after the flag, so it clears.
   let now = 990_000;
   const s = new BoardSessions({
     now: () => now,
@@ -242,8 +238,8 @@ test('list(): output arriving after the flag clears it (stale flag dropped)', as
   s.flagAttention('1');
   now = 1_000_000; // lastOutputAt (NOW-1000) > flaggedAt (990_000)
   assert.strictEqual((await s.list())[0].status, 'running');
-  // Memory hygiene (the entry is deleted, not just re-evaluated false) has no
-  // public observation — the one place direct field access stays.
+  // Deletion vs. re-evaluated-false isn't publicly observable, so this is
+  // the one place private field access is warranted.
   assert.strictEqual(s._attention.has('1'), false, 'stale flag is pruned once cleared');
 });
 
@@ -267,9 +263,8 @@ test('list(): a flag for a line that has exited is pruned, never resurrected', a
 });
 
 test('list(): a board restart (boot nonce change) voids every attention flag', async () => {
-  // Line ids restart per board boot, so a web tier that outlives a board
-  // restart could hold a flag a REUSED id would inherit — a fresh quiet line
-  // reading needs-input. The boot nonce in the list reply is the restart signal.
+  // Ids restart per board boot; without the boot nonce, a reused id could
+  // inherit a stale flag from before the restart.
   let boot = 'boot-A';
   const s = new BoardSessions({
     now: () => 1_000_000,
@@ -282,8 +277,8 @@ test('list(): a board restart (boot nonce change) voids every attention flag', a
 });
 
 test('toDto(): a non-finite idleMs reads as just-active, never "NaNs ago"', async () => {
-  // ?? only covers null/undefined — a NaN would compare false into 'idle' and
-  // render a NaN relative time on the card.
+  // ?? only covers null/undefined — a NaN would slip through as 'idle' and
+  // render "NaNs ago" on the card.
   const s = new BoardSessions({
     rpc: async () => ({ ok: true, lines: [{ id: '1', name: 'x', shell: 'bash', cwd: '/', pid: 1, idleMs: NaN }] }),
   });
@@ -293,9 +288,8 @@ test('toDto(): a non-finite idleMs reads as just-active, never "NaNs ago"', asyn
 });
 
 test('toDto(): a live line\'s PTY cols/rows are surfaced; a dims-less row omits them (ADR-0005)', async () => {
-  // Spectator panes adopt these dims and CSS-scale (never resize the shared
-  // line). Present only when the board supplies finite dims — an older board,
-  // or a synthesized create/tombstone DTO, carries none and the poll fills in.
+  // Spectator panes adopt these dims + CSS-scale rather than resize; absent
+  // on an older board or a synthesized DTO (the poll fills them in).
   const s = new BoardSessions({
     rpc: async () => ({
       ok: true,
@@ -313,11 +307,8 @@ test('toDto(): a live line\'s PTY cols/rows are surfaced; a dims-less row omits 
 
 // --- flagAttentionByCwd(): the /api/notify cwd fallback (line-id bridge) ---
 
-// Build sessions whose board `list` returns the given lines; case/separator
-// normalization is exercised via the cwds themselves. Fixed clock so the
-// flaggedAt vs last-output comparison in list()'s overlay is deterministic,
-// letting these tests observe flags through the public status instead of the
-// private map (representation-coupled tests).
+// Fixed clock keeps the flaggedAt-vs-output comparison deterministic; tests
+// observe flags via public status, not the private map.
 function cwdSessions(lines) {
   return new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, lines }) });
 }
@@ -372,12 +363,11 @@ test('flagAttentionByCwd(): a board-down list RPC throws BoardUnreachableError (
   );
 });
 
-// --- beacon(): lifecycle beacons give Claude lines an honest status that
-//     supersedes the idleMs heuristic (a web-tier-only Map keyed by line id) ---
+// --- beacon(): lifecycle beacons supersede the idleMs heuristic with an
+//     honest status (a web-tier-only Map keyed by line id) ---
 
-// Fixed clock so the turnDoneAt-vs-last-output comparison in list()'s overlay is
-// deterministic; a single quiet line (idleMs=13000 -> heuristic idle) unless a
-// beacon supersedes it.
+// Fixed clock for a deterministic turnDoneAt-vs-output comparison; a quiet
+// line (idleMs=13000) reads idle unless a beacon supersedes it.
 function beaconSessions(lines, { NOW = 1_000_000, boot = 'boot-A' } = {}) {
   return new BoardSessions({ now: () => NOW, rpc: async () => ({ ok: true, boot, lines }) });
 }
@@ -490,13 +480,9 @@ test('beacon(): a board-down cwd resolution throws BoardUnreachableError (-> 503
   );
 });
 
-// --- Both staleness overlays route through the one _outputLandedAfter
-//     primitive, so a future grace window can't drift between them. Override
-//     the shared primitive and confirm EACH overlay obeys it — if either
-//     _applyAttention or _applyBeacon re-inlined its own `now - idleMs` check,
-//     the override wouldn't reach it and the paired kept/cleared assertions
-//     would diverge from the stub. Mutation-checked: re-inlining either copy
-//     fails the matching case below.
+// Confirms both overlays funnel through the shared _outputLandedAfter (not a
+// re-inlined `now - idleMs` check) — mutation-tested: re-inlining either
+// copy breaks the matching case below.
 const overlayLine = [{ id: '1', cwd: '/r', idleMs: 0 }];
 const overlaySessions = () =>
   new BoardSessions({ now: () => 1_000_000, rpc: async () => ({ ok: true, boot: 'b', lines: overlayLine }) });

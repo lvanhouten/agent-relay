@@ -1,8 +1,6 @@
 'use strict';
-// Credentials-store tests. loadCredentials is pure over an injected env and
-// file path, so persistence is pinned here against a temp dir — never the real
-// %LOCALAPPDATA%\agent-relay\ path (see CLAUDE.md: no test may touch it or RPC
-// the board).
+// loadCredentials is pure over an injected env/path, so persistence is
+// tested against a temp dir, never the real %LOCALAPPDATA%\agent-relay\ path.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

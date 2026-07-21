@@ -6,14 +6,11 @@ import { attentionFor } from '../core/attention.ts';
 import { fleetSummary } from '../core/fleetSummary.ts';
 import styles from './HomePane.module.scss';
 
-// The desktop home/overview: the neutral place to land when no session is
-// selected — a fleet-wide "state of everything" the narrow sidebar list can't
-// give at a glance. Reached by deselecting (the sidebar brand) and shown by
-// default when there's no live session to auto-select. Pure view over the same
-// DTO fields the sidebar/cards read; no server surface of its own.
+// Neutral landing place when no session is selected: a fleet-wide overview
+// the narrow sidebar list can't give at a glance.
 
-// The breakdown chips, in attention precedence. Each maps a summary count to
-// the shared status dot so a category reads the same color here as on a row.
+// Breakdown chips, in attention precedence; each maps to the shared status dot
+// so a category reads the same color here as on a row.
 const BREAKDOWN = [
   { key: 'needsInput', dot: 'attention', label: 'needs input', pulse: true },
   { key: 'turnDone', dot: 'done', label: 'turn done', pulse: false },
@@ -36,9 +33,7 @@ export function HomePane({ sessions, onSelect, onNewSession }) {
     );
   }
 
-  // Sessions worth surfacing as one-tap jumps: a blocked prompt or a finished
-  // turn. Poll order is preserved; the sidebar's Alt+N indices are not repeated
-  // here since this list is a filtered subset, not the full live order.
+  // One-tap jumps for sessions needing attention: a blocked prompt or a finished turn.
   const attention = sessions.filter((s) => s.status === 'needs-input' || s.status === 'turn-done');
 
   return (

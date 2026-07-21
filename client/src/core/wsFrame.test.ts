@@ -1,12 +1,9 @@
-// WS frame parsing — covers the residual case: JSON.parse('null') and other
-// valid-but-non-object frames must not reach a `.type` access that throws inside
-// onmessage and freezes the terminal.
+// Non-object frames (e.g. parsed "null") must never reach a `.type` access, which would freeze onmessage.
 import test from 'node:test';
 import assert from 'node:assert';
 import { parseFrame, isValidDataPayload, isValidExitCode } from './wsFrame.ts';
 
 test('parseFrame: the literal "null" frame returns null, not a throwing value (N4)', () => {
-  // JSON.parse('null') === null, so a naive null.type access throws.
   assert.strictEqual(parseFrame('null'), null);
 });
 
@@ -27,15 +24,11 @@ test('parseFrame: a well-formed object frame passes through', () => {
 });
 
 test('parseFrame: an array is not a dispatchable message', () => {
-  // Arrays are typeof "object"; a msg.type access is harmless (undefined) but this
-  // is still not a valid frame. Current guard admits it (returns the array) — the
-  // downstream `msg.type === ...` simply never matches, so no throw. Documented.
+  // Arrays pass the object check though invalid; harmless — msg.type is undefined on an array, never matches.
   assert.deepStrictEqual(parseFrame('[]'), []);
 });
 
-// isValidDataPayload: parseFrame only guarantees the envelope shape,
-// not a given type's payload shape. A 'data' frame's payload reaches
-// term.write() directly, so anything but a string must be rejected.
+// A 'data' payload reaches term.write() directly, so parseFrame's shape check isn't enough — non-strings reject.
 test('isValidDataPayload: a string payload is valid', () => {
   assert.strictEqual(isValidDataPayload({ type: 'data', payload: 'x' }), true);
 });
@@ -47,10 +40,7 @@ test('isValidDataPayload: a non-string payload is rejected', () => {
   assert.strictEqual(isValidDataPayload({ type: 'data' }), false);
 });
 
-// isValidExitCode: the exit frame's code must be validated at runtime, not
-// just asserted by type. server/src/ws.js only forwards number|null, so both
-// are valid; anything else (missing, string, object) must be rejected so the
-// consumer normalizes it rather than interpolating garbage.
+// server/src/ws.js only forwards number|null; anything else must reject so the consumer normalizes it, not garbage.
 test('isValidExitCode: a numeric or null code is valid', () => {
   assert.strictEqual(isValidExitCode({ type: 'exit', code: 0 }), true);
   assert.strictEqual(isValidExitCode({ type: 'exit', code: 137 }), true);

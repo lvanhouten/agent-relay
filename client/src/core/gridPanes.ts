@@ -1,7 +1,6 @@
-// Pure state transitions for the desktop spectator grid. The grid is
-// an ordered set of session ids rendered as panes; one is "focused"
-// (interactive), the rest are spectators. Kept pure and here so the transitions
-// are unit-tested directly rather than only through DesktopWorkspace.
+// Pure state transitions for the desktop spectator grid: an ordered set of
+// session ids rendered as panes, one "focused" (interactive), rest spectators.
+// Kept pure so transitions are unit-tested directly, not only via DesktopWorkspace.
 
 // Add a pane, preserving order and idempotent on a re-inject.
 export function injectPane(gridIds: string[], id: string): string[] {

@@ -1,8 +1,6 @@
 'use strict';
 // The one constant-time compare shared by auth.js (token) and cookie.js
-// (HMAC signature). Tested here directly so the shared module has its own
-// coverage; the callers' tests (auth.test.js, cookie.test.js) exercise it in
-// situ. One definition, two importers → the two paths can't drift.
+// (HMAC signature) — one definition, two importers, so the paths can't drift.
 const test = require('node:test');
 const assert = require('node:assert');
 const { safeEqual } = require('./safeCompare');
@@ -28,8 +26,7 @@ test('safeEqual: non-string inputs reject (never reach timingSafeEqual)', () => 
 });
 
 test('safeEqual: the same reference is imported by auth.js and cookie.js', () => {
-  // Not exported from either caller, so assert the shared module is a singleton
-  // require (Node module cache) — the structural guarantee that the token path
-  // and the signature path use one implementation.
+  // Not exported from either caller, so this pins the Node require-cache
+  // singleton instead — proof both callers share one implementation.
   assert.strictEqual(require('./safeCompare').safeEqual, safeEqual);
 });

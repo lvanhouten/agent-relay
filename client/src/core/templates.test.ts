@@ -93,8 +93,7 @@ test('uniqueFallbackLabel: same-cwd clash keeps the base label (re-save upsert)'
 });
 
 test('uniqueFallbackLabel: different-cwd clash widens with the parent segment', () => {
-  // '/work/api' and '/home/api' share basename + command word — the second
-  // blank-name save must NOT upsert over the first (a different template).
+  // Same basename+command, different cwd — must NOT upsert over the first (different template).
   const list = [tpl('claude · api', { cwd: '/work/api', command: 'claude' })];
   assert.strictEqual(uniqueFallbackLabel(list, '/home/api', 'claude'), 'claude · home/api');
 });

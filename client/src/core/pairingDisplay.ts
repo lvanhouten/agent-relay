@@ -1,7 +1,5 @@
-// Pure status -> display mapping for the pair-device dialog.
-// Kept in core so the state fan-out (up/down/disabled/unknown) is unit-tested
-// instead of only visible as JSX branches — the dialog itself just renders
-// whatever this returns, plus the QR image when showQr is true.
+// Pure status -> display mapping for the pair-device dialog; the dialog just
+// renders whatever this returns, plus the QR image when showQr is true.
 import type { PairingInfo } from './types.ts';
 
 export interface PairingDisplay {
@@ -12,10 +10,9 @@ export interface PairingDisplay {
   showQr: boolean;
 }
 
-// AR_TUNNEL is the one env var that flips 'disabled' -> 'down'/'up' (see
-// server/src/tunnel.js); the disabled state's reason is always null server-side
-// (nothing failed — tunneling was never asked for), so the fix instruction lives
-// here rather than expecting the endpoint to supply one.
+// AR_TUNNEL flips 'disabled' -> 'down'/'up'; the disabled state's server-side
+// reason is always null (nothing failed, tunneling was never requested), so
+// the fix instruction lives here instead.
 const DISABLED_MESSAGE =
   'Tunneling is off. Set AR_TUNNEL=tailscale (and restart the server) to pair a device from outside this machine.';
 
@@ -32,9 +29,8 @@ export function pairingDisplay(info: PairingInfo): PairingDisplay {
     case 'disabled':
       return { heading: 'Tunneling is disabled', message: DISABLED_MESSAGE, showQr: false };
     default:
-      // An older/newer server could in principle send an unrecognized state
-      // string; render it rather than throwing (types.ts keeps Session.status
-      // as a plain string for the same forward-compat reason).
+      // An unrecognized state string is rendered, not thrown — same
+      // forward-compat reason types.ts keeps Session.status a plain string.
       return {
         heading: `Unknown tunnel state: ${info.tunnel.state}`,
         message: info.tunnel.reason,

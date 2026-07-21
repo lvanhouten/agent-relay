@@ -1,8 +1,6 @@
 'use strict';
-// Origin-policy tests. The policy is the only thing standing between a drive-by
-// page and the relay when auth is disabled (AR_NO_AUTH=1), so every branch gets
-// pinned: no-Origin clients, loopback, same-origin, the allowlist, and the
-// deny-by-default fall-through (including the unparseable "null" Origin).
+// Origin policy is the only guard against a drive-by page when
+// AR_NO_AUTH=1 — every branch is pinned here.
 const test = require('node:test');
 const assert = require('node:assert');
 const { originAllowed, parseAllowlist, allowRuntimeOrigin } = require('./origin');
@@ -51,9 +49,8 @@ test('parseAllowlist tolerates whitespace and empty entries', () => {
   assert.deepStrictEqual(parseAllowlist(undefined), []);
 });
 
-// Pin test (the original issue demanded this): a tunneled page's Origin must
-// pass the gate even when the request's Host header is something unrelated —
-// the feature must not bet on the tailscale proxy preserving Host passthrough.
+// A tunneled page's Origin must pass even when the Host header is unrelated —
+// must not rely on the proxy preserving Host passthrough.
 test('a runtime-registered tunnel origin passes with a mismatched Host header (pin test)', () => {
   allowRuntimeOrigin('https://machine.tailnet.ts.net');
   assert.strictEqual(

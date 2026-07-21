@@ -1,9 +1,6 @@
 'use strict';
-// Detection + recipe-env tests for detectSpawner. The recipe's `env` is not
-// decoration: the board (a detached daemon with no terminal of its own) spawns
-// the pane process with exactly recipe.env merged in, so any var the launcher
-// tool needs to find the CALLER's current window must be carried here or the
-// pane opens in the wrong place.
+// recipe.env carries what the launcher needs to find the caller's window - the
+// board is a detached daemon with no terminal of its own.
 const test = require('node:test');
 const assert = require('node:assert');
 const { detectSpawner } = require('./spawners');
@@ -16,9 +13,8 @@ test('wezterm: recipe is `wezterm cli spawn` into a new tab (no --new-window)', 
 });
 
 test('wezterm: WEZTERM_PANE is forwarded so the tab lands in the caller\'s current window', () => {
-  // Regression guard: forwarding only WEZTERM_UNIX_SOCKET reaches the mux server
-  // but leaves `wezterm cli spawn` unable to resolve the current pane -> it opens
-  // a NEW WINDOW instead of a tab. Both vars must ride along.
+  // Forwarding only WEZTERM_UNIX_SOCKET reaches the mux but can't resolve the current
+  // pane -> opens a new window instead of a tab; both vars must ride along.
   const r = detectSpawner({ WEZTERM_PANE: '3', WEZTERM_UNIX_SOCKET: '/tmp/wz' });
   assert.strictEqual(r.env.WEZTERM_PANE, '3', 'WEZTERM_PANE must be in the recipe env');
   assert.strictEqual(r.env.WEZTERM_UNIX_SOCKET, '/tmp/wz');

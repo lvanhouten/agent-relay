@@ -9,27 +9,19 @@ import { transcriptFilename, stripAnsi } from '../core/transcript.ts';
 import { FindBar } from '../chrome/FindBar.jsx';
 import styles from './DetailPane.module.scss';
 
-// Alt+digit must escape the terminal so the workspace's document-level listener
-// can select a session even while xterm has focus. TerminalView's passthrough
-// leaves a matching keydown un-consumed; this predicate is the same
-// one the workspace listener uses, so the two can never disagree about what a
-// jump chord is.
+// Same predicate the workspace's document-level listener uses, so Alt+digit escapes
+// the terminal to select a session even while xterm has focus, without disagreement.
 const isJumpChord = (e) => jumpIndexFromKey(e) !== null;
 
-// The terminal detail pane: a slim per-shell toolbar over the shared
-// TerminalView. No composer / key chips (desktop has a keyboard — brief). When
-// the selected session is a tombstone it keeps the dead terminal readable and
-// shows an exit banner instead of retrying the (permanently refused) attach.
-// Rendered only with a session — the no-selection state is the workspace's
-// HomePane, not this component.
+// A tombstone keeps the dead terminal readable with an exit banner instead of
+// retrying the refused attach. Rendered only with a session; no-selection is HomePane.
 export function DetailPane({ session, theme, onKill, onNewInDir }) {
   const viewRef = React.useRef(null);
   const [connStatus, setConnStatus] = React.useState('connecting');
   const [showSearch, setShowSearch] = React.useState(false);
   const [searchResults, setSearchResults] = React.useState({ resultIndex: -1, resultCount: -1 });
 
-  // Search UI is per-selection; reset it when the attached session changes so a
-  // stale query/readout doesn't carry across to a different terminal.
+  // Reset search UI on session change so a stale query doesn't carry across.
   const sessionId = session?.id ?? null;
   React.useEffect(() => {
     setShowSearch(false);
@@ -40,9 +32,7 @@ export function DetailPane({ session, theme, onKill, onNewInDir }) {
   if (!session) return null;
 
   const exited = session.status === 'exited';
-  // Tombstone decode (dot / crash predicate / status word) is shared with the
-  // sidebar row and session card via core/tombstoneView.ts so the three can't
-  // drift; the detail banner below builds its fuller sentence from tomb.killed.
+  // Shared with the sidebar row via core/tombstoneView.ts so the two can't drift.
   const tomb = exited ? tombstoneView(session) : null;
 
   const dotStatus = exited ? tomb.dot
@@ -126,9 +116,7 @@ export function DetailPane({ session, theme, onKill, onNewInDir }) {
         </div>
       )}
 
-      {/* key by session id: switching selection remounts so the WS attaches to
-          the newly-selected line (and a reused id after a board restart can't
-          keep a stale terminal). */}
+      {/* Keyed by session id: remounts on switch so a reused id after a board restart can't keep a stale terminal. */}
       <TerminalView
         key={session.id}
         ref={viewRef}

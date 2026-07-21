@@ -14,9 +14,8 @@ import type { ConnStatus, TerminalViewMode, SearchResults } from './types.ts';
 import { shouldXtermConsumeKey } from './keyPassthrough.ts';
 import styles from './TerminalView.module.scss';
 
-// Search highlight colors — a warm yellow that reads on both the dark and light
-// xterm themes. Enabling decorations is also what makes SearchAddon compute a
-// reliable resultCount for the find bar's "n/m" readout.
+// Warm yellow that reads on both themes; decorations must stay on so
+// SearchAddon computes resultCount for the find bar's "n/m" readout.
 const SEARCH_OPTS = {
   decorations: {
     matchBackground: '#7a6a1e',
@@ -29,22 +28,18 @@ const SEARCH_OPTS = {
 export interface TerminalViewProps {
   sessionId: string;
   theme: string;
-  // 'interactive' (the default): fit xterm to the container and push the size to
-  // the board. 'spectator': adopt the reported PTY dims (cols/rows below) and
-  // CSS-scale the grid to fit the pane, never fit, never send resize — a
-  // watch-only pane for the desktop grid. Mode is fixed for the
-  // component's life; a switch is a remount by the consumer.
+  // 'interactive' (default): fits xterm, pushes size to the board. 'spectator':
+  // adopts reported PTY dims (below), CSS-scales, never resizes — the desktop
+  // grid's watch-only panes. Fixed per mount; a switch is a remount.
   mode?: TerminalViewMode;
-  // Reported PTY grid from the session DTO/poll. Spectator mode adopts these and
-  // rescales when they change; ignored in interactive mode (xterm's fit owns the
-  // size there).
+  // Reported PTY grid from the session DTO/poll. Spectator adopts + rescales on
+  // change; ignored in interactive mode (xterm's own fit owns size there).
   cols?: number;
   rows?: number;
   // Ctrl+D inside the terminal — detach without ending the session.
   onDetach?: () => void;
-  // Ctrl+F inside the terminal — the screen opens its find bar. Intercepted here
-  // (like Ctrl+D) so xterm doesn't swallow it and the browser's own find never
-  // takes over while the terminal has focus.
+  // Ctrl+F — opens the find bar. Intercepted (like Ctrl+D) so xterm doesn't
+  // swallow it and the browser's own find never fires while focused.
   onSearchToggle?: () => void;
   // Fires whenever the WS connection status changes, incl. the initial
   // 'connecting'. For chrome (status dots) outside this component.
@@ -52,21 +47,18 @@ export interface TerminalViewProps {
   // Live search match position/count from the search addon, for the find bar's
   // readout. resultCount is -1 when the addon hasn't computed it.
   onSearchResults?: (results: SearchResults) => void;
-  // When provided and it returns true for a keydown, xterm does not consume
-  // that event (nothing is written to the PTY) and the native event keeps
-  // bubbling, so a document-level listener still sees it — the escape hatch
-  // the desktop shell's Alt+digit session-jump chord needs. Absent, behavior
-  // is unchanged from today (xterm handles every keydown itself).
+  // Returning true for a keydown lets it bubble past xterm unconsumed (nothing
+  // sent to the PTY) — the escape hatch the desktop Alt+digit jump chord needs.
+  // Absent, xterm consumes every keydown as usual.
   passthroughKeys?: (e: KeyboardEvent) => boolean;
 }
 
 export interface TerminalViewHandle {
   // Current xterm selection, for clipboard chrome outside the component.
   getSelection(): string;
-  // Write raw bytes down the WS input frame — the composer bar and canned-key
-  // chips (mobile answer mode) push their sequences through here. Returns false
-  // when the socket isn't open (the bytes were dropped, not queued) so callers
-  // can keep the user's text rather than clear it as if delivered.
+  // Writes raw bytes to the WS input frame (composer + canned-key chips use
+  // this). Returns false if the socket isn't open — bytes were dropped, not
+  // queued — so the caller should keep the user's text instead of clearing it.
   send(data: string): boolean;
   // The client-side buffer as text (replayed scrollback since attach, capped at
   // the board's per-line chunk limit) — for the transcript download.
@@ -78,12 +70,9 @@ export interface TerminalViewHandle {
   clearSearch(): void;
 }
 
-// The terminal proper: owns the xterm instance, its themes, the mount dance
-// (fit timing, font-load refit, padding-on-wrapper-not-mount-node), the session
-// WebSocket, and the scroll-to-bottom pill (furniture bound to live scroll
-// state, kept internal rather than plumbed out). Chrome that drives the terminal
-// from outside — find bar, composer, header buttons — stays in the consuming
-// screen and reaches in through the imperative handle.
+// Owns the xterm instance, themes, mount dance (fit timing, font-load refit,
+// wrapper padding), the session WebSocket, and the scroll-to-bottom pill.
+// Outside chrome (find bar, composer, header) drives it via the imperative handle.
 export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewProps>(
   function TerminalView({ sessionId, theme, mode = 'interactive', cols, rows, onDetach, onSearchToggle, onStatusChange, onSearchResults, passthroughKeys }, handleRef) {
     const wrapperRef = React.useRef<HTMLDivElement | null>(null);
@@ -101,12 +90,10 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       setPill(next);
     }, []);
 
-    // These refs exist to bridge the useSessionWS socket effect, which
-    // intentionally excludes its callbacks from its dependency array (so a callback
-    // identity change doesn't tear down and reconnect the WS). The stable callbacks
-    // passed to the hook read through these refs; the xterm mount effect below fills
-    // them in. Without the refs the hook would either reconnect on every render or
-    // capture stale closures. See useSessionWS's exhaustive-deps opt-out.
+    // Bridge refs for useSessionWS's callbacks (excluded from its deps so a
+    // callback identity change doesn't reconnect the WS); the mount effect below
+    // fills them in. Without these the hook would reconnect every render or
+    // capture stale closures.
     const onDataRef = React.useRef<((data: string) => void) | null>(null);
     const onExitRef = React.useRef<((code: number | null) => void) | null>(null);
     const refitRef = React.useRef<(() => void) | null>(null);
@@ -130,19 +117,15 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     const { connStatus, send, resize } = useSessionWS(sessionId, undefined, {
       onData: React.useCallback((data: string) => onDataRef.current?.(data), []),
       onExit: React.useCallback((code: number | null) => onExitRef.current?.(code), []),
-      // On (re)connect the socket is finally OPEN, so push the fitted size to the
-      // board — the mount-time fit fires before the WS opens and gets dropped. On a
-      // reconnect, reset the terminal first so the board's scrollback replay repaints
-      // current state instead of appending a duplicate below the stale buffer; the
-      // pill resets with it since the buffer is now empty and pinned to bottom.
+      // Socket open: push the fitted size (the mount-time fit fires before the WS
+      // opens and gets dropped). On reconnect, reset first so the replay repaints
+      // rather than appending below stale content; the pill resets with the empty buffer.
       onReady: React.useCallback((reconnected: boolean) => {
         if (reconnected) {
           termRef.current?.reset();
           setPillState(PILL_INIT);
-          // The reset emptied the buffer, so search decorations and the find
-          // bar's n/m readout refer to text that no longer exists — clear both
-          // (a stale "3/5" over a freshly-replayed buffer with zero highlights
-          // otherwise survives until the next keystroke).
+          // Buffer reset invalidates search decorations and the n/m readout —
+          // clear both, or a stale "3/5" survives over the freshly-replayed buffer.
           searchRef.current?.clearDecorations();
           searchRef.current?.clearActiveDecoration?.();
           onSearchResultsRef.current?.({ resultIndex: -1, resultCount: -1 });
@@ -195,25 +178,19 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
 
       let disposed = false;
       let rafId = 0;
-      // Interactive: fit xterm to the container and push the size to the board.
-      // The trailing refresh forces a full client-side repaint: a (re)focused
-      // pane fits/resizes in quick succession and xterm's renderer can be left
-      // with a partially-painted frame (stale rows, a phantom scrollbar);
-      // refresh() repaints from the buffer with no PTY round-trip.
+      // Interactive: fit + push size to the board. The trailing refresh forces a
+      // full repaint — a rapid refocus fit/resize can leave xterm's renderer with
+      // a stale partial frame; refresh() repaints from the buffer, no PTY round-trip.
       const safeFit = () => {
         if (disposed || !containerRef.current) return;
         fit.fit();
         resize(term.cols, term.rows);
         term.refresh(0, term.rows - 1);
       };
-      // Spectator: adopt the reported PTY dims and CSS-scale the whole grid down
-      // to fit the pane — never fit, never send resize (that would clamp the
-      // shared line). `.xterm-screen`'s offset size is the true grid pixel box
-      // (transform-independent). The mount must be sized to that natural box
-      // first: left at 100% it's the pane size, so the wide grid overflows the
-      // viewport (clip + scrollbar) and scaling the pane-sized box just shrinks
-      // the visible sliver. Size mount = natural, THEN scale to fit. Top-left
-      // origin; the wrapper clips.
+      // Spectator: CSS-scale the whole grid to fit, never fit/resize (would clamp
+      // the shared line). `.xterm-screen`'s offset size is the true, transform-
+      // independent grid box — size the mount to that natural box FIRST, then
+      // scale; scaling a pane-sized mount first just shrinks a clipped sliver.
       const applyScale = () => {
         const wrap = wrapperRef.current, mount = containerRef.current;
         if (disposed || !wrap || !mount) return;
@@ -222,9 +199,8 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         const w = screen.offsetWidth, h = screen.offsetHeight;
         mount.style.width = `${w}px`;
         mount.style.height = `${h}px`;
-        // clientWidth/Height include padding, but the mount fills only the
-        // content box — scale to that, or the thumbnail overscales and clips
-        // into the gutter.
+        // clientWidth/Height include padding, but the mount fills only the content
+        // box — scale to that or the thumbnail overscales into the gutter.
         const cs = getComputedStyle(wrap);
         const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
@@ -232,12 +208,10 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         mount.style.transformOrigin = 'top left';
         mount.style.transform = `scale(${scale})`;
       };
-      // Reconfigure the live terminal for the given mode without reattaching.
-      // Interactive reclaims the pane (drop the scale transform, accept input,
-      // fit + resize — re-entering the board clamp); spectator adopts the PTY
-      // dims and CSS-scales, captures no input, sends no resize (leaving the
-      // clamp). The relayout is deferred a frame so xterm has flushed the resize
-      // before applyScale measures `.xterm-screen`.
+      // Reconfigures the live terminal in place, no reattach. Interactive: drop
+      // scale, accept input, fit+resize (re-enters the board clamp). Spectator:
+      // adopt PTY dims, CSS-scale, no input, no resize (stays clamped). Deferred a
+      // frame so xterm flushes the resize before applyScale measures `.xterm-screen`.
       const applyMode = (spec: boolean) => {
         if (disposed) return;
         const mount = containerRef.current;
@@ -276,10 +250,9 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       // Runs before xterm's own keydown handling — see keyPassthrough.ts.
       term.attachCustomKeyEventHandler((e) => shouldXtermConsumeKey(passthroughKeysRef.current, e));
 
-      // Scroll-pill bookkeeping: a line feed while detached counts toward the
-      // "n new" badge; any scroll recomputes pinned-ness. onScroll's argument is
-      // the new viewportY, but we read both positions off the buffer so the two
-      // events share one source.
+      // A line feed while detached counts toward the "n new" badge; any scroll
+      // recomputes pinned-ness. Both positions are read off the buffer (not
+      // onScroll's arg) so the two events share one source.
       const recomputeScroll = () => {
         const b = term.buffer.active;
         setPillState(pillOnScroll(pillRef.current, b.viewportY, b.baseY));
@@ -287,13 +260,11 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       term.onScroll(recomputeScroll);
       term.onLineFeed(() => setPillState(pillOnLine(pillRef.current)));
 
-      // Reclaim local scrollback scroll from a mouse-grabbing app (Claude Code,
-      // vim, less) and give the phone a working touch scroll xterm 6 otherwise
-      // lacks entirely. The decision + line math is in core/terminalScroll; here
-      // we own the xterm wiring and a fractional-line accumulator per input so
-      // sub-line trackpad/touch deltas stay smooth. css cell height is read off
-      // `.xterm-screen` (rows * cell), transform-independent so it holds while
-      // spectating. See adr/0002 / the reconstructReplay excludeModes note.
+      // Reclaims scrollback from mouse-grabbing apps (Claude Code, vim, less) and
+      // adds touch scroll, which xterm 6 lacks entirely. Math lives in
+      // core/terminalScroll; here: xterm wiring + a fractional-line accumulator
+      // for smooth sub-line deltas. Cell height reads off `.xterm-screen`
+      // (transform-independent), so it holds while spectating.
       const scrollEnv = (): ScrollEnv => {
         const screen = containerRef.current?.querySelector('.xterm-screen') as HTMLElement | null;
         const cellHeight = screen && term.rows ? screen.clientHeight / term.rows : 20;
@@ -374,7 +345,6 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       refitRef.current?.();
     }, [mode, cols, rows]);
 
-    // Sync theme changes into the live terminal
     React.useEffect(() => {
       if (termRef.current) termRef.current.options.theme = XTERM_THEMES[theme] ?? XTERM_THEMES.dark;
     }, [theme]);

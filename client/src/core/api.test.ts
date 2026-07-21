@@ -1,5 +1,4 @@
-// getPairing() wrapper (brief 10). Stubs global.fetch — node --test runs each
-// file in its own process, so this stub can't leak into other test files.
+// Stubs global.fetch; node --test isolates each file into its own process, so it can't leak.
 import test from 'node:test';
 import assert from 'node:assert';
 import { getPairing } from './api.ts';

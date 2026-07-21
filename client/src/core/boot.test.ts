@@ -1,5 +1,4 @@
-// decideBoot's branching, proven against stub deps — no fetch/window
-// involved (that wiring lives in App.jsx). See boot.ts for the contract.
+// decideBoot's branches via stub deps, no fetch/window — that wiring lives in App.jsx.
 import test from 'node:test';
 import assert from 'node:assert';
 import { decideBoot, STALE_PAIRING_ERROR } from './boot.ts';

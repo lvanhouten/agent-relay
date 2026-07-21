@@ -1,8 +1,6 @@
 'use strict';
-// static.js contract tests against a fixture dist dir: real files serve with the
-// right cache headers, unknown paths fall back to index.html (SPA), and the
-// fallback never shadows /api or /sessions — an unknown API path must stay an
-// API 404, not silently become the login page.
+// Fixture dist dir: real files get correct cache headers, unknown paths fall
+// back to index.html, but the fallback never shadows /api or /sessions.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -26,8 +24,8 @@ function makeDist(t) {
   return dist;
 }
 
-// Mirrors index.js's mount order: /api first, static after, so the tests prove
-// the composed behavior, not the router in isolation.
+// Mirrors index.js's mount order (/api then static), proving composed
+// behavior, not the router alone.
 function serve(dist) {
   const app = express();
   app.get('/api/known', (req, res) => res.json({ ok: true }));
@@ -75,8 +73,8 @@ test('SPA fallback: an unknown GET path serves index.html', async t => {
 });
 
 test('a missing hashed asset is a 404, never index.html (stale tab across a redeploy)', async t => {
-  // The old bundle name is gone from the new dist; 200 HTML here would be
-  // executed as JS by the still-open tab and die on an opaque syntax error.
+  // A 200 HTML response here would be executed as JS by a still-open tab
+  // and die with an opaque error.
   const { status, body } = await request(serve(makeDist(t)), 'GET', '/assets/app.oldhash.js');
   assert.strictEqual(status, 404);
   assert.doesNotMatch(body, /relay-index/);
@@ -101,8 +99,8 @@ test('fallback does not shadow /api: an unknown API path stays a 404, not HTML',
 });
 
 test('reserved prefixes match case-insensitively: /API/unknown stays a 404, not HTML', async t => {
-  // Express's own mount matching is case-insensitive, so /API/x falls through
-  // the /api router into this fallback — the exclusion must match it too.
+  // Express's /api mount matching is case-insensitive, so /API/x falls
+  // through to this fallback — the exclusion must match it too.
   const { status, body } = await request(serve(makeDist(t)), 'GET', '/API/unknown');
   assert.strictEqual(status, 404);
   assert.doesNotMatch(body, /relay-index/);
@@ -127,8 +125,8 @@ test('fallback is GET/HEAD only: POST to an unknown path is a 404, not index.htm
 });
 
 test('path traversal cannot escape dist', async t => {
-  // Whatever the status (403 from express.static, or 200 index.html via the
-  // fallback), the file outside dist must never be served.
+  // Whichever status wins (403 from express.static, or 200 fallback), the
+  // outside file must never be served.
   const { body } = await request(serve(makeDist(t)), 'GET', '/..%2far-static-outside.txt');
   assert.doesNotMatch(body, /secret/);
 });

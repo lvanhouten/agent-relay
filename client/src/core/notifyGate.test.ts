@@ -27,9 +27,7 @@ test('granted but not opted in is off and does not fire', () => {
   assert.strictEqual(canNotify(true, false, 'granted'), false);
 });
 
-// toggleAction: the disable/request branch must track the RESOLVED state, not
-// the raw opt-in — otherwise a stale enabled=true whose permission has lapsed
-// no-ops on the first re-enable click.
+// toggleAction must track resolved state, not raw opt-in — else a lapsed permission's re-enable no-ops.
 test('enabled + granted disables (notifications are actually live)', () => {
   assert.strictEqual(toggleAction(true, 'granted'), 'disable');
 });

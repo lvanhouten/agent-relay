@@ -1,23 +1,14 @@
 'use strict';
-// Low-level client for the vendored switchboard board (the PTY kernel). This is
-// the single seam where the board's telephone vocabulary (line / call / patch /
-// hangup) is spoken; everything above it deals in "sessions". The web tier never
-// imports node-pty or the board internals directly.
+// The single seam where the board's telephone vocabulary (line/call/patch/hangup)
+// is spoken; everything above it deals in "sessions". The web tier never imports
+// node-pty or the board internals directly.
 const { connectPipe, connectControl, dataPipe, rpc } = require('../board/lib');
 const { EXIT_RE, DEFAULT_IDLE_MS } = require('../board/wait'); // shared exit sentinel + idle threshold, one source of truth
 
-// rpc() (one control request -> one response, with a timeout) now lives in
-// board/lib.js so its framing can't drift from sb.js / mcp-server.js.
-
-// Attach to a line's raw byte stream. Scrollback replays automatically when the
-// DATA pipe connects. A separate CONTROL connection makes this client a distinct
-// pane in the board's smallest-client resize clamp (board.js frees the pane's
-// size when that control socket closes). The two are deliberately independent:
-// the data pipe stays open for the attach's whole life so the reconstructed
-// replay fires exactly once, while the control socket is toggled by setSpectator
-// so a grid pane can enter/leave the clamp on focus change WITHOUT re-triggering
-// that replay (live mode-switch). Mirrors patch.js: one control + one
-// data connection per interactive client.
+// Attaches to a line's byte stream (scrollback replays once the data pipe
+// connects). Data and control sockets are independent on purpose: data stays
+// open for the replay's whole life, while control toggles via setSpectator so a
+// focus change can enter/leave the board's resize clamp without re-triggering replay.
 async function attach(id, { onData, onExit, spectator = false } = {}) {
   const data = await connectPipe(dataPipe(id), { retries: 20 });
   let ctrl = null;
@@ -49,9 +40,9 @@ async function attach(id, { onData, onExit, spectator = false } = {}) {
     resize: (cols, rows) => {
       if (ctrl) { try { ctrl.write(JSON.stringify({ cmd: 'resize', id, cols, rows }) + '\n'); } catch { /* closed */ } }
     },
-    // Toggle clamp participation without disturbing the data pipe. Interactive
-    // opens a control socket (its next resize re-enters the clamp); spectator
-    // closes it, and the board frees this pane's size on the close.
+    // Toggles clamp participation without touching the data pipe: interactive
+    // opens a control socket (next resize re-enters the clamp), spectator closes
+    // it and the board frees this pane's size.
     setSpectator: async (on) => { if (on) closeCtrl(); else await openCtrl(); },
     detach: () => { try { data.end(); } catch {} closeCtrl(); },
   };

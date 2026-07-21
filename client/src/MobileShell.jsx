@@ -5,27 +5,24 @@ import { useSessions } from './core/useSessions.ts';
 import { useToast } from './core/useToast.tsx';
 import { NewSessionDialog, rememberClaudeDefaults } from './chrome/NewSessionDialog.jsx';
 
-// The mobile shell: the login → sessions → terminal screen stack over the shared
-// client core. Mirrors DesktopWorkspace's split — the shell component owns the
-// data layer (useSessions), the sub-navigation, and the ONE create dialog, so
-// SessionsScreen/TerminalScreen stay presenters. Owning the dialog here (not in
-// SessionsScreen) is what lets the terminal spawn a sibling in its own directory
-// without bouncing back through the list.
+// The mobile shell: sessions -> terminal screen stack. Owns the data layer
+// (useSessions), sub-navigation, and the ONE create dialog, so the screens
+// stay presenters - owning the dialog here is what lets the terminal spawn a
+// sibling in its own directory without bouncing back through the list.
 export default function MobileShell({ host, theme, onToggleTheme, onToggleShell }) {
   const { notifier } = useToast();
   const { sessions, create, kill, creating } = useSessions(notifier);
   const [screen, setScreen] = React.useState('sessions'); // 'sessions' | 'terminal'
   const [activeSession, setActiveSession] = React.useState(null);
   const [dialog, setDialog] = React.useState(false);
-  // Prefilled cwd for the dialog: the current session's directory when opened
-  // from the terminal's "new in this directory" action, undefined from scratch.
+  // Prefilled cwd: current session's dir from "new in this directory", else undefined.
   const [dialogCwd, setDialogCwd] = React.useState(undefined);
   const [createError, setCreateError] = React.useState('');
 
   const attach = (s) => { setActiveSession(s); setScreen('terminal'); };
 
-  // cwd is a string only from a "new in this directory" action; the sessions
-  // header button passes a click event, so anything non-string means blank.
+  // cwd is a string only from "new in this directory"; the header button
+  // passes a click event instead, so anything non-string means blank.
   const openDialog = (cwd) => {
     setCreateError('');
     setDialogCwd(typeof cwd === 'string' ? cwd : undefined);
@@ -33,9 +30,8 @@ export default function MobileShell({ host, theme, onToggleTheme, onToggleShell 
   };
 
   const handleCreate = async (opts) => {
-    // Keep the dialog open until create actually succeeds — a failure surfaces
-    // inline instead of vanishing into an unhandled rejection. The re-entrancy
-    // guard lives in useSessions.create; a dropped double-click returns null.
+    // Keep the dialog open until create succeeds, so a failure surfaces inline.
+    // Re-entrancy guard lives in useSessions.create; a dropped double-click returns null.
     setCreateError('');
     try {
       const session = await create(opts);

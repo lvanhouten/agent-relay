@@ -1,8 +1,7 @@
 'use strict';
-// Notifier seam: env-driven sink resolution, Pushover payload/priority shaping,
-// and the fan-out's resilience contract (one sink's failure never blocks the
-// caller or the other sinks). All exercised against an injected fetch — no
-// network, no real Pushover keys.
+// Env-driven sink resolution, Pushover payload shaping, and fan-out
+// resilience (one sink's failure never blocks the others) — via an
+// injected fetch, no network or real Pushover keys.
 const test = require('node:test');
 const assert = require('node:assert');
 const { resolveNotifiers, notifyAll, pushoverNotifier, PUSHOVER_URL } = require('./notifiers');
@@ -80,8 +79,8 @@ test('notifyAll: one sink failing never blocks the others, and reports per-sink 
 });
 
 test('notifyAll: a failing sink is logged server-side, not only reported in the response', async () => {
-  // The documented caller is a fire-and-forget hook curl that never reads the
-  // response body — the log line is the only visible trace of a broken sink.
+  // The caller is a fire-and-forget hook curl that never reads the response
+  // body — the log line is the only visible trace of a broken sink.
   const logged = [];
   const bad = { name: 'bad', notify: async () => { throw new Error('pushover responded 429'); } };
   await notifyAll([bad], { body: 'hi' }, { log: (...args) => logged.push(args.join(' ')) });

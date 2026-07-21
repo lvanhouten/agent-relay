@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { decideShell, readShellOverride, writeShellOverride, type StorageLike } from './shellSelection.ts';
 
-// A minimal in-memory StorageLike, plus a variant that throws on demand to
-// exercise the "storage misbehaves" paths without a real browser API.
+// In-memory + throwing StorageLike stubs, so storage-misbehaves paths don't need a real browser API.
 function memoryStorage(initial: Record<string, string> = {}): StorageLike {
   const store = new Map(Object.entries(initial));
   return {
@@ -74,9 +73,7 @@ test('writeShellOverride: writes a recognized kind, then null clears it', () => 
   assert.strictEqual(readShellOverride(storage), 'mobile');
   writeShellOverride(storage, null);
   assert.strictEqual(readShellOverride(storage), null);
-  // Asserted on the raw key, not just readShellOverride's outcome — a
-  // stringified "null" would also read back as null through the override
-  // guard, masking a writer that never actually calls removeItem.
+  // Also checks the raw key — a stringified "null" would fool readShellOverride if removeItem were skipped.
   assert.strictEqual(storage.getItem('ar-shell-override'), null);
 });
 

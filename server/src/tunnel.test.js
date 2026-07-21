@@ -1,8 +1,6 @@
 'use strict';
-// Tunnel-supervisor tests. Every decision path is driven through injected seams
-// — no test spawns a real tailscale binary, touches the network, or RPCs the
-// board. Process spawning (`exec`), the filesystem check (`existsClientBuild`),
-// the environment (`env`), and the backoff timer (`scheduler`) are all fakes.
+// Every decision path is driven through injected seams (exec,
+// existsClientBuild, env, scheduler) — no real tailscale, network, or board RPC.
 const test = require('node:test');
 const assert = require('node:assert');
 const { EventEmitter } = require('node:events');
@@ -25,9 +23,9 @@ class FakeChild extends EventEmitter {
   kill() { this.killed = true; }
 }
 
-// Fake `tailscale status --json` child: emits canned JSON + an exit on the next
-// microtask (listeners are attached synchronously after exec() returns, so the
-// emit must be deferred). errCode simulates a spawn 'error' (e.g. ENOENT).
+// Emits JSON + exit on the next microtask (listeners attach synchronously
+// after exec() returns, so the emit must defer). errCode simulates a spawn
+// 'error' (e.g. ENOENT).
 function statusChild(json, { code = 0, errCode = null, raw = null } = {}) {
   const cp = new FakeChild();
   queueMicrotask(() => {
@@ -42,9 +40,8 @@ function statusChild(json, { code = 0, errCode = null, raw = null } = {}) {
   return cp;
 }
 
-// Builds an injectable exec that dispatches by argv. `statusResult` configures
-// the probe child; serve children are inert (stay "alive") and recorded so a
-// test can drive their death by emitting 'exit'/'error' by hand.
+// Injectable exec dispatching by argv: `statusResult` configures the probe
+// child; serve children stay alive until a test kills them by hand.
 function makeExec(statusResult) {
   const calls = [];
   const serveChildren = [];
@@ -64,8 +61,8 @@ function makeExec(statusResult) {
   return exec;
 }
 
-// Deterministic scheduler capturing pending timers; a test fires the pending
-// respawn timer explicitly (no real sleeps).
+// Deterministic scheduler: captures pending timers so a test fires the
+// respawn explicitly, no real sleeps.
 function fakeScheduler() {
   const timers = [];
   const scheduler = {
@@ -294,8 +291,8 @@ test('start() is idempotent: a second start() while up spawns no second serve ch
   const t = createTunnel({ port: PORT, env: { AR_TUNNEL: 'tailscale' }, exec, existsClientBuild: () => true });
   await t.start();
   assert.strictEqual(exec.serveCalls().length, 1);
-  // Second call while already up — must NOT spawn a second child (which would
-  // orphan the first: its exit/error handlers early-return on child !== cp).
+  // A second start() while up must not spawn again — the old child's
+  // handlers early-return on child !== cp, so a new spawn would orphan it.
   await t.start();
   assert.strictEqual(exec.serveCalls().length, 1);
   assert.strictEqual(t.status().state, 'up');

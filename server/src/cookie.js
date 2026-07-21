@@ -1,41 +1,32 @@
 'use strict';
-// Stateless HMAC-signed auth cookie. This module owns the browser's
-// durable credential — always the *auth cookie*, never a "session cookie"
-// (per CONTEXT.md a session is a PTY line, not a browser identity).
+// Stateless HMAC-signed auth cookie — the browser's durable credential (always
+// "auth cookie", never "session cookie": a session is a PTY line, not a browser
+// identity). Pure: no I/O or process.env; the caller (credentials.js) passes in
+// the signing secret, so it never touches disk here.
 //
-// Pure/stateless by contract: no I/O, no process.env, no clock beyond Date.now()
-// at mint. The signing secret is passed in by the caller (credentials.js owns
-// where it comes from) — this module never touches disk. That keeps it trivially
-// unit-testable and keeps the secret's provenance in exactly one place.
-//
-// Encoding is `v1.<deviceId>.<issuedAt>.<sig>` — its own parser, deliberately not
-// JSON-in-cookie: four dot-delimited segments where the signable payload is the
-// first three, HMAC-SHA256'd with the secret. deviceId is base64url (no '.'),
-// issuedAt is decimal ms, so splitting on '.' is unambiguous.
+// Encoding is `v1.<deviceId>.<issuedAt>.<sig>`, not JSON: deviceId is base64url
+// (no '.') and issuedAt is decimal ms, so splitting on '.' is unambiguous.
 const crypto = require('crypto');
 const { safeEqual } = require('./safeCompare');
 
 const VERSION = 'v1';
 const COOKIE_NAME = 'ar_auth';
 
-// One shared lifetime for both server-side expiry enforcement (verify) and the
-// Set-Cookie Max-Age, so the browser and the server can never disagree on when
-// the credential dies. ~90 days.
+// Shared by expiry enforcement (verify) and the Set-Cookie Max-Age so the
+// browser and server can't disagree on when the credential dies (~90 days).
 const LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_AGE_SECONDS = Math.floor(LIFETIME_MS / 1000);
 
-// Constant-time signature compare comes from ./safeCompare — the same function
-// auth.js's token check uses, so a signature mismatch can't leak byte-by-byte via
-// timing and the two paths can't drift. A signature mismatch must reject in
-// constant time.
+// Constant-time compare comes from ./safeCompare (shared with auth.js) so a
+// signature mismatch can't leak via timing and the two paths can't drift.
 
 function sign(payload, secret) {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
-// Mint a fresh signed cookie value with a new random device id. The device id is
-// a forward-compat hook for the parked paired-device dashboard — minted from day
-// one so existing cookies already carry it when that lands.
+// Mints a signed cookie with a fresh device id — a forward-compat hook for the
+// (parked) paired-device dashboard, present from day one so existing cookies
+// already carry it.
 function issue(secret) {
   const deviceId = crypto.randomBytes(16).toString('base64url');
   const issuedAt = Date.now();
@@ -43,10 +34,9 @@ function issue(secret) {
   return `${payload}.${sign(payload, secret)}`;
 }
 
-// Verify a cookie value: recompute the signature (constant-time compare) and
-// enforce expiry from the signed issued-at. Malformed values, bad signatures,
-// wrong versions, non-numeric issued-ats, and expired issued-ats all return
-// { ok: false, deviceId: null } — never throws.
+// Recomputes the signature (constant-time) and enforces expiry from the signed
+// issued-at. Malformed/bad-signature/wrong-version/non-numeric/expired all
+// return { ok: false, deviceId: null } — never throws.
 function verify(value, secret) {
   const fail = { ok: false, deviceId: null };
   if (typeof value !== 'string') return fail;
@@ -69,9 +59,8 @@ function verify(value, secret) {
   return { ok: true, deviceId };
 }
 
-// Full Set-Cookie header value. HttpOnly + SameSite=Strict + Path=/ + Max-Age
-// always; Secure exactly when the caller says the request arrived over https
-// (a Secure cookie over plain http would silently never be stored).
+// HttpOnly + SameSite=Strict + Path=/ + Max-Age always; Secure only when the
+// caller says the request arrived over https (else it'd silently never be stored).
 function setCookieHeader(value, { secure } = {}) {
   const attrs = [
     `${COOKIE_NAME}=${value}`,
@@ -84,9 +73,8 @@ function setCookieHeader(value, { secure } = {}) {
   return attrs.join('; ');
 }
 
-// Hand-rolled Cookie request-header parse — extract this module's cookie by name
-// without pulling in a dependency. Returns null when the header is absent or the
-// cookie is not present.
+// Hand-rolled Cookie-header parse (no dependency) — returns null if the header
+// or this cookie is absent.
 function readAuthCookie(cookieHeader) {
   if (typeof cookieHeader !== 'string') return null;
   for (const pair of cookieHeader.split(';')) {

@@ -17,8 +17,8 @@ import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, C
 import styles from './SessionsScreen.module.scss';
 
 function SessionCard({ session, onAttach, onKill }) {
-  // status decode lives in core/attention.ts (the vocabulary sync point with
-  // server/src/sessions.js) — see the rationale + tests there.
+  // Status decode lives in core/attention.ts, the vocabulary sync point with
+  // server/src/sessions.js.
   const attention = attentionFor(session.status);
   const pulse = attention.pulse;
   const preview = session.preview ?? [];
@@ -39,8 +39,8 @@ function SessionCard({ session, onAttach, onKill }) {
         <span className={styles.cardCwdPath}>{session.cwd}</span>
       </span>
 
-      {/* Rendered-screen tail — decorative echo of the line's bottom rows; the
-          card's name/cwd/status carry the semantics, so it's out of the a11y tree. */}
+      {/* Decorative echo of the line's tail rows; name/cwd/status carry the
+          semantics, hence aria-hidden. */}
       {preview.length > 0 && (
         <pre className={styles.cardPreview} aria-hidden="true">{preview.join('\n')}</pre>
       )}
@@ -49,8 +49,8 @@ function SessionCard({ session, onAttach, onKill }) {
         <div className={styles.cardBadges}>
           <Badge variant="neutral">pid {session.pid}</Badge>
         </div>
-        {/* State word + relative time read as one clause ("quiet · 43s ago") —
-            the state is literally derived from that same idle clock server-side. */}
+        {/* State word + time read as one clause; both derive from the same
+            server-side idle clock. */}
         <span className={styles.cardMeta}>
           <StatusDot status={attention.dot} pulse={pulse} size="sm" label={attention.label} />
           <span className={styles.cardTime}>
@@ -62,14 +62,12 @@ function SessionCard({ session, onAttach, onKill }) {
   );
 }
 
-// A tombstone card: the board keeps a capped ring of recently-ended lines so an
-// unattended exit doesn't just vanish from the poll. Not attachable (the data
-// pipe is gone) — the only action is dismiss, which drops the tombstone via the
-// same DELETE the kill button uses (the server falls through to `forget`).
+// A tombstone card for a capped-ring recently-ended line. Not attachable (the
+// data pipe is gone) - dismiss is the only action, and drops it via the same
+// DELETE the kill button uses (the server falls through to `forget`).
 function ExitedSessionCard({ session, onDismiss }) {
-  // Tombstone decode (dot color, crash predicate, status word) is centralized in
-  // core/tombstoneView.ts — the one place a `reason`/`exitCode` becomes a
-  // rendering, shared with the sidebar row and detail pane so the three agree.
+  // Tombstone decode is centralized in core/tombstoneView.ts, shared with the
+  // sidebar row and detail pane so all three agree.
   const { dot, label, failed } = tombstoneView(session);
   return (
     <Card padding="md" className={`${styles.cardBody} ${styles.exitedBody}`}>
@@ -99,12 +97,9 @@ function ExitedSessionCard({ session, onDismiss }) {
   );
 }
 
-// "Pair a device" dialog. Fetches GET /api/pairing on open (not
-// on page load — this component only mounts while the dialog is open, so its
-// state — including the credential-bearing pairingUrl — is discarded on close
-// rather than cached in the screen/app state) and renders a client-side QR
-// (qrcode package) when the tunnel is up. Status -> display fan-out lives in
-// core/pairingDisplay.ts; this stays a thin render over that + the QR image.
+// "Pair a device" dialog. Fetches GET /api/pairing only while mounted, so the
+// credential-bearing pairingUrl is discarded on close, not cached in app
+// state. Status -> display fan-out lives in core/pairingDisplay.ts.
 function PairDeviceDialog({ onClose }) {
   const [info, setInfo] = React.useState(null); // PairingInfo | null, from core/types.ts
   const [error, setError] = React.useState('');
@@ -161,8 +156,7 @@ function PairDeviceDialog({ onClose }) {
 
             {display.showQr && pairingUrl ? (
               <>
-                {/* QR modules need a light, high-contrast background regardless
-                    of the app theme, hence the fixed white box. */}
+                {/* QR needs a light, high-contrast background regardless of app theme. */}
                 <div className={styles.qrBox}>
                   {qrDataUrl
                     ? <img src={qrDataUrl} width={200} height={200} alt="Pairing QR code — scan with the device you want to pair" />
@@ -191,8 +185,7 @@ function PairDeviceDialog({ onClose }) {
 export default function SessionsScreen({
   host, theme, onToggleTheme, onToggleShell, onAttach, sessions, onKill, onNewSession,
 }) {
-  // Presenter over the shell-owned data layer: `sessions`, `onKill`, and the
-  // create dialog (opened via onNewSession) all live in MobileShell. This screen
+  // Presenter over MobileShell's data layer (sessions/onKill/create dialog);
   // owns only its own presentation state (filter, pairing, fullscreen).
   const [query, setQuery] = React.useState('');
   const [pairOpen, setPairOpen] = React.useState(false);
@@ -204,22 +197,18 @@ export default function SessionsScreen({
   const filtered = sessions.filter((s) =>
     `${s.name} ${s.cwd}`.toLowerCase().includes(query.toLowerCase())
   );
-  // The list carries live sessions and recently-ended tombstones in one array
-  // (both come from GET /sessions); the tombstones render in their own
-  // collapsed section, and the header count stays live-only. needs-input and
-  // turn-done cards float to the top via core/attention.ts's attentionRank —
-  // the whole point of those states is "which session needs me?", so a
-  // blocked or finished session shouldn't hide below a screen of running
-  // ones. Array#sort is stable, so the poll order is preserved within each
-  // rank tier.
+  // GET /sessions returns live + tombstoned lines in one array; tombstones get
+  // their own collapsed section and the header count stays live-only.
+  // attentionRank floats needs-input/turn-done to the top (stable sort keeps
+  // poll order within a rank tier).
   const live = filtered
     .filter((s) => s.status !== 'exited')
     .sort((a, b) => attentionRank(a.status) - attentionRank(b.status));
   const ended = filtered.filter((s) => s.status === 'exited');
   const liveCount = sessions.filter((s) => s.status !== 'exited').length;
 
-  // Same priority-order + overflow pattern as TerminalScreen's header actions —
-  // settings is the one operators reach for least, so it's first into the menu.
+  // Same priority-order + overflow pattern as TerminalScreen's header actions -
+  // settings is reached for least, so it's first into the menu.
   const actions = [
     { key: 'pair', label: 'Pair a device', menuLabel: 'Pair a device', onClick: () => setPairOpen(true), icon: <QrCode size={16} /> },
     { key: 'fullscreen', label: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', menuLabel: isFullscreen ? 'Exit fullscreen' : 'Fullscreen', active: isFullscreen, onClick: toggleFullscreen, icon: isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} /> },
@@ -238,8 +227,7 @@ export default function SessionsScreen({
           <span className={styles.logoMark}>▸</span>
           agent-relay
         </span>
-        {/* The only flex-grow item in the row - see TerminalScreen's header for
-            why its resolved clientWidth is exactly "room CSS gave the buttons". */}
+        {/* Only flex-grow item in the row - see TerminalScreen's header. */}
         <div ref={actionsRowRef} className={styles.actionsRow}>
           {visibleActions.map((a) => (
             <IconButton key={a.key} label={a.label} active={a.active} onClick={a.onClick}>
@@ -247,8 +235,7 @@ export default function SessionsScreen({
             </IconButton>
           ))}
         </div>
-        {/* Always reserved, whether or not the menu has anything in it - see
-            TerminalScreen's header for why. */}
+        {/* Always reserved, whether or not the menu has anything in it. */}
         <div className={styles.overflowSlot}>
           <OverflowMenu items={overflowActions} />
         </div>
@@ -313,9 +300,7 @@ export default function SessionsScreen({
         )}
       </main>
 
-      {/* Mounted only while open — its own state (including the
-          credential-bearing pairing URL) is discarded on close, never lifted
-          into this screen's state. */}
+      {/* Mounted only while open - state discards on close, never lifted here. */}
       {pairOpen && <PairDeviceDialog onClose={() => setPairOpen(false)} />}
     </div>
   );

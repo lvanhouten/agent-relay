@@ -1,17 +1,14 @@
 // Reclaiming local scrollback scroll when the running app has grabbed the mouse.
 //
-// xterm forwards the wheel to the PTY whenever the running app enables mouse
-// tracking - Claude Code, vim, less, tmux all do - and its viewport then stops
-// scrolling the local scrollback (handleMouseWheel goes false). Separately,
-// xterm 6's viewport wires up no touch handling at all, so a one-finger drag on
-// a phone never scrolls anything. Both leave the web client unable to page back
-// through its own history. A native terminal scrolls its scrollback here, so we
-// do too - but only in the NORMAL buffer; the alternate screen is a full-screen
-// surface the app owns, so we leave xterm's forwarding intact there.
+// xterm forwards the wheel to the PTY whenever the app enables mouse tracking
+// (Claude Code, vim, less, tmux all do), so its viewport stops scrolling local
+// scrollback. Separately, xterm 6 wires up no touch handling, so a one-finger
+// drag never scrolls on a phone. We scroll the local scrollback ourselves in
+// both cases — but only in the NORMAL buffer; the alt screen is a full-screen
+// surface the app owns, so its forwarding stays intact there.
 //
-// No component-test harness exists (CLAUDE.md), so the decision + line math live
-// here as pure functions and are unit-tested directly; TerminalView owns the
-// xterm wiring and the fractional accumulator.
+// Decision + line math live here as pure functions, unit-tested directly;
+// TerminalView owns the xterm wiring and the fractional accumulator.
 
 export interface ScrollEnv {
   bufferType: 'normal' | 'alternate';
@@ -24,10 +21,9 @@ export interface ScrollEnv {
 }
 
 // Lines to scroll the local scrollback for a wheel event (negative = up into
-// history), or null to defer to xterm's own handling. We only take the wheel
-// over when the app has grabbed it (mouseTracking active) and there is
-// scrollback to move (normal buffer); otherwise xterm's viewport already scrolls
-// correctly and taking over would double-scroll.
+// history), or null to defer to xterm. Only takes over when the app has
+// grabbed the mouse and there's scrollback to move (normal buffer); otherwise
+// xterm's viewport already scrolls and taking over would double-scroll.
 export function wheelScrollLines(deltaY: number, deltaMode: number, env: ScrollEnv): number | null {
   if (env.bufferType !== 'normal') return null;   // alt screen: the app owns it
   if (env.mouseTracking === 'none') return null;  // xterm's viewport handles it
@@ -39,13 +35,11 @@ export function wheelScrollLines(deltaY: number, deltaMode: number, env: ScrollE
   }
 }
 
-// Lines to scroll for a touch drag of `dragPx` vertical pixels (the finger's
-// movement since the last sample; positive = finger moved down). Dragging down
-// reveals earlier output, i.e. scrolls up into history, so the sign inverts.
-// Returns null outside the normal buffer - there is no scrollback to page, and
-// the alt screen is the app's. Unlike the wheel, touch is claimed regardless of
-// mouse tracking: xterm 6 offers no touch scroll of its own, so plain shells on
-// a phone would be stuck too.
+// Lines to scroll for a touch drag of `dragPx` vertical pixels since the last
+// sample (positive = finger moved down). Dragging down reveals earlier output
+// (scrolls up into history), so the sign inverts. Null outside the normal
+// buffer. Unlike the wheel, touch is claimed regardless of mouse tracking —
+// xterm 6 has no touch scroll of its own, so plain shells would be stuck too.
 export function touchScrollLines(dragPx: number, env: ScrollEnv): number | null {
   if (env.bufferType !== 'normal') return null;
   return -dragPx / (env.cellHeight || 1);
