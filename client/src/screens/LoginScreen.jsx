@@ -1,6 +1,6 @@
 import React from 'react';
-import { Button } from '@ds/Button.jsx';
-import { Input } from '@ds/Input.jsx';
+import { Button } from '@shared/Button.jsx';
+import { Input } from '@shared/Input.jsx';
 import { Sun, Moon, Lock } from 'lucide-react';
 import { headers, login } from '../core/api.ts';
 import { isLocalhost } from '../hostTrust.js';

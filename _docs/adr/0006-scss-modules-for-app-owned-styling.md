@@ -108,12 +108,13 @@ dependency. We split the two:
 
 - The 9 components the app uses (`Button`, `Input`, `IconButton`, `StatusDot`,
   `Card`, `Badge`, `OverflowMenu`, `Kbd`, `Toast`) plus the token stylesheets
-  were copied into `client/src/ds/` and `client/src/styles/`. The `@ds` alias
-  and the `main.jsx` token import now point at the app-owned copies; `client/src`
-  no longer reaches into `_docs`.
+  were copied into `client/src/shared/` and `client/src/styles/`. The alias
+  (renamed `@ds` → `@shared`, since the folder no longer inherits the
+  design-system name) and the `main.jsx` token import now point at the app-owned
+  copies; `client/src` no longer reaches into `_docs`.
 - The app's copy was converted to colocated `.module.scss` — the class-based CSS
-  moved verbatim out of the runtime-injected `<style>` singletons, so `ds/` is
-  now uniform with the rest of `client/src`. This supersedes #4 **for the app**.
+  moved verbatim out of the runtime-injected `<style>` singletons, so `shared/`
+  is now uniform with the rest of `client/src`. This supersedes #4 **for the app**.
 - The `_docs/design-system/` originals are unchanged and keep their injected
   `<style>` form; `_ds_bundle.js` + the standalone preview pages still work off
   them exactly as before. #4's rationale therefore still holds for the template

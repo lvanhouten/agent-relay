@@ -1,6 +1,6 @@
 import React from 'react';
-import { StatusDot } from '@ds/StatusDot.jsx';
-import { IconButton } from '@ds/IconButton.jsx';
+import { StatusDot } from '@shared/StatusDot.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
 import { Terminal as TerminalIcon, Search, Download, Copy, Trash2, FolderPlus } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { jumpIndexFromKey } from '../core/jumpKeys.ts';

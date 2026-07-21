@@ -1,6 +1,6 @@
 import React from 'react';
-import { Button } from '@ds/Button.jsx';
-import { StatusDot } from '@ds/StatusDot.jsx';
+import { Button } from '@shared/Button.jsx';
+import { StatusDot } from '@shared/StatusDot.jsx';
 import { Terminal as TerminalIcon, Plus, ChevronRight } from 'lucide-react';
 import { attentionFor } from '../core/attention.ts';
 import { fleetSummary } from '../core/fleetSummary.ts';

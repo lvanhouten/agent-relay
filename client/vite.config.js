@@ -13,7 +13,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@ds': resolve(__dirname, 'src/ds'),
+      '@shared': resolve(__dirname, 'src/shared'),
     },
   },
   server: {
