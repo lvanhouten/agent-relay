@@ -8,24 +8,18 @@ import { Terminal, Folder, FolderSearch, Bookmark, BookmarkPlus, X } from 'lucid
 import { DirectoryPicker } from './DirectoryPicker.jsx';
 import styles from './NewSessionDialog.module.scss';
 
-// Shared new-session dialog — the one create surface both shells open (mobile:
-// SessionsScreen; desktop: the workspace sidebar). Templates, claude model/effort
-// chips, "save as template", and the stays-open-until-success contract all live
-// here.
+// The one create surface both shells open (mobile: SessionsScreen; desktop:
+// the sidebar). Stays open until create succeeds.
 
 const QUICK_COMMANDS = ['claude', 'bash', 'zsh', 'powershell'];
 
-// Suggestions, not validation: the command field stays the escape hatch for any
-// model/effort name these chips don't know — the CLI is the validator, and a
-// hardcoded list must never refuse what the CLI would accept (see
-// _docs/issues/2026-07-02-claude-model-effort-selection.md).
+// Suggestions, not validation: the command field is the escape hatch for any
+// model/effort name these chips don't know — the CLI is the validator, so this
+// list must never refuse what the CLI would accept.
 const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
 
-// Operator-wide defaults for Claude sessions: last-used values persist on a
-// successful spawn (no separate settings UI) and prefill the next claude
-// command. localStorage for now; migrates into the server-side store when
-// spawn-templates phase 2 lands so the two share one persistence story.
+// Last-used model/effort persist to localStorage on a successful spawn and prefill next time.
 function withClaudeDefaults(cmd) {
   const model = localStorage.getItem('ar-claude-model');
   const effort = localStorage.getItem('ar-claude-effort');
@@ -36,9 +30,8 @@ function withClaudeDefaults(cmd) {
 }
 
 export function rememberClaudeDefaults(command) {
-  // Only a claude spawn updates the defaults — launching bash must not clear
-  // them. A claude spawn with a flag omitted *does* clear that default: the
-  // operator chose the CLI default, so remember the choice.
+  // Only a claude spawn updates defaults (bash must not clear them); an omitted
+  // flag on a claude spawn does clear its default, since the operator chose the CLI default.
   if (!isClaudeCommand(command)) return;
   const model = getFlag(command, 'model');
   const effort = getFlag(command, 'effort');
@@ -48,9 +41,8 @@ export function rememberClaudeDefaults(command) {
   else localStorage.removeItem('ar-claude-effort');
 }
 
-// One row of flag chips — a structured editor over the command string. A chip
-// click splices only its own flag (setFlag), so hand-typed text elsewhere in
-// the command survives; "default" removes the flag (CLI config decides).
+// A chip click splices only its own flag, so hand-typed text elsewhere in the
+// command survives; "default" removes the flag (CLI config decides).
 function FlagChipRow({ label, flag, options, command, onCommand }) {
   const current = getFlag(command, flag);
   const chips = [{ value: null, text: 'default' }, ...options.map((o) => ({ value: o, text: o }))];
@@ -77,24 +69,18 @@ function FlagChipRow({ label, flag, options, command, onCommand }) {
 
 export function NewSessionDialog({ onClose, onCreate, error, busy, initialCwd }) {
   const [name, setName] = React.useState('');
-  // Prefilled when opened from a live session's "new in this directory" action;
-  // '~/' is the from-scratch default. Read once at mount — the dialog remounts
-  // per open, so a later open with a different cwd re-seeds correctly.
+  // '~/' is the from-scratch default; read once since the dialog remounts per open.
   const [cwd, setCwd] = React.useState(initialCwd || '~/');
   const [command, setCommand] = React.useState(() => withClaudeDefaults('claude'));
 
-  // Spawn templates (phase 1, localStorage). Loaded once on mount; the picker
-  // prefills the form (prefill-and-edit, never fires blindly — a stale cwd must
-  // be visible before spawn), and "save as template" upserts the current form.
+  // Spawn templates (phase 1, localStorage): picker prefills the form (edit before spawn,
+  // never fires blindly), "save as template" upserts the current form.
   const [templates, setTemplates] = React.useState(loadTemplates);
   const [justSaved, setJustSaved] = React.useState(false);
-  // The Working Directory field's "Browse…" affordance swaps the dialog body for
-  // a folder picker (no stacked modal); "Use this folder" writes the path back.
+  // "Browse…" swaps the dialog body for a folder picker (no stacked modal).
   const [browsing, setBrowsing] = React.useState(false);
 
-  // Every form edit goes through these, not the raw setters: any change
-  // invalidates the "Saved" indicator — the stored template is the pre-edit
-  // form, and the button must not claim the edited one is saved.
+  // Any edit invalidates "Saved" — the stored template is the pre-edit form.
   const editName = (v) => { setName(v); setJustSaved(false); };
   const editCwd = (v) => { setCwd(v); setJustSaved(false); };
   const editCommand = (v) => { setCommand(v); setJustSaved(false); };
@@ -107,19 +93,13 @@ export function NewSessionDialog({ onClose, onCreate, error, busy, initialCwd })
   };
 
   const saveAsTemplate = () => {
-    // The session name is the label — the operator already types a meaningful
-    // one ("claude · agent-relay"); upsert dedupes so a re-save overwrites.
-    // Blank name -> a content-derived label (core/templates.ts), widened with
-    // path segments if it would clash with a different directory's template —
-    // only a same-cwd re-save may upsert over an existing blank-name entry.
+    // Blank name falls back to a content-derived label, disambiguated by cwd if needed.
     const label = name.trim() || uniqueFallbackLabel(templates, cwd, command);
     const next = upsertTemplate(templates, {
       label, name: name.trim() || 'untitled', cwd, command: command.trim(),
     });
     setTemplates(next);
-    // Only claim "Saved" when the localStorage write persisted — in private
-    // mode / over quota the chip still works this session but is gone on
-    // reload, and the accent state must not promise otherwise.
+    // "Saved" only claims true once the localStorage write actually persisted.
     setJustSaved(saveTemplates(next));
   };
 
@@ -164,8 +144,6 @@ export function NewSessionDialog({ onClose, onCreate, error, busy, initialCwd })
             </span>
             <div className={styles.templateChipRow}>
               {templates.map((t) => (
-                // Load-on-tap; the trailing × removes without loading. Each chip
-                // is one saved {name, cwd, command} shape.
                 <span key={t.label} className={styles.templateChip}>
                   <button
                     type="button"
@@ -222,11 +200,8 @@ export function NewSessionDialog({ onClose, onCreate, error, busy, initialCwd })
           </span>
           <div className={styles.quickCommandsRow}>
             {QUICK_COMMANDS.map((c) => {
-              // The claude chip stays lit while flags ride the command — the
-              // model/effort chips below edit the same string. Re-clicking it
-              // while lit is a no-op: a hand-built claude command (flags, a
-              // quoted prompt) must not be wiped by a "make sure it's
-              // selected" click on an already-selected control.
+              // Re-clicking the already-selected claude chip is a no-op, so a hand-built
+              // command (flags, a quoted prompt) can't be wiped by it.
               const selected = c === 'claude' ? isClaudeCommand(command) : command === c;
               const pick = () => {
                 if (selected) return;

@@ -10,13 +10,8 @@ import {
 } from '../core/favorites.ts';
 import styles from './DirectoryPicker.module.scss';
 
-// Touch-first directory picker for the create dialog's Working Directory field.
-// Swaps into the dialog body (no stacked modal) and lists the BOARD's filesystem
-// via GET /api/fs/browse — the browsable disk is the server's, not the phone's.
-// The current folder IS the selection: descend into the folder you want, then
-// "Use this folder". A typed-in nonexistent seed falls back to home rather than
-// stranding an empty picker. Favorites pin a folder for one-tap re-jump (stored
-// client-side; see core/favorites.ts).
+// Browses the BOARD's filesystem (not the phone's) via GET /api/fs/browse.
+// The current folder IS the selection; a bad typed seed falls back to home.
 const ERROR_TEXT = {
   denied: 'Permission denied',
   'not-found': 'Folder not found',
@@ -27,12 +22,10 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
   const [result, setResult] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [errorMsg, setErrorMsg] = React.useState('');
-  // Client-side substring filter over the loaded entries — no extra round-trip.
-  // Cleared on every navigation (a new folder is a fresh list).
+  // Client-side substring filter; cleared on every navigation.
   const [filter, setFilter] = React.useState('');
   const [favorites, setFavorites] = React.useState(loadFavorites);
-  // Monotonic request id: a fast tap-through must not let a slow earlier listing
-  // land after a later one and show the wrong folder.
+  // Monotonic request id: blocks a slow earlier listing from landing after a later one.
   const reqRef = React.useRef(0);
 
   const navigate = React.useCallback(async (target, { fallbackHome = false } = {}) => {
@@ -46,8 +39,7 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
       setResult(res);
     } catch (e) {
       if (seq !== reqRef.current) return;
-      // A bad typed seed on first open drops to home instead of a dead end;
-      // a bad navigation later keeps the current list and just shows why.
+      // Only a first-open seed falls back home; a later bad navigation keeps the list.
       if (fallbackHome) { navigate('~'); return; }
       setErrorMsg(
         e instanceof BrowseError ? (ERROR_TEXT[e.code] ?? 'Cannot open folder') : 'Cannot reach the server'
@@ -97,7 +89,6 @@ export function DirectoryPicker({ initialPath, onPick, onCancel }) {
       {favorites.length > 0 && (
         <div className={styles.favRow}>
           {favorites.map((path) => (
-            // Tap the label to jump; the trailing × unpins without navigating.
             <span key={path} className={styles.favChip}>
               <button
                 type="button"
