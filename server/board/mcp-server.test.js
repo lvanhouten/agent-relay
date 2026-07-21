@@ -1,15 +1,11 @@
 'use strict';
-// Cursor-cache unit tests for mcp-server.js's read-output bookkeeping. These
-// cover the cursor-cache hazards — nonce namespacing, the end_line cursor leak,
-// the pipe-closed drop vs. content-sniffing, and the boot-nonce TTL — without a
-// live board (the pure decision logic is factored out of the pipe I/O).
+// Cursor-cache tests: nonce namespacing, the end_line leak, pipe-closed vs content-sniffing,
+// boot-nonce TTL - pure decision logic, no live board.
 const test = require('node:test');
 const assert = require('node:assert');
 const mcp = require('./mcp-server');
 
 test.beforeEach(() => mcp.__resetBoot());
-
-// --- advanceCursor: the pure decision the read path makes on each finish() ---
 
 test('advanceCursor: monotonic advance returns prior cursor and never rolls back', () => {
   const cache = new Map();
@@ -24,8 +20,7 @@ test('advanceCursor: monotonic advance returns prior cursor and never rolls back
   assert.strictEqual(cache.get('b1:1'), 250);
 });
 
-// The cursor must be dropped ONLY when the pipe actually closed, never
-// because the stream text happened to contain the farewell substring.
+// Cursor drops only on actual pipe close, never merely because text contains the farewell substring.
 test('advanceCursor: live output containing "closed (exit 0)" does NOT drop the cursor', () => {
   const cache = new Map();
   // A running program echoes the farewell phrase, but the pipe is still open.
@@ -46,18 +41,15 @@ test('advanceCursor: a null key neither reads nor writes the cache', () => {
   assert.strictEqual(cache.size, 1, 'nothing written under a null key');
 });
 
-// --- readClosedBeforeOutput: a failed attach must not read as a quiet line ---
-// The pure decision readOutput's finish() makes: only a pipe that closed with zero
-// bytes ever received is a failed attach (auth rejected / board restart mid-connect
-// / line gone). A quiet-but-healthy line keeps its socket open (pipeClosed=false);
-// a normal exit delivers the farewell sentinel first (text non-empty).
+// Failed attach = pipe closed with 0 bytes (bad auth / restart mid-connect / line gone);
+// a quiet-healthy line keeps the socket open, a normal exit sends the farewell first.
 
 test('readClosedBeforeOutput: closed with zero bytes is a failed attach', () => {
   assert.strictEqual(mcp.readClosedBeforeOutput('', true), true);
 });
 
 test('readClosedBeforeOutput: a quiet-but-open line (timer-driven finish) is NOT a failure', () => {
-  // The quiet/hardStop timers fire finish() with pipeClosed=false — a legit empty read.
+  // quiet/hardStop timers fire finish() with pipeClosed=false - a legit empty read.
   assert.strictEqual(mcp.readClosedBeforeOutput('', false), false);
 });
 
@@ -86,8 +78,6 @@ test('forgetLine: matches the full id, not a suffix (":17" is not forgotten by "
   assert.strictEqual(mcp.seen.has('bootA:17'), true, 'id 17 must not be caught by forgetLine("7")');
 });
 
-// --- refreshBoot: the confirmed/unconfirmed contract + TTL ---
-
 test('refreshBoot: a failed probe returns confirmed:false (caller must skip the cache)', async () => {
   mcp.__setRpc(async () => { throw new Error('board down'); });
   const r = await mcp.refreshBoot();
@@ -112,8 +102,7 @@ test('refreshBoot: a fresh confirmed nonce is reused without a new round-trip', 
   assert.strictEqual(calls, 1, 'subsequent reads inside the TTL do not re-probe the board');
 });
 
-// --- observeBoot: the round-2 regression — TTL trust with no live signal ---
-
+// A boot observed out-of-band (new/list reply) must invalidate stale cursors immediately, not wait on read-path TTL.
 test('observeBoot: a fresh boot observed via new/list invalidates a stale entry immediately, independent of the read-path TTL', () => {
   mcp.observeBoot('A');           // refreshBoot's TTL is now "confirmed" fresh under A
   mcp.seen.set('A:3', 999);       // an orphaned pre-restart entry for a reused id
@@ -136,8 +125,7 @@ test('observeBoot: a falsy boot (a failed RPC reply) is ignored, not treated as 
   assert.strictEqual(mcp.seen.get('A:3'), 999, 'an RPC failure must not corrupt the cache');
 });
 
-// --- endLine: the round-2 regression — end_line's leak path still had no try/finally ---
-
+// endLine must forget the cursor even if the end RPC rejects - the leak path lacked a try/finally.
 test('endLine: forgets the cursor even when the end RPC rejects', async () => {
   mcp.seen.set('bootA:9', 42);
   mcp.__setRpc(async () => { throw new Error('board unreachable'); });
@@ -153,13 +141,13 @@ test('endLine: forgets the cursor on a successful end too, and returns the RPC r
   assert.strictEqual(mcp.seen.has('bootA:9'), false);
 });
 
-// --- framePayload: the send-input byte string (bracketed-paste framing) ---
+// framePayload builds the send-input byte string (bracketed-paste framing).
 
 const PS = '\x1b[200~', PE = '\x1b[201~';
 
 test('framePayload: default appends Enter, sends text verbatim (per-line submit preserved)', () => {
   assert.strictEqual(mcp.framePayload('npm test', { submit: true }), 'npm test\r');
-  // a multi-line value is untouched — each embedded newline still submits its line
+  // multi-line value untouched - each embedded newline still submits its own line
   assert.strictEqual(mcp.framePayload('echo one\necho two', { submit: true }), 'echo one\necho two\r');
 });
 
@@ -181,7 +169,7 @@ test('framePayload: defaults (no opts) submit with Enter, no paste', () => {
   assert.strictEqual(mcp.framePayload('hi'), 'hi\r');
 });
 
-// --- readScreen: the stateless rendered-screen snapshot (sibling to readOutput) ---
+// readScreen is a stateless snapshot, unlike the cursor-based readOutput.
 
 test('readScreen: ok:true maps to the { grid, cursor, cols, rows } snapshot', async () => {
   mcp.__setRpc(async () => ({

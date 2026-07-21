@@ -1,9 +1,6 @@
 'use strict';
-// Guards `sb new` arg parsing — the one piece of novel logic behind `sb new
-// --here` (create the line with open:false, attach this terminal) vs the default
-// (open a tab). The board's open:false spawn path itself is covered by
-// tombstone.e2e.test.js and every web session create; what's untested is that
-// the CLI translates flags into that path correctly, in any order.
+// Only parseNewArgs (the CLI's flag translation) is untested elsewhere - the
+// open:false spawn path itself is covered by tombstone.e2e.test.js and web session create.
 const test = require('node:test');
 const assert = require('node:assert');
 const { parseNewArgs } = require('./sb');

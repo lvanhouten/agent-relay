@@ -1,21 +1,16 @@
 'use strict';
-// Integration guard for the killLineTree reap (the P1 "ending one line kills the
-// whole board" fix). Lines spawn with useConptyDll:true so node-pty's kill takes
-// the no-fork DLL branch — which deletes node-pty's own console-wide process
-// reaper. That reaper, over-broad as it was, DID sweep up detached grandchildren
-// (dev servers squatting a port); killLineTree replaces it with a scoped
-// `taskkill /T` from the line's own shell pid. This proves the replacement
-// actually reaps: a detached grandchild that SURVIVES the pseudo-console close
-// must still be gone after `end`. Remove the taskkill and this fails — the
-// grandchild, detached from the console, outlives the kill.
+// Guards killLineTree's reap: useConptyDll:true takes node-pty's no-fork DLL kill path,
+// which deletes node-pty's own console-wide process reaper (over-broad, but it swept up
+// detached grandchildren like dev servers squatting a port). killLineTree replaces it with
+// a scoped `taskkill /T` from the line's own shell pid; this proves a detached grandchild
+// that survives the pseudo-console close is still gone after `end`.
 //
-// Windows-only: the reaper, the flash, and taskkill are all Windows-specific;
-// off Windows killLineTree is just s.pty.kill(). The suicide itself has no
-// isolation repro (only the production console topology triggers it — see the
-// issue doc), so this guards the mechanism's provable half: scoped tree reap.
+// Windows-only (off-Windows killLineTree is just s.pty.kill()). The original board-wide-kill
+// bug has no isolation repro (only the production console topology triggers it); this guards
+// the provable half - scoped tree reap.
 //
-// Pipe override before requiring lib.js (PIPE_BASE is read at load); node --test
-// isolates each file's process so it can't leak.
+// AGENT_RELAY_PIPE must be set before lib.js is required (PIPE_BASE reads it at load); node
+// --test isolates each file's process so it can't leak.
 process.env.AGENT_RELAY_PIPE = `ar-killtree-test-${process.pid}`;
 
 const test = require('node:test');
@@ -48,11 +43,10 @@ test('killLineTree reaps a detached descendant that outlives the console close',
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ar-killtree-'));
   const pidFile = path.join(tmp, 'grand.pid');
   const spawner = path.join(tmp, 'spawner.js');
-  // The line's shell runs this: it launches a DETACHED, unref'd node loop (its own
-  // process group — survives the console tearing down), records its pid, then
-  // stays alive itself so the tree cmd -> node(spawner) -> node(grandchild) is
-  // fully intact at kill time. taskkill /T from the shell pid reaps the whole
-  // subtree; a bare pseudo-console close would leave the detached grandchild.
+  // Shell runs this: launches a DETACHED, unref'd node loop (own process group, survives
+  // console teardown), records its pid, and stays alive so cmd -> node(spawner) ->
+  // node(grandchild) is intact at kill time. taskkill /T reaps the whole subtree; a bare
+  // console close would not.
   fs.writeFileSync(spawner, [
     "const { spawn } = require('child_process');",
     "const fs = require('fs');",
@@ -82,8 +76,7 @@ test('killLineTree reaps a detached descendant that outlives the console close',
   });
   assert.strictEqual(line.ok, true, 'board spawned the line');
 
-  // The run command has no delivery confirmation (see switchboard notes) — poll
-  // the pid file the grandchild writes as the proof it actually launched.
+  // `run` has no delivery confirmation - poll the pid file the grandchild writes as proof it launched.
   assert.ok(await pollFor(() => fs.existsSync(pidFile)), 'grandchild launched and wrote its pid');
   grandPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
   assert.ok(grandPid > 0 && isAlive(grandPid), 'detached grandchild is live before the kill');

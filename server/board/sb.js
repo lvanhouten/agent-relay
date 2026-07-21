@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 'use strict';
-// switchboard CLI — new / list / join / end / wait on lines.
+// switchboard CLI - new / list / join / end / wait on lines.
 const path = require('path');
 const { spawn } = require('child_process');
 const { connectControl, rpc } = require('./lib');
 const { detectSpawner } = require('./spawners');
 
-// Detect the caller's terminal here (the board can't — it's detached) and pass
+// Detect the caller's terminal here (the board can't - it's detached) and pass
 // the launch recipe along so the board opens the tab in *this* terminal.
 function spawnRecipe() {
   const r = detectSpawner();
@@ -89,8 +89,8 @@ const USAGE = {
 };
 USAGE.ls = USAGE.list;
 
-// Parse `sb new` args: optional leading shell, --run/-r <cmd>, --here/--inline.
-// Shell-naive by design (mirrors the create dialog) — the first non-flag token is
+// Parses `sb new` args: optional leading shell, --run/-r <cmd>, --here/--inline.
+// Shell-naive by design (mirrors the create dialog) - first non-flag token is
 // the shell; flags may appear in any order.
 function parseNewArgs(rest) {
   let shell, run, here = false;
@@ -128,11 +128,11 @@ async function main() {
       break;
     }
     case 'new': {
-      // sb new [shell] [--run <cmd>] — optional shell, optional initial command
+      // sb new [shell] [--run <cmd>] - optional shell, optional initial command
       // typed into the shell (which stays open), mirroring the web client.
       const { shell, run, here } = parseNewArgs(args.slice(1));
       // --here attaches this terminal instead of opening a new tab: create the
-      // line with open:false (no pane recipe), then patch in-process — mirroring
+      // line with open:false (no pane recipe), then patch in-process - mirroring
       // `sb join --here`. The `run` command still feeds through the board.
       const msg = here
         ? { cmd: 'new', open: false, cwd: process.cwd() }
@@ -143,7 +143,7 @@ async function main() {
       const started = `line ${r.id} started${run ? ` (running: ${run})` : ''}`;
       if (here) { joinHere(r.id); break; }
       // paneOpened === false means the board refused the launch recipe (no
-      // standalone {cmd} arg) — the line exists but no tab will appear, so say so
+      // standalone {cmd} arg) - the line exists but no tab will appear, so say so
       // instead of the misleading "joining a tab".
       console.log(r.paneOpened === false
         ? `${started} — could NOT open a tab (check SWITCHBOARD_TERM); join it manually with \`sb join ${r.id}\``
@@ -169,7 +169,7 @@ async function main() {
       if (!arg) { console.error('usage: sb join <id> [--here]'); process.exit(1); }
       // --here attaches this terminal to the line instead of opening a new tab:
       // run patch.js (the same raw relay a spawned pane runs) in-process. The
-      // board opens no pane — client registration happens when patch connects to
+      // board opens no pane - client registration happens when patch connects to
       // the data pipe, so no `join` RPC is needed. Blocks until detach/exit.
       if (args.slice(2).includes('--here') || args.slice(2).includes('--inline')) {
         joinHere(arg);
@@ -177,8 +177,8 @@ async function main() {
       }
       const r = await rpc({ cmd: 'join', id: arg, spawn: spawnRecipe() });
       if (!r.ok) { console.log(`no such line: ${arg}`); break; }
-      // A refused recipe (paneOpened === false) means no tab opened despite ok:true
-      // — surface it rather than claim success.
+      // A refused recipe (paneOpened === false) means no tab opened despite
+      // ok:true - surface it rather than claim success.
       console.log(r.paneOpened === false
         ? `line ${arg} exists but a tab could NOT be opened (check SWITCHBOARD_TERM)`
         : `joining a tab to line ${arg}`);

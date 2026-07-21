@@ -1,5 +1,5 @@
 <#
-  switchboard autostart — register / unregister a per-user logon task that brings
+  switchboard autostart - register / unregister a per-user logon task that brings
   the board online at login (hidden, via start-board.vbs sitting next to this file).
 
   Thin wrapper over the shared autostart-task.ps1 at the repo root; the agent-relay

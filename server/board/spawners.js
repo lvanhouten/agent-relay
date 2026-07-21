@@ -13,13 +13,12 @@ const pick = (env, keys) =>
   Object.fromEntries(keys.filter(k => env[k] != null).map(k => [k, env[k]]));
 
 function detectSpawner(env = process.env) {
-  // Multiplexers first — these put the new tab in the caller's CURRENT window.
+  // Multiplexers first - these put the new tab in the caller's CURRENT window.
   // WEZTERM_PANE must ride along, not just the socket: `wezterm cli spawn`
-  // resolves the target window from the *current pane* (the --pane-id default is
-  // read from $WEZTERM_PANE), and the socket alone only says which mux server to
-  // talk to. Without WEZTERM_PANE the spawned `wezterm cli` — running under the
-  // detached board, which has no pane of its own — can't locate the current
-  // window and falls back to a NEW window instead of a tab.
+  // resolves the target window from the *current pane* ($WEZTERM_PANE), and
+  // the socket alone only says which mux server to talk to. Without it,
+  // `wezterm cli` running under the detached board (no pane of its own) can't
+  // locate the current window and falls back to a new one instead of a tab.
   if (env.WEZTERM_PANE != null)
     return { kind: 'wezterm', file: 'wezterm', args: ['cli', 'spawn', '--', '{cmd}'],
              env: pick(env, ['WEZTERM_UNIX_SOCKET', 'WEZTERM_PANE']) };
@@ -33,7 +32,7 @@ function detectSpawner(env = process.env) {
     return { kind: 'kitty', file: 'kitty', args: ['@', 'launch', '--type=tab', '{cmd}'],
              env: pick(env, ['KITTY_LISTEN_ON']) };
 
-  if (env.WT_SESSION)  // Windows Terminal — `-w 0` targets the current window
+  if (env.WT_SESSION)  // Windows Terminal - `-w 0` targets the current window
     return { kind: 'wt', file: 'wt', args: ['-w', '0', 'new-tab', '{cmd}'], env: {} };
 
   // Explicit override / unknown terminals. Template must contain a {cmd} token,

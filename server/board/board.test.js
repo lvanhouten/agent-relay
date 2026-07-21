@@ -1,7 +1,5 @@
 'use strict';
-// Pane-spawn decision + RPC-reply signal tests: openPane's refusal must be visible
-// to the caller (paneOpened in the reply), not just logged. Uses the pure helpers
-// so no pty/process is launched.
+// openPane refusal must show in paneOpened, not just a log (pure helpers, no pty).
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline,
@@ -16,9 +14,7 @@ test('scrubClaudeSessionMarkers: removes every allowlisted marker and reports th
 });
 
 test('scrubClaudeSessionMarkers: preserves deliberate config/preference vars (never a CLAUDE_* glob)', () => {
-  // The exact distinction the fix rests on: session-identity markers go, but
-  // user-exported knobs and API config stay — the daemon can't tell inherited
-  // from set-on-purpose, so anything not on the allowlist survives.
+  // Allowlist-only scrub - can't distinguish inherited session markers from deliberate config.
   const env = {
     CLAUDE_CODE_CHILD_SESSION: '1',   // marker -> scrubbed
     CLAUDECODE: '1',                  // marker -> scrubbed
@@ -67,8 +63,7 @@ test('openPane: returns false (no process) when the recipe is refused', () => {
   assert.strictEqual(opened, false);
 });
 
-// handle('join') on a nonexistent line never touches a pty — safe to exercise the
-// reply-building. paneOpened must be present so the caller can tell.
+// Missing-line join touches no pty; paneOpened must always be present to branch on.
 function capture() {
   const chunks = [];
   return { sock: { write: s => chunks.push(s) }, reply: () => JSON.parse(chunks.join('')) };
@@ -83,8 +78,7 @@ test('join reply for a missing line reports ok:false and paneOpened:null', () =>
   assert.ok('paneOpened' in r, 'the field is present so callers can branch on it');
 });
 
-// A throwing client .end() in the line-exit path must not abort the loop or
-// propagate out (it runs in an async pty callback, uncaught == daemon down).
+// A throwing client.end() must not abort others or propagate - uncaught here kills the daemon.
 test('notifyClientsClosed: a throwing client does not abort the others or propagate', () => {
   const notified = [];
   const good = suffix => ({ end: f => notified.push(suffix + f) });
@@ -94,9 +88,7 @@ test('notifyClientsClosed: a throwing client does not abort the others or propag
   assert.deepStrictEqual(notified, ['a:BYE', 'b:BYE'], 'both healthy clients still notified');
 });
 
-// --- ended-line tombstones: exit metadata survives the line's deletion ---
-// The registry is the pure core (capped ring + forget); the handle() tests pin
-// the wire surface: `list` carries `ended`, `forget` dismisses one tombstone.
+// Registry is pure ring+forget; handle() tests pin the wire surface (list.ended, forget).
 
 test('makeEndedRegistry: records in order and caps at the ring size', () => {
   const reg = makeEndedRegistry(3);
@@ -157,10 +149,7 @@ test("handle('forget') dismisses a tombstone once, then reports ok:false", () =>
   assert.strictEqual(c2.reply().ok, false, 'second dismiss finds nothing');
 });
 
-// --- bringOnline: the write-then-listen ordering that desyncs the secret ---
-// The rule: persist the secret ONLY from the bind-success callback, so a process
-// that loses the control-pipe bind race never overwrites the winner's on-disk
-// secret. These pin the ordering invariant without binding a real pipe.
+// Secret persists only on bind success - a bind-race loser must never clobber the winner's on-disk secret.
 
 test('bringOnline: persists the secret ONLY after the bind succeeds, never before', () => {
   const calls = [];
@@ -172,8 +161,7 @@ test('bringOnline: persists the secret ONLY after the bind succeeds, never befor
     persist: s => calls.push(['persist', s]),
     ready: () => calls.push(['ready']),
   });
-  // Before the OS confirms the bind, the secret is set in memory + listen is
-  // attempted, but NOTHING is written to disk yet.
+  // Secret is set in memory; nothing written to disk before the bind succeeds.
   assert.deepStrictEqual(calls, [['assign', 'SEKRET'], ['listen']],
     'no persist before the bind-success callback fires');
   bindCb();  // this process won the pipe
@@ -187,8 +175,7 @@ test('bringOnline: a process that LOSES the bind race never persists the secret'
   bringOnline({
     generate: () => 'LOSER',
     assign: s => calls.push(['assign', s]),
-    // Bind fails (EADDRINUSE): the success callback is never invoked; the real
-    // 'error' handler calls process.exit(0).
+    // Bind fails (EADDRINUSE): success callback never invoked; real error handler exits(0).
     listen: () => { calls.push(['listen']); },
     persist: s => calls.push(['persist', s]),
   });
@@ -196,10 +183,7 @@ test('bringOnline: a process that LOSES the bind race never persists the secret'
     "the losing process must never overwrite the winner's on-disk secret");
 });
 
-// --- makeRunFeeder: initial-command feed debounce + confirm-and-retry ---
-// A fake clock + scheduler so the timing logic is exercised deterministically
-// without a real pty or wall-clock waits. advance(ms) fires due timers (including
-// ones scheduled by a firing callback) in due order.
+// Fake clock/scheduler: advance(ms) fires due timers in order, including ones scheduled by a firing callback.
 function feederHarness(run, opts = {}) {
   let t = 0, seq = 0, scheduleCount = 0, alive = true;
   const timers = new Map();
@@ -287,11 +271,7 @@ test('makeRunFeeder: never writes once the line is gone', () => {
   assert.strictEqual(h.writes.length, 0);
 });
 
-// --- makeScreenLifecycle: lazy-init/seed, live feed, resize, dispose ---
-// A fake emulator + injected size/scrollback accessors so the per-line screen
-// lifecycle is exercised without spawning a pty or constructing a real VT. The
-// factory counts constructions so the efficiency invariant (no emulator until
-// first read) is directly asserted.
+// Fake emulator, no real pty/VT; construction count proves lazy-init (no emulator before first read).
 function screenHarness({ size = { cols: 80, rows: 24 }, scrollback = [] } = {}) {
   let constructed = 0;
   const emulator = {
@@ -325,8 +305,7 @@ test('makeScreenLifecycle: no emulator is constructed until the first read', () 
   const h = screenHarness();
   assert.strictEqual(h.constructed(), 0, 'nothing built on creation');
   assert.strictEqual(h.life._initialized(), false);
-  // Pre-read feed/resize must not force a construction either — a line nobody
-  // screen-reads allocates nothing.
+  // Pre-read feed/resize must not force construction - an unread line allocates nothing.
   h.life.feed('ignored');
   h.life.resize(10, 5);
   assert.strictEqual(h.constructed(), 0, 'feed/resize before first read stay no-ops');
@@ -381,10 +360,7 @@ test('makeScreenLifecycle: dispose releases the emulator and drops the reference
   assert.strictEqual(h.emulator.disposed, 1);
 });
 
-// The line-exit race: a screen read can be in flight, or arrive, while
-// p.onExit disposes the emulator. A disposed lifecycle must never rebuild from
-// stale scrollback or serve a grid from a terminal being torn down — it returns
-// null so the handler reports the exited line instead of a stale/torn frame.
+// p.onExit may dispose mid-read; a disposed lifecycle must return null, never a stale/torn grid.
 
 test('makeScreenLifecycle: a read after dispose refuses to rebuild and returns null', async () => {
   const h = screenHarness({ scrollback: ['seed'] });
@@ -422,10 +398,7 @@ test('makeScreenLifecycle: a dispose during an in-flight read discards the grid 
   assert.strictEqual(await reading, null, 'a grid produced after dispose is discarded, not returned');
 });
 
-// --- handle('screen'): the two distinct failure replies (pure, no pty) ---
-// A live line's screen read needs a real emulator, so the live path is covered
-// by the e2e test; here we pin the not-live branches, which read only the
-// tombstone registry and must be tellable apart by `ended`.
+// Live screen reads are covered by the e2e test; here: not-live branches, distinguished by `ended`.
 
 test("handle('screen') for an id that never existed replies ok:false, ended:false", async () => {
   const c = capture();
@@ -457,10 +430,7 @@ test("handle('screen') for an exited line replies ended:true with its exitCode, 
   }
 });
 
-// --- preview tail: drop the bottom-anchored input box -----------------------
-// A Claude-style TUI renders a full-width input box at the bottom (rule, prompt,
-// rule) with a status line below it. The preview must show the output ABOVE that
-// box, never the input chrome or the status line (which leaks usage/reset info).
+// A Claude TUI's bottom input box + status line (leaks usage/reset info) must never appear in the preview.
 const RULE = '─'.repeat(79);
 const CLAUDE_GRID = [
   '● Ran the test suite',
@@ -484,8 +454,7 @@ test('isRuleRow: a full-width horizontal rule is a rule row; content and short r
 
 test('previewTail: a Claude input box + status line are dropped, output above is shown', () => {
   const tail = previewTail(CLAUDE_GRID, 3);
-  // Only two content rows exist above the box; the blank between them and the
-  // box is trimmed, so a 3-row request yields those two.
+  // 2 content rows sit above the box; the blank before it is trimmed, so a 3-row ask yields both.
   assert.deepStrictEqual(tail, ['● Ran the test suite', '  42 passing, 0 failing']);
   // No border, prompt, or status leaked.
   assert.ok(!tail.some(r => r.includes('❯')), 'prompt line dropped');
@@ -508,11 +477,7 @@ test('previewTail: a single trailing rule (no bracketing pair) is still cut from
   assert.deepStrictEqual(previewTail(grid, 3), ['output above']);
 });
 
-// --- attachWithReplay ordering contract --------------------------------------
-// The width-correct history replay is async (the emulator parses on a later
-// tick). The ordering guarantee — replay first, then live output that arrived
-// during reconstruction, then join the live set — is the subtle correctness
-// part. Injected `reconstruct` + fake session/socket exercise it without a pty.
+// Async replay: order must be replay, then buffered live output, then join as a live client.
 
 function fakeSession(buf = [], cols = 120, rows = 30) {
   return { buf, pty: { cols, rows }, clients: new Set(), pending: new Map() };
@@ -574,8 +539,6 @@ test('attachWithReplay: reconstruction failure falls back to the raw byte-log', 
   assert.deepStrictEqual(sock.writes, ['aaabbb'], 'raw log concatenated as the fallback');
   assert.ok(s.clients.has(sock), 'still joins as a live client after the fallback');
 });
-
-// --- screenPreview: the `preview:true` list tail (grid slicing/capping) ---
 
 const previewSession = grid => ({ screen: { read: async () => (grid == null ? null : { grid }) } });
 
