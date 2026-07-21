@@ -1,5 +1,6 @@
 import React from 'react';
 import { useSessions } from '../core/useSessions.ts';
+import { useToast } from '../core/useToast.tsx';
 import { useDesktopNotifications } from '../core/useDesktopNotifications.ts';
 import { jumpIndexFromKey, isTypingTarget } from '../core/jumpKeys.ts';
 import { pickMostRecentLive } from '../core/recency.ts';
@@ -19,7 +20,8 @@ import styles from './DesktopWorkspace.module.scss';
 // Everything session-related still flows through useSessions; this
 // component only decides selection, filtering, and Alt+N routing.
 export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
-  const { sessions, create, kill, creating, load } = useSessions();
+  const { notifier } = useToast();
+  const { sessions, create, kill, creating, load } = useSessions(notifier);
   const [query, setQuery] = React.useState('');
   const [selectedId, setSelectedId] = React.useState(null);
   // Deliberate "no selection" — the operator stepped back to the home overview.
@@ -158,7 +160,10 @@ export function DesktopWorkspace({ theme, onToggleTheme, onToggleShell }) {
       setDialog(false);
       load();
     } catch {
-      setCreateError('Could not create the session. Check the server and try again.');
+      // Inline text covers the dialog-open case; the toast survives it closing.
+      const msg = 'Could not create the session. Check the server and try again.';
+      setCreateError(msg);
+      notifier.notify({ severity: 'error', message: msg });
     }
   };
 

@@ -1,7 +1,7 @@
 # Killing a line runs a console-wide process reaper (flashes conhost; can kill the whole board)
 
 **Source:** User observation, 2026-07-15 - "when I kill a switchboard line, I get a quick commandline popup window that appears and disappears ~0.1s later." Escalated 2026-07-21 after the same reaper was found killing the entire board daemon (see the update below).
-**Status:** 🟡 Fixed (Option B) 2026-07-21, pending the live production re-run - see Resolution below.
+**Status:** ✅ Fixed (Option B) 2026-07-21, live production re-run confirmed - see Resolution below.
 **Kind:** Bug. Windows-only. Two manifestations of ONE reaper: a cosmetic conhost flash (always) and a data-loss daemon-suicide (environment-specific) - see the update.
 **Modules:** `server/board/board.js` (`pty.spawn` at ~L241; the `end` handler `s.pty.kill()` at ~L577, and the shutdown-all loop at ~L628). No web-tier change.
 **Severity:** High (was mis-scoped Low). The flash is cosmetic, but the underlying reaper force-kills every PID on the killed line's console - and in the production console topology that list includes the board process and every sibling line, so ending ONE line takes down the whole daemon and every live session on it (confirmed - see update).
@@ -95,7 +95,7 @@ Implemented in `server/board/board.js`:
 - **Mechanism (a):** the diff removes the reaper from the kill path (`useConptyDll:true`) and scopes the kill to descendants (`taskkill /T`) - confirmed by reading the installed `node-pty@1.1.0` kill branches.
 - **Orphan-reaping, in isolation (b):** `server/board/kill-tree.e2e.test.js` - an isolated board spawns a line whose shell launches a **detached** node grandchild (own process group, survives a console close); after `end`, the guard asserts the grandchild is gone. Mutation-tested: disabling the `taskkill` makes it fail (the detached grandchild orphans), so the guard tracks the reap, not a console-close side effect.
 
-**Still owed - the live production re-run (cannot be automated):** the daemon-suicide only reproduces against the real console topology (see the update above), and a board restart ends every live line, so this must be done by hand when convenient. After a board restart on the fixed code: capture the board pid, spawn two throwaway lines, `end` one, and confirm the board pid is unchanged and the other line survives. Also confirm the conhost flash is gone on a routine kill.
+**Live production re-run (c) - confirmed 2026-07-21:** on a board restart running the fixed code, `end`ing one line no longer takes down the daemon or its siblings - the board pid was unchanged and the other line survived, against the real console topology that produced the original suicide. The conhost flash is gone on a routine kill. This closes the issue.
 
 ## Relationship to other issues
 

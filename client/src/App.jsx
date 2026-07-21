@@ -6,6 +6,8 @@ import { readFragmentToken, stripFragment } from './core/fragmentPairing.ts';
 import { decideBoot } from './core/boot.ts';
 import { decideShell, readShellOverride, writeShellOverride } from './core/shellSelection.ts';
 import { login, listSessions } from './core/api.ts';
+import { ToastProvider } from './core/useToast.tsx';
+import { ToastHost } from './chrome/ToastHost.jsx';
 import styles from './App.module.scss';
 
 export default function App() {
@@ -107,21 +109,28 @@ export default function App() {
           mobile shell its own screen stack — each owns its data layer + create
           dialog over the shared core. Both sub-navigate internally, so App only
           gates on the authenticated `sessions` state. The shell toggle is
-          reachable from both (sidebar / sessions header). */}
-      {screen === 'sessions' && shell === 'desktop' && (
-        <DesktopWorkspace
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          onToggleShell={toggleShell}
-        />
-      )}
-      {screen === 'sessions' && shell === 'mobile' && (
-        <MobileShell
-          host={host}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          onToggleShell={toggleShell}
-        />
+          reachable from both (sidebar / sessions header). ToastProvider wraps
+          both so their data layers (useSessions) and create flows can push
+          in-app toasts; the host renders corner-anchored on desktop,
+          bottom-anchored on the narrower mobile stack. */}
+      {screen === 'sessions' && (
+        <ToastProvider>
+          {shell === 'desktop' ? (
+            <DesktopWorkspace
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              onToggleShell={toggleShell}
+            />
+          ) : (
+            <MobileShell
+              host={host}
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              onToggleShell={toggleShell}
+            />
+          )}
+          <ToastHost placement={shell === 'mobile' ? 'bottom' : 'corner'} />
+        </ToastProvider>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 # Desktop shell v2 — spectator attach + pane grid
 
 **Source:** Slice 2 of `2026-07-02-desktop-workspace-shell.md`, sliced 2026-07-07. The desktop killer feature: watching a fleet of agent sessions run side by side.
-**Status:** 💡 Proposed — 2026-07-07. Depends on slice 1 (`2026-07-07-desktop-shell-v1-master-detail.md`) for the shell to host it, and on the spectator ADR decided during slice 1's grill.
+**Status:** ✅ Landed 2026-07-16 (#61). All four deliverables shipped; focus-switch uses a live `mode` frame (`useSessionWS.ts`), not the detach+reattach this doc first proposed - the "alternative" in Risks below became the chosen path. See ADR-0005.
 **Kind:** Enhancement
 **Modules:** board (`list` reply), server/ws (spectator mode), client core (`TerminalView` spectator mode), DesktopShell (grid)
 **Severity:** High value / medium-large effort. The only server-touching slice.

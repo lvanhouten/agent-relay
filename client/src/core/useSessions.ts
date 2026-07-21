@@ -3,6 +3,11 @@ import { listSessions, createSession, killSession } from './api.ts';
 import type { CreateSessionOpts } from './api.ts';
 import { createPollSequence, filterKilled } from './sessionGuards.ts';
 import type { Session } from './types.ts';
+import type { Notifier } from './toastQueue.ts';
+
+// The coalesce key for the sticky "relay unreachable" toast: every failed poll
+// updates the one toast rather than stacking, and the next good poll clears it.
+const RELAY_UNREACHABLE = 'relay-unreachable';
 
 export interface Sessions {
   sessions: Session[];
@@ -27,7 +32,12 @@ export interface Sessions {
 // No token parameter: the browser path is cookie-only post-boot (ar_auth
 // rides every same-origin fetch by default), so there's nothing to thread
 // through here — see client-boot-flow brief.
-export function useSessions(): Sessions {
+//
+// notifier is optional so the hook stays usable (and its guards testable)
+// without a ToastProvider; when a shell passes one, the otherwise-silent poll
+// and kill failures surface as toasts. It must be a stable reference (useToast
+// memoizes it) or the poll effect below would re-subscribe on every render.
+export function useSessions(notifier?: Notifier): Sessions {
   const [sessions, setSessions] = React.useState<Session[]>([]);
 
   // Poll guards (pure logic in sessionGuards.ts, held in refs): a sequence
@@ -44,8 +54,21 @@ export function useSessions(): Sessions {
       const list = await listSessions();
       if (!pollSeq.current.tryApply(seq)) return; // stale — a newer load() already applied
       setSessions(filterKilled(list, killed.current));
-    } catch { /* offline — keep stale list */ }
-  }, []);
+      // A poll that applied proves connectivity — clear any standing
+      // relay-unreachable toast so the stale-list warning doesn't linger.
+      notifier?.dismissKey(RELAY_UNREACHABLE);
+    } catch {
+      // Offline — keep the stale list, but stop the UI silently lying about it.
+      // Sticky + coalesced: one warning, refreshed each failed poll, cleared on
+      // the next good one above.
+      notifier?.notify({
+        key: RELAY_UNREACHABLE,
+        severity: 'error',
+        sticky: true,
+        message: 'Relay unreachable. Retrying…',
+      });
+    }
+  }, [notifier]);
 
   React.useEffect(() => {
     load();
@@ -87,13 +110,20 @@ export function useSessions(): Sessions {
     setSessions((prev) => prev.filter((s) => s.id !== id));
     try {
       await killSession(id);
+    } catch {
+      // The optimistic removal above will flicker back on the reconcile poll;
+      // without this the operator has no idea the terminate didn't take.
+      notifier?.notify({
+        severity: 'error',
+        message: 'Could not end the session. It may still be running.',
+      });
     } finally {
       // Reconcile against a fresh list, then stop suppressing the id.
       await load();
       killed.current.delete(id);
       killingRef.current.delete(id);
     }
-  }, [load]);
+  }, [load, notifier]);
 
   return { sessions, load, create, kill, creating };
 }
