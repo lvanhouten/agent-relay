@@ -9,10 +9,8 @@ import { tombstoneView } from '../core/tombstoneView.ts';
 import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff, ArrowRightToLine } from 'lucide-react';
 import styles from './Sidebar.module.scss';
 
-// One live session row. Attention dot uses the SAME decode as the mobile cards
-// (core/attention.ts) — the one status-vocabulary sync point — so a needs-input
-// flag pulses here exactly as it does on a phone. jumpHint shows the Alt+N chord
-// for the first nine visible rows.
+// Attention dot uses the SAME decode as the mobile cards (core/attention.ts),
+// so a needs-input flag pulses identically on both. Alt+N chord shown for rows 1-9.
 function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
   const attention = attentionFor(session.status);
   const preview = session.preview ?? [];
@@ -26,9 +24,8 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
       aria-current={selected ? 'true' : undefined}
     >
       <div className={styles.rowTop}>
-        {/* Additive action on the LEFT, terminate on the far right — deliberately
-            opposite ends so a cheap "watch this" click can't be mistaken for the
-            destructive kill (revealed on hover like rowKill). */}
+        {/* Additive action on the LEFT, terminate on the far right, so a cheap
+            "watch this" click can't be mistaken for the destructive kill. */}
         <span className={styles.rowInject}>
           <IconButton label="Add to grid" size="sm" onClick={(e) => { e.stopPropagation(); onInject(session.id); }}>
             <ArrowRightToLine size={13} />
@@ -47,8 +44,7 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
         <Folder size={11} />
         <span className={styles.rowCwdPath}>{session.cwd}</span>
       </span>
-      {/* Rendered-screen tail (decorative — the row's own name/cwd/status carry
-          the semantics), so it's hidden from the accessibility tree. */}
+      {/* Decorative rendered-screen tail; hidden from the accessibility tree. */}
       {preview.length > 0 && (
         <pre className={styles.rowPreview} aria-hidden="true">{preview.join('\n')}</pre>
       )}
@@ -73,7 +69,6 @@ function TombstoneRow({ session, onDismiss }) {
   );
 }
 
-// Bell affordance state, keyed off the notifications hook's resolved view.
 const NOTIFY = {
   on: { icon: Bell, label: 'Disable notifications', active: true, disabled: false },
   off: { icon: BellOff, label: 'Enable notifications', active: false, disabled: false },

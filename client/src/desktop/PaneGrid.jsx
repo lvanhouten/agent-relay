@@ -8,13 +8,9 @@ import { attentionFor } from '../core/attention.ts';
 import { paneRows } from '../core/gridPanes.ts';
 import styles from './PaneGrid.module.scss';
 
-// One grid cell: a slim header (attention dot, name, interactive badge, remove)
-// over a TerminalView. The focused cell is interactive; the rest are spectators
-// that adopt the reported PTY dims and CSS-scale. `mode` is a live
-// prop, NOT part of the key: the pane must NOT remount on focus change, or the
-// data pipe tears down and re-runs the reconstructed replay — which corrupts a
-// long session's history. TerminalView reconfigures interactive/spectator in
-// place (a `mode` frame to the server, no reattach).
+// `mode` is a live prop, NOT part of the key: remounting on focus change would tear
+// down the data pipe and re-run the replay, corrupting a long session's history.
+// TerminalView reconfigures interactive/spectator in place instead.
 function PaneCell({ session, focused, theme, onFocus, onRemove }) {
   const attention = attentionFor(session.status);
   return (
@@ -43,10 +39,8 @@ function PaneCell({ session, focused, theme, onFocus, onRemove }) {
   );
 }
 
-// The spectator pane grid: N live sessions side by side in resizable splits
-// (react-resizable-panels), arranged into roughly-square rows by paneRows. One
-// pane is focused/interactive; clicking any other focuses it. Panes and byId are
-// owned by DesktopWorkspace; this component only lays them out.
+// N live sessions in resizable splits, arranged into roughly-square rows by
+// paneRows. Panes and byId are owned by DesktopWorkspace; this only lays them out.
 export function PaneGrid({ panes, byId, focusedId, theme, onFocus, onRemove }) {
   const rows = paneRows(panes);
   return (
