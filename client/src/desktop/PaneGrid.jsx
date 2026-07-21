@@ -1,7 +1,7 @@
 import React from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { StatusDot } from '@ds/StatusDot.jsx';
-import { IconButton } from '@ds/IconButton.jsx';
+import { StatusDot } from '@shared/StatusDot.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
 import { X } from 'lucide-react';
 import { TerminalView } from '../core/TerminalView.tsx';
 import { attentionFor } from '../core/attention.ts';

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Button } from '@ds/Button.jsx';
-import { IconButton } from '@ds/IconButton.jsx';
-import { Input } from '@ds/Input.jsx';
+import { Button } from '@shared/Button.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
+import { Input } from '@shared/Input.jsx';
 import { isClaudeCommand, getFlag, setFlag } from '../core/claudeFlags.ts';
 import { loadTemplates, saveTemplates, upsertTemplate, removeTemplate, uniqueFallbackLabel } from '../core/templates.ts';
 import { Terminal, Folder, FolderSearch, Bookmark, BookmarkPlus, X } from 'lucide-react';

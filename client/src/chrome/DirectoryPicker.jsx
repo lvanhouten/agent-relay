@@ -1,7 +1,7 @@
 import React from 'react';
-import { Button } from '@ds/Button.jsx';
-import { Input } from '@ds/Input.jsx';
-import { IconButton } from '@ds/IconButton.jsx';
+import { Button } from '@shared/Button.jsx';
+import { Input } from '@shared/Input.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
 import { Folder, CornerLeftUp, Search, Star, X } from 'lucide-react';
 import { browseDir, BrowseError } from '../core/api.ts';
 import { joinChildPath } from '../core/pickerPath.ts';

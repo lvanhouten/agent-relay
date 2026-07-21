@@ -63,11 +63,10 @@ export interface InputFrame { type: 'input'; payload: string }
 export interface ResizeFrame { type: 'resize'; cols: number; rows: number }
 export type ClientFrame = InputFrame | ResizeFrame;
 
-// TerminalView's mode axis. Only 'interactive' (fit the container + send resize)
-// is implemented; 'spectator' (adopt the reported PTY dims + CSS-scale, never
-// send resize) is declared now so the desktop shell lands against a stated
-// contract instead of retrofitting one — see
-// _docs/issues/2026-07-02-desktop-workspace-shell.md.
+// TerminalView's mode axis. 'interactive' fits the container and sends resize;
+// 'spectator' adopts the reported PTY dims and CSS-scales the grid to fit the
+// pane, sending no resize so it never clamps the shared line — the desktop
+// grid's watch-only panes. Mode is fixed per mount; a switch is a remount.
 export type TerminalViewMode = 'interactive' | 'spectator';
 
 // Mirrors server/src/fsBrowse.js — the GET /api/fs/browse reply for the create

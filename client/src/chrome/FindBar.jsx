@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconButton } from '@ds/IconButton.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { searchReadout } from '../core/searchReadout.ts';
 import styles from './FindBar.module.scss';

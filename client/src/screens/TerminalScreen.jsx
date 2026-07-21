@@ -1,8 +1,8 @@
 import React from 'react';
-import { StatusDot } from '@ds/StatusDot.jsx';
-import { IconButton } from '@ds/IconButton.jsx';
-import { OverflowMenu } from '@ds/OverflowMenu.jsx';
-import { Kbd } from '@ds/Kbd.jsx';
+import { StatusDot } from '@shared/StatusDot.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
+import { OverflowMenu } from '@shared/OverflowMenu.jsx';
+import { Kbd } from '@shared/Kbd.jsx';
 import {
   ChevronLeft, Terminal as TerminalIcon, Copy, Maximize2, Minimize2, Sun, Moon,
   Search, Download, Keyboard, X, ChevronUp, ChevronDown, FolderPlus,

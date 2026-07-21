@@ -222,7 +222,13 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         const w = screen.offsetWidth, h = screen.offsetHeight;
         mount.style.width = `${w}px`;
         mount.style.height = `${h}px`;
-        const scale = Math.min(wrap.clientWidth / w, wrap.clientHeight / h);
+        // clientWidth/Height include padding, but the mount fills only the
+        // content box — scale to that, or the thumbnail overscales and clips
+        // into the gutter.
+        const cs = getComputedStyle(wrap);
+        const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+        const scale = Math.min(availW / w, availH / h);
         mount.style.transformOrigin = 'top left';
         mount.style.transform = `scale(${scale})`;
       };

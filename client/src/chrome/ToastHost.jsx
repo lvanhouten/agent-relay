@@ -1,5 +1,5 @@
 import React from 'react';
-import { Toast } from '@ds/Toast.jsx';
+import { Toast } from '@shared/Toast.jsx';
 import { useToast } from '../core/useToast.tsx';
 import styles from './ToastHost.module.scss';
 

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Button } from '@ds/Button.jsx';
-import { Badge } from '@ds/Badge.jsx';
-import { StatusDot } from '@ds/StatusDot.jsx';
-import { IconButton } from '@ds/IconButton.jsx';
-import { Input } from '@ds/Input.jsx';
+import { Button } from '@shared/Button.jsx';
+import { Badge } from '@shared/Badge.jsx';
+import { StatusDot } from '@shared/StatusDot.jsx';
+import { IconButton } from '@shared/IconButton.jsx';
+import { Input } from '@shared/Input.jsx';
 import { attentionFor } from '../core/attention.ts';
 import { tombstoneView } from '../core/tombstoneView.ts';
 import { Plus, Search, Folder, Trash2, X, ChevronRight, ChevronDown, Sun, Moon, Smartphone, Bell, BellOff, ArrowRightToLine } from 'lucide-react';
