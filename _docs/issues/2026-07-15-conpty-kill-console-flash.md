@@ -1,10 +1,22 @@
-# Killing a line flashes a console window on Windows
+# Killing a line runs a console-wide process reaper (flashes conhost; can kill the whole board)
 
-**Source:** User observation, 2026-07-15 — "when I kill a switchboard line, I get a quick commandline popup window that appears and disappears ~0.1s later."
-**Status:** 💡 Proposed — 2026-07-15. Root-caused; the fix has a fork to settle (naive vs. robust) before code.
-**Kind:** Bug (cosmetic) with a non-cosmetic fix trap. Windows-only.
-**Modules:** `server/board/board.js` (`pty.spawn` at ~L245; the `end` handler `s.pty.kill()` at ~L521, and the shutdown-all loop at ~L572). No web-tier change.
-**Severity:** Low — purely visual; nothing leaks, nothing is left running. But the *obvious* fix (`useConptyDll`) silently regresses process reaping, so this is worth doing deliberately rather than reaching for the one-liner.
+**Source:** User observation, 2026-07-15 - "when I kill a switchboard line, I get a quick commandline popup window that appears and disappears ~0.1s later." Escalated 2026-07-21 after the same reaper was found killing the entire board daemon (see the update below).
+**Status:** 🔴 Confirmed P1 - 2026-07-21. Root-caused twice over; fix is Option B below.
+**Kind:** Bug. Windows-only. Two manifestations of ONE reaper: a cosmetic conhost flash (always) and a data-loss daemon-suicide (environment-specific) - see the update.
+**Modules:** `server/board/board.js` (`pty.spawn` at ~L241; the `end` handler `s.pty.kill()` at ~L577, and the shutdown-all loop at ~L628). No web-tier change.
+**Severity:** High (was mis-scoped Low). The flash is cosmetic, but the underlying reaper force-kills every PID on the killed line's console - and in the production console topology that list includes the board process and every sibling line, so ending ONE line takes down the whole daemon and every live session on it (confirmed - see update).
+
+## UPDATE 2026-07-21 - this is P1: ending one line kills the whole board
+
+The reaper this doc already root-caused (the `consoleProcessList.forEach(pid => process.kill(pid))` at `windowsPtyAgent.js:141-148`) does far more than flash a window. It force-kills **every process on the killed line's console**. This doc assumed that list was just the killed line's own tree. Against the **production** board it is not - it includes the board daemon itself and every sibling line.
+
+**Confirmed reproduction (production board, via the switchboard MCP):** three lines live (id 1 = a real conduct-feature `contract-check` session with a client attached; ids 2, 3 = fresh throwaways). Ended **only** id 3. Result: `list` went empty, the board process pid changed (old daemon `50924` gone, a fresh `39368` autostarted 3s later), and **all four processes - the old board plus all three line shells (pids 51180, 35544, 1432) - were gone.** The board log shows `line 3 closed` immediately followed by a new `switchboard online` with no `shutting down` in between: the daemon didn't exit gracefully, it was killed. Every line dies with exit `-1073741510` (`0xC000013A` = `STATUS_CONTROL_C_EXIT`), the tell that a console-wide kill fired.
+
+This is exactly the operator symptom: "closed the second session and it killed the first one too." It also silently kills unrelated live work - the repro above destroyed a real conductor line.
+
+**Why the isolation repros stay green (important for verification):** four isolated boards on `AGENT_RELAY_PIPE` - including one detached exactly like autostart, one with per-line child trees, and one with 3 lines + an attached client + preview polling - all correctly isolated the kill (sibling and board survived). The suicide only reproduces against the real daemon. The console-sharing that makes the reaper's `AttachConsole` + `GetConsoleProcessList` return the board + siblings is specific to how the production board is consoled (autostarted from a console-attached parent - `npm run server` in a real terminal - vs a `node --test`-parented board that has no such console). **Consequence: there is no clean red→green isolation test for the suicide itself.** Verify the fix by (a) the mechanism - the reaper is removed from the kill path outright - and (b) a live re-run of the production repro after a board restart.
+
+**Why Option B still fixes it without pinning the console cause:** the suicide has exactly one source - that `forEach(process.kill)`. `useConptyDll: true` routes kill through the DLL branch (`windowsPtyAgent.js:153-159`), which never calls `_getConsoleProcessList` and never runs that loop, so the over-broad kill is deleted regardless of the console topology. `taskkill /pid <line-pid> /T` reaps only the line's **descendants**, never ancestors, so it structurally cannot reach the board or a sibling. The fix is correct without understanding *why* the console is shared.
 
 ## Symptom
 
@@ -32,9 +44,9 @@ This matters **specifically for this repo**: a Claude line routinely spawns `npm
 
 ### Option A — flip `useConptyDll: true` on spawn (rejected as a standalone fix)
 
-node-pty's DLL-based ConPTY kill path (`windowsPtyAgent.js:153-159`) skips the fork entirely — just `inSocket.destroy()` + native kill. No `AttachConsole`, no flash. One-line opt-in in the `pty.spawn` options.
+node-pty's DLL-based ConPTY kill path (`windowsPtyAgent.js:153-159`) skips the fork entirely - just `inSocket.destroy()` + native kill. No `AttachConsole`, no flash. One-line opt-in in the `pty.spawn` options. It *does* stop the daemon-suicide (the reaper's `forEach(process.kill)` is on the other branch and never runs).
 
-**But** it also drops the process-list reaper. A detached/backgrounded grandchild (dev server, double-forked process) can survive as an orphan — no console, no parent, still holding its ports. This *reintroduces* the exact problem the default path was built to prevent, and this repo hits that problem in practice. Do not ship A alone.
+**But** it also drops the process-list reaper. A detached/backgrounded grandchild (dev server, double-forked process) can survive as an orphan - no console, no parent, still holding its ports. This *reintroduces* the exact problem the default path was built to prevent, and this repo hits that problem in practice. Do not ship A alone.
 
 - Foreground, still console-attached grandchildren (Claude's Bash tool mid-`npm test`) die either way — closing the pseudo-console tears down the shared console.
 - Backgrounded / detached grandchildren are the divergence, and the dangerous one.
@@ -55,16 +67,16 @@ if (process.platform === 'win32') {
 
 `/T` reaps the whole tree (orphans included), `/F` forces, `windowsHide: true` kills the flash. With `useConptyDll: true` also set, node-pty's kill takes the no-fork branch, so there's no second flash and no double enumeration.
 
-Net: no flash **and** no orphans — but more moving parts than the one-liner, so it needs real verification (below) before trusting.
+Net: no daemon-suicide, no flash, **and** no orphans - but more moving parts than the one-liner, so it needs real verification (below) before trusting.
 
 ## Risks / open questions
 
 - **Must verify against a real Claude-line-with-a-dev-server**, not a bare shell. Spawn a line, run `npm run server` in it (or a `run_in_background` job), kill the line, then confirm the child `node`/`vite` is gone (`Get-CimInstance Win32_Process` / kill-by-port shows nothing on :3017/:5173). This is the whole point of Option B; prove it reaps.
 - **`taskkill` timing vs. `pty.kill()`.** `taskkill` is async (a spawned process); `s.pty.kill()` fires right after. Killing the tree first then closing the pty is the intended order, but confirm there's no race where the pty handle close races the taskkill and one path wins messily. If ordering is fiddly, await the taskkill exit before `pty.kill()`.
 - **`taskkill` availability / exit noise.** It's present on all supported Windows; `stdio: 'ignore'` swallows its output. A PID that's already gone returns non-zero — harmless, but don't let it throw into the `end` handler.
-- **Board restart required to test.** The `pty.spawn` option change only affects **newly** spawned lines, and the board is a long-lived daemon — restarting it ends every live line (see CLAUDE.md). Test on an isolated board via `AGENT_RELAY_PIPE` (template: `server/board/tombstone.e2e.test.js`), not the production board.
+- **Board restart required to test.** The `pty.spawn` option change only affects **newly** spawned lines, and the board is a long-lived daemon - restarting it ends every live line (see CLAUDE.md). Test on an isolated board via `AGENT_RELAY_PIPE` (template: `server/board/tombstone.e2e.test.js`), not the production board.
+- **The suicide has no isolation repro.** Four faithful isolated boards did not reproduce it (see the update); only the production daemon does. So the orphan-reaping side of Option B is provable in isolation, but the *suicide fix itself* must be verified two ways: (1) by mechanism - confirm the diff removes the `forEach(process.kill)` reaper from the kill path (`useConptyDll:true`) and scopes the kill to the line's descendants (`taskkill /T`); (2) live - after a board restart with the fix, capture the board pid (boot nonce), spawn two lines, kill one, confirm the board pid is unchanged and the other line survives.
 - **Windows-only guard.** Both the `useConptyDll` option and the `taskkill` branch are Windows-specific; the option is ignored elsewhere and the `spawn` must stay behind the `process.platform === 'win32'` check.
-- **Cosmetic-only today.** If the flash ever proves genuinely harmless-and-tolerable, "won't fix" is defensible — the reaper regression risk is the reason this isn't a trivial one-liner, not the flash itself.
 
 ## Trigger signals to prioritize
 

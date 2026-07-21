@@ -15,7 +15,6 @@ import styles from './Sidebar.module.scss';
 // for the first nine visible rows.
 function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
   const attention = attentionFor(session.status);
-  const shellLabel = session.shell.split(/[/\\]/).pop();
   const preview = session.preview ?? [];
   return (
     <div
@@ -39,7 +38,7 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
         <span className={styles.rowMain}>
           <span className={styles.rowName}>{session.name}</span>
           <span className={styles.rowHint}>
-            <Folder size={11} /> {shellLabel} · {session.cwd}
+            <Folder size={11} /> {session.cwd}
           </span>
         </span>
         {index < 9 && <span className={styles.jump}>⌥{index + 1}</span>}
@@ -59,14 +58,13 @@ function SessionRow({ session, index, selected, onSelect, onInject, onKill }) {
 }
 
 function TombstoneRow({ session, onDismiss }) {
-  const shellLabel = session.shell.split(/[/\\]/).pop();
   const { dot, label, failed } = tombstoneView(session);
   return (
     <div className={styles.tombstoneRow}>
       <StatusDot status={dot} size="sm" showLabel={false} pulse={false} />
       <span className={styles.tombstoneMain}>
         <span className={styles.rowName}>{session.name}</span>
-        <span className={styles.rowHint}>{shellLabel} · {session.cwd}</span>
+        <span className={styles.rowHint}>{session.cwd}</span>
       </span>
       <Badge variant={failed ? 'danger' : 'neutral'}>{label}</Badge>
       <IconButton label="Dismiss" size="sm" onClick={() => onDismiss(session.id)}>

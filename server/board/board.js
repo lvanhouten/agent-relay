@@ -470,16 +470,57 @@ function openPane(id, recipe) {
   return true;
 }
 
-// The last non-blank rendered rows of a line, for a `preview:true` list. Reads
-// the per-line screen emulator — which is lazy-init, so requesting previews
-// warms an emulator for every live line and keeps it fed (the accepted cost of
-// the opt-in: non-preview list callers — sb, MCP, the notify/beacon cwd resolver
-// — allocate nothing). Returns [] when the screen can't be read (a line that
-// exited mid-read); each row is hard-capped to PREVIEW_ROW_MAX chars.
+// A bordered-TUI rule row: a run of horizontal box-drawing / underscore glyphs
+// (the input-box borders Claude Code and friends draw). Length-gated so a short
+// run inside real content isn't mistaken for a border.
+const RULE_CHARS = new Set(
+  '─━┄┅┈┉╌╍═' + // ─ ━ ┄ ┅ ┈ ┉ ╌ ╍ ═
+  '┌┐└┘├┤┬┴┼' + // ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼
+  '╭╮╯╰' + // ╭ ╮ ╯ ╰
+  '_'
+);
+function isRuleRow(line) {
+  const t = line.trim();
+  if (t.length < 8) return false;
+  for (const ch of t) if (!RULE_CHARS.has(ch)) return false;
+  return true;
+}
+
+// The preview tail for one line's rendered grid: the last `rows` non-blank rows
+// of the actual output, with any bottom-anchored input box removed first. A
+// Claude-style TUI draws a full-width input box at the bottom (a rule, the
+// prompt line, another rule) with a status line (model, context %, usage/reset)
+// below it — so a naive last-N-rows tail shows only that chrome and leaks the
+// operator's usage line. We find the bottom-most rule pair (the box borders) and
+// cut from the top border down; grids with no such box (a plain shell) are
+// tailed as-is.
+function previewTail(grid, rows) {
+  let lines = grid.split('\n');
+  let bottomRule = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (isRuleRow(lines[i])) { bottomRule = i; break; }
+  }
+  if (bottomRule >= 0) {
+    let topRule = -1;
+    for (let i = bottomRule - 1; i >= 0; i--) {
+      if (isRuleRow(lines[i])) { topRule = i; break; }
+    }
+    lines = lines.slice(0, topRule >= 0 ? topRule : bottomRule);
+  }
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  return lines.slice(-rows);
+}
+
+// The preview tail of a line, for a `preview:true` list. Reads the per-line
+// screen emulator — which is lazy-init, so requesting previews warms an emulator
+// for every live line and keeps it fed (the accepted cost of the opt-in:
+// non-preview list callers — sb, MCP, the notify/beacon cwd resolver — allocate
+// nothing). Returns [] when the screen can't be read (a line that exited
+// mid-read); each row is hard-capped to PREVIEW_ROW_MAX chars.
 async function screenPreview(s, rows = PREVIEW_ROWS) {
   const snap = await s.screen.read();
   if (!snap || !snap.grid) return [];
-  return snap.grid.split('\n').slice(-rows).map(r => (r.length > PREVIEW_ROW_MAX ? r.slice(0, PREVIEW_ROW_MAX) : r));
+  return previewTail(snap.grid, rows).map(r => (r.length > PREVIEW_ROW_MAX ? r.slice(0, PREVIEW_ROW_MAX) : r));
 }
 
 async function handle(m, sock) {
@@ -697,4 +738,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, screenPreview, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };
+module.exports = { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline, makeEndedRegistry, endedLines, makeScreenLifecycle, screenPreview, previewTail, isRuleRow, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS };

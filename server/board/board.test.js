@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { paneSpawnDecision, openPane, handle, notifyClientsClosed, attachWithReplay, makeRunFeeder, bringOnline,
-  makeEndedRegistry, endedLines, makeScreenLifecycle, screenPreview, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
+  makeEndedRegistry, endedLines, makeScreenLifecycle, screenPreview, previewTail, isRuleRow, scrubClaudeSessionMarkers, CLAUDE_SESSION_MARKERS } = require('./board');
 
 test('scrubClaudeSessionMarkers: removes every allowlisted marker and reports them', () => {
   const env = {};
@@ -455,6 +455,57 @@ test("handle('screen') for an exited line replies ended:true with its exitCode, 
   } finally {
     endedLines.forget('tomb-scr');   // module-level registry — leave it clean
   }
+});
+
+// --- preview tail: drop the bottom-anchored input box -----------------------
+// A Claude-style TUI renders a full-width input box at the bottom (rule, prompt,
+// rule) with a status line below it. The preview must show the output ABOVE that
+// box, never the input chrome or the status line (which leaks usage/reset info).
+const RULE = '─'.repeat(79);
+const CLAUDE_GRID = [
+  '● Ran the test suite',
+  '  42 passing, 0 failing',
+  '',
+  RULE,
+  '❯',
+  RULE,
+  '  [Opus(high)] agent-relay | ⎇ main',
+  '  ctx 105.9k/1m (11%) · last msg 08:19:48',
+  '  1% (4h50m) - resets at 1:10 PM EST',
+].join('\n');
+
+test('isRuleRow: a full-width horizontal rule is a rule row; content and short runs are not', () => {
+  assert.ok(isRuleRow(RULE));
+  assert.ok(isRuleRow('╭' + '─'.repeat(40) + '╮'), 'rounded box border with corners');
+  assert.ok(!isRuleRow('  ctx 105.9k/1m (11%)'), 'a status line is not a rule');
+  assert.ok(!isRuleRow('───'), 'a short run below the length gate is not a rule');
+  assert.ok(!isRuleRow(''), 'blank is not a rule');
+});
+
+test('previewTail: a Claude input box + status line are dropped, output above is shown', () => {
+  const tail = previewTail(CLAUDE_GRID, 3);
+  // Only two content rows exist above the box; the blank between them and the
+  // box is trimmed, so a 3-row request yields those two.
+  assert.deepStrictEqual(tail, ['● Ran the test suite', '  42 passing, 0 failing']);
+  // No border, prompt, or status leaked.
+  assert.ok(!tail.some(r => r.includes('❯')), 'prompt line dropped');
+  assert.ok(!tail.some(r => r.includes('─')), 'rule rows dropped');
+  assert.ok(!tail.some(r => r.includes('resets at')), 'status line dropped');
+});
+
+test('previewTail: trailing blank rows above the box are trimmed before the tail', () => {
+  const tail = previewTail(CLAUDE_GRID, 2);
+  assert.deepStrictEqual(tail, ['● Ran the test suite', '  42 passing, 0 failing']);
+});
+
+test('previewTail: a plain grid with no input box is tailed as-is', () => {
+  const grid = ['line one', 'line two', 'line three', 'line four'].join('\n');
+  assert.deepStrictEqual(previewTail(grid, 2), ['line three', 'line four']);
+});
+
+test('previewTail: a single trailing rule (no bracketing pair) is still cut from', () => {
+  const grid = ['output above', RULE].join('\n');
+  assert.deepStrictEqual(previewTail(grid, 3), ['output above']);
 });
 
 // --- attachWithReplay ordering contract --------------------------------------

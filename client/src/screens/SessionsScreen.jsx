@@ -17,7 +17,6 @@ import { Folder, Clock, Trash2, Plus, Search, Settings, Sun, Moon, Monitor, X, C
 import styles from './SessionsScreen.module.scss';
 
 function SessionCard({ session, onAttach, onKill }) {
-  const shellLabel = session.shell.split(/[/\\]/).pop();
   // status decode lives in core/attention.ts (the vocabulary sync point with
   // server/src/sessions.js) — see the rationale + tests there.
   const attention = attentionFor(session.status);
@@ -49,7 +48,6 @@ function SessionCard({ session, onAttach, onKill }) {
 
       <div className={styles.cardFooter}>
         <div className={styles.cardBadges}>
-          <Badge variant="accent">{shellLabel}</Badge>
           <Badge variant="neutral">pid {session.pid}</Badge>
         </div>
         {/* State word + relative time read as one clause ("quiet · 43s ago") —
@@ -70,7 +68,6 @@ function SessionCard({ session, onAttach, onKill }) {
 // pipe is gone) — the only action is dismiss, which drops the tombstone via the
 // same DELETE the kill button uses (the server falls through to `forget`).
 function ExitedSessionCard({ session, onDismiss }) {
-  const shellLabel = session.shell.split(/[/\\]/).pop();
   // Tombstone decode (dot color, crash predicate, status word) is centralized in
   // core/tombstoneView.ts — the one place a `reason`/`exitCode` becomes a
   // rendering, shared with the sidebar row and detail pane so the three agree.
@@ -94,7 +91,6 @@ function ExitedSessionCard({ session, onDismiss }) {
 
       <div className={styles.cardFooter}>
         <div className={styles.cardBadges}>
-          <Badge variant="neutral">{shellLabel}</Badge>
           <Badge variant={failed ? 'danger' : 'neutral'}>{label}</Badge>
         </div>
         <span className={styles.exitedTime}>
