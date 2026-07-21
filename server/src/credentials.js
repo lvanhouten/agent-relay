@@ -1,13 +1,9 @@
 'use strict';
-// Persisted server credentials: the access token and the cookie-signing secret,
-// stored together in one owner-only JSON file so a restart doesn't silently
-// invalidate every logged-in client (an unstable token reads as a broken app).
-// Mirrors the board's per-boot pipe-secret pattern
-// (server/board/lib.js SECRET_DIR/persistSecret) but is deliberately NOT
-// imported from there: the board kernel is an independent package that runs
-// standalone (sb / mcp-server) with no dependency on server/src, so the
-// directory-resolution logic is duplicated by hand (same reasoning as
-// auth.js's safeEqual vs board/lib.js's secretEqual).
+// Persisted server credentials (token + cookie-signing secret) in one owner-only
+// JSON file, so a restart doesn't invalidate every logged-in client. Mirrors
+// board/lib.js's pipe-secret pattern but isn't imported from it — the board
+// kernel runs standalone with no server/src dependency, so this is hand-
+// duplicated (same reasoning as auth.js's safeEqual vs board/lib.js's secretEqual).
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -27,8 +23,7 @@ function generateSigningSecret() {
   return crypto.randomBytes(32).toString('base64url');
 }
 
-// Absent, unreadable, or corrupt (junk bytes / invalid JSON) are all treated
-// identically: "nothing usable on disk" — regenerate, never throw.
+// Absent/unreadable/corrupt all mean the same thing: nothing usable — regenerate, never throw.
 function readCredentialsFile(file) {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -47,22 +42,12 @@ function str(v) {
   return typeof v === 'string' && v ? v : null;
 }
 
-// Resolve { token, generated, signingSecret } for this run.
-//   - AR_NO_AUTH=1        -> token: null (auth disabled). Signing secret is
-//                            still resolved so downstream modules never handle
-//                            a null secret.
-//   - AR_TOKEN set        -> that token, generated: false. Nothing about the
-//                            token is written to disk (a pinned token is never
-//                            persisted), but the signing secret still is.
-//   - otherwise           -> reuse the persisted token if present; else
-//                            generate + persist one (generated: true only when
-//                            a fresh token was minted THIS load).
-// The signing secret is always generated-once-and-reused from the same file,
-// independent of how the token resolved above.
-//
-// `env`/`file` are injectable — same design as auth.js's resolveToken, so all
-// shapes are unit-testable without subprocess env games or touching the real
-// app-data path.
+// Resolves { token, generated, signingSecret }: AR_NO_AUTH=1 -> token null;
+// AR_TOKEN set -> that token, never persisted; otherwise reuse or generate+persist
+// one (generated: true only when freshly minted this load). The signing secret is
+// always generated-once-and-reused regardless of how the token resolved.
+// `env`/`file` are injectable, same design as auth.js's resolveToken, so every
+// shape is testable without touching the real app-data path.
 function loadCredentials(env, file = credentialsPath()) {
   const existing = readCredentialsFile(file) || {};
   const storedToken = str(existing.token);

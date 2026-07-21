@@ -3,17 +3,13 @@ const { Router } = require('express');
 const { notifyAll } = require('./notifiers');
 const { browseDir } = require('./fsBrowse');
 
-// Field caps for POST /sessions. These fields flow into pty.spawn (and `command`
-// is typed into a real shell), so validate type + length here rather than let a
-// non-string throw opaquely inside resolveCwd/pty.spawn, or a multi-MB payload
-// reach a live shell.
+// These fields flow into pty.spawn (`command` is typed into a real shell), so
+// validate type + length here rather than let a non-string throw opaquely inside
+// resolveCwd/pty.spawn, or a multi-MB payload reach a live shell.
 const FIELD_MAX = { name: 200, cwd: 4096, shell: 500, command: 8192 };
 
-// Shared type+length check over a cap table. Every field is optional, but any
-// present one must be a string within its cap. Returns an error string, or null
-// if valid. One loop for every validated body (spawn, notify, and /api/templates
-// when phase 2 lands) so a fix to the check can't land in one copy and not the
-// other; each endpoint layers its extra rules on top.
+// Every field is optional, but any present one must be a string within its cap.
+// One shared loop for every validated body so a fix reaches all of them at once.
 function validateFieldCaps(body, caps) {
   for (const [field, max] of Object.entries(caps)) {
     const v = body[field];
@@ -28,13 +24,12 @@ function validateSpawnBody(body) {
   return validateFieldCaps(body, FIELD_MAX);
 }
 
-// Field caps for POST /notify. title/body transit a third-party push service, so
-// bound them here; the notifier module also enforces payload discipline in prose.
+// title/body transit a third-party push service (see notifiers.js's payload-
+// discipline note), so bound them here too.
 const NOTIFY_MAX = { sessionId: 200, cwd: 4096, title: 200, body: 1000, url: 2048 };
 
-// Validate POST /notify. Returns an error string, or null if valid. title or
-// body must be present (an empty notification is pointless); priority, if given,
-// must be a Pushover-valid integer in [-2, 2]; needsInput, if given, a boolean.
+// title or body required (an empty notification is pointless); priority, if
+// given, must be a Pushover-valid integer in [-2, 2].
 function validateNotifyBody(body) {
   const capError = validateFieldCaps(body, NOTIFY_MAX);
   if (capError) return capError;
@@ -48,20 +43,15 @@ function validateNotifyBody(body) {
   return null;
 }
 
-// Field caps for POST /beacon. All optional strings; presence of a valid `event`
-// is the only requirement. sessionId/claudeSessionId are ids; transcriptPath/cwd
-// are filesystem paths (capped like `cwd` on the other endpoints).
-// NOTE: the cap is the ONLY check on `transcriptPath` — it is not canonicalized
-// or allow-listed here, and it is stored inertly (never read) today. The path is
-// attacker-suppliable; a future consumer must validate before reading it. See the
-// SECURITY note on the `_beacons` map in sessions.js.
+// All optional strings; a valid `event` is the only requirement. SECURITY:
+// transcriptPath is only length-capped here, not canonicalized/allow-listed, and
+// is attacker-suppliable — see the SECURITY note on `_beacons` in sessions.js
+// before any future consumer reads it.
 const BEACON_MAX = { sessionId: 200, claudeSessionId: 200, transcriptPath: 4096, cwd: 4096 };
 const BEACON_EVENTS = new Set(['SessionStart', 'Stop', 'SessionEnd']);
 
-// Validate POST /beacon. Returns an error string, or null if valid. `event` must
-// be one of the three recognized lifecycle events; every other field is an
-// optional capped string (validateFieldCaps). No title/body — a beacon never
-// pushes, so it carries none.
+// `event` must be one of the three recognized lifecycle events. No title/body —
+// a beacon never pushes.
 function validateBeaconBody(body) {
   const capError = validateFieldCaps(body, BEACON_MAX);
   if (capError) return capError;
@@ -69,18 +59,12 @@ function validateBeaconBody(body) {
   return null;
 }
 
-// `url` renders as a tap-through deep link inside a TRUSTED push notification
-// on the operator's phone — a phishing surface nothing else on this API has
-// (the accepted XSS ceiling covers local shell spawn, not off-device
-// credential harvesting from a notification tapped days later). Default-deny:
-// the field is rejected unless AR_NOTIFY_URL_ORIGIN names the one allowed
-// origin (set it to the origin you load the relay from). Compared as parsed
-// origins, not a string prefix, so https://relay.example.evil.com can't ride
-// a prefix match on https://relay.example.
-// Standing dependency: this closes the off-device vector only while the relay
-// origin itself has no attacker-steerable redirect. If a return_to/OAuth-
-// callback style endpoint is ever added, a deep link could bounce through the
-// trusted origin onward — pin an allowed path prefix here at that point.
+// `url` becomes a tap-through link in a TRUSTED push notification — a phishing
+// surface unique to this field. Default-deny: rejected unless AR_NOTIFY_URL_ORIGIN
+// names the one allowed origin, compared as parsed origins (not a string prefix)
+// so a lookalike subdomain can't ride a prefix match.
+// This only holds while the relay origin has no attacker-steerable redirect — if
+// a return_to/OAuth-callback endpoint is ever added, pin an allowed path prefix here too.
 function validateNotifyUrl(url, allowedOrigin) {
   if (url === undefined || url === null) return null;
   if (!allowedOrigin) return 'url is disabled (set AR_NOTIFY_URL_ORIGIN to enable deep links)';
@@ -92,15 +76,14 @@ function validateNotifyUrl(url, allowedOrigin) {
   return null;
 }
 
-// REST over the board-backed session store. Handlers are async because every
-// operation is an RPC to the board kernel; errors propagate to Express via next().
-// `notifiers` is the resolved push-sink list (notifiers.js); an empty list makes
-// POST /notify a no-op fan-out (feature off) while still flagging the card.
+// REST over the board-backed session store. Handlers are async since every op is
+// an RPC to the board; errors propagate to Express via next(). An empty `notifiers`
+// list makes POST /notify a no-op fan-out (feature off) while still flagging the card.
 function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
   const r = Router();
 
-  // A board-unreachable failure is a transient 503, not a 500 — the board is a
-  // separate process that restarts (autostart, code changes) as normal operation.
+  // A board-unreachable failure is a transient 503, not a 500 — the board
+  // restarts (autostart, code changes) as normal operation.
   r.get('/sessions', async (_req, res, next) => {
     try { res.json(await sessions.list()); }
     catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
@@ -108,10 +91,9 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
 
   r.post('/sessions', async (req, res, next) => {
     try {
-      // Require a JSON content type. A cross-site page can fire a "simple"
-      // text/plain POST that skips the CORS preflight entirely; express.json()
-      // would leave req.body empty and this handler would spawn a default
-      // shell as a side effect. 415 closes that channel even under AR_NO_AUTH=1.
+      // JSON-only: a cross-site text/plain POST skips the CORS preflight; without
+      // this, express.json() leaves req.body empty and a default shell spawns as
+      // a side effect. Applies even under AR_NO_AUTH=1.
       if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
       const body = req.body ?? {};
       const invalid = validateSpawnBody(body);
@@ -136,17 +118,13 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
     } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
-  // Fan a caller-supplied notification out to every configured push sink and,
-  // when `needsInput` is set, light the session's card (needs-input attention
-  // state). The session is named by `sessionId` (exact — the board injects
-  // AGENT_RELAY_SESSION into every spawned line) or, failing that, resolved from
-  // `cwd` by matching the board's live lines (the fallback for a hook that knows
-  // its directory but not the line id). Shared plumbing for a Claude Code hook:
-  // one POST both buzzes the phone (Pushover) and answers "which session needs
-  // me?" on the dashboard. Same 415 JSON-content-type guard as POST /sessions — a
-  // cross-site text/plain POST skips the CORS preflight. A gone/unknown sessionId
-  // or unmatched cwd just doesn't flag anything (the flag is pruned on the next
-  // list); a sink failure is captured, never fatal (notifyAll).
+  // Fans a notification to every configured sink and, if `needsInput`, flags the
+  // session's card — by `sessionId` (exact, via the board-injected
+  // AGENT_RELAY_SESSION) or, failing that, by matching `cwd` against live lines.
+  // Shared plumbing for a Claude Code hook: one POST both buzzes the phone and
+  // answers "which session needs me?" on the dashboard. Same 415 JSON guard as
+  // POST /sessions; an unmatched id/cwd just flags nothing; a sink failure is
+  // captured, never fatal (notifyAll).
   r.post('/notify', async (req, res, next) => {
     try {
       if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
@@ -164,14 +142,10 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
     } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
-  // Apply a Claude Code lifecycle beacon (SessionStart / Stop / SessionEnd) to the
-  // session store, giving Claude lines an honest attention state on their card.
-  // Unlike /notify this NEVER pushes — a beacon carries no title/body and does not
-  // touch the notifier sinks; it is pure state. Target resolution mirrors /notify:
-  // `sessionId` (exact — the board injects AGENT_RELAY_SESSION) or, absent that,
-  // `cwd` matched against the board's live lines. Same 415 JSON-content-type guard
-  // as /sessions and /notify (a cross-site text/plain POST skips CORS preflight); a
-  // board-down beacon is a transient 503, not a 500.
+  // Applies a Claude Code lifecycle beacon (SessionStart/Stop/SessionEnd) to give
+  // Claude lines an honest attention state. Unlike /notify this NEVER pushes — pure
+  // state. Target resolution mirrors /notify (sessionId, else cwd). Same 415 JSON
+  // guard; a board-down beacon is a transient 503, not a 500.
   r.post('/beacon', async (req, res, next) => {
     try {
       if (!req.is('json')) return res.status(415).json({ error: 'expected application/json' });
@@ -189,11 +163,9 @@ function createAPI(sessions, notifiers = [], { notifyUrlOrigin } = {}) {
     } catch (e) { e.boardUnreachable ? res.status(503).json({ error: 'board unreachable' }) : next(e); }
   });
 
-  // Read-only directory listing for the create dialog's "Browse…" picker — lists
-  // the BOARD's filesystem (see fsBrowse.js for the why and the trust note). No
-  // board RPC: a pure fs walk, so no 503 path. Expected filesystem
-  // conditions map to 4xx with a typed body the picker renders in place (denied ->
-  // 403, missing/not-a-dir -> 400); only an unexpected fs failure reaches next(e).
+  // Read-only directory listing for the create dialog's "Browse…" picker, over
+  // the BOARD's filesystem (see fsBrowse.js). No board RPC, so no 503 path;
+  // filesystem errors map to typed 4xx (denied -> 403, missing/not-a-dir -> 400).
   r.get('/fs/browse', async (req, res, next) => {
     try {
       // Express parses a repeated ?path= into an array; coerce so a malformed

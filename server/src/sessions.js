@@ -1,20 +1,17 @@
 'use strict';
-// Board-backed session store. Presents the session DTO/surface the API + WS hub
-// consume; every operation is an RPC to the board kernel (board-client) over its
-// pipes. The web tier holds no PTY state, so it can restart without dropping a
-// single session — and sessions are shared with the `sb` CLI / terminal panes.
+// Board-backed session store: presents the DTO/surface the API + WS hub consume;
+// every op is an RPC to the board kernel. The web tier holds no PTY state, so it
+// can restart without dropping a session, and sessions are shared with the `sb`
+// CLI / terminal panes.
 const path = require('path');
 const os = require('os');
 const { rpc, attach, DEFAULT_IDLE_MS } = require('./board-client');
 const { resolveCwd } = require('./paths');
 
-// Canonicalize a cwd for equality matching (the /api/notify cwd bridge). A hook
-// reports its own absolute cwd; the board records the resolveCwd()'d value passed
-// at spawn. Normalize both through path.resolve (collapses separators, trailing
-// slashes, and `.`/`..`) and lowercase on Windows, whose filesystem is
-// case-insensitive. Returns '' for an empty/whitespace cwd so a blank field can
-// never match every home-dir line. Deliberately does NOT expand `~` — a hook's
-// cwd is already absolute, and treating a literal '~' as home would over-match.
+// Canonicalizes a cwd for the /api/notify cwd-matching bridge: path.resolve on
+// both sides (collapses separators/./..), lowercased on Windows (case-insensitive
+// FS). Empty/whitespace -> '' so a blank field can't match every home-dir line.
+// Deliberately does NOT expand `~` — a hook's cwd is already absolute.
 function normalizeCwdForMatch(cwd) {
   const raw = (cwd ?? '').trim();
   if (!raw) return '';
@@ -22,12 +19,10 @@ function normalizeCwdForMatch(cwd) {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
-// Collapse a home-rooted absolute cwd to a `~/`-prefixed string for display;
-// leave anything outside home untouched. Display-only - the board's raw cwd
-// (not this) backs the /api/notify + /api/beacon cwd matching, and `~/` re-
-// expands through resolveCwd on the round trips this feeds (the "new session
-// here" prefill, the picker seed). Case-insensitive prefix on Windows; the
-// remainder renders with forward slashes to match the `~/` it joins.
+// Collapses a home-rooted cwd to `~/`-prefixed for display only — cwd matching
+// (/api/notify, /api/beacon) reads the board's raw cwd, not this, and `~/`
+// re-expands via resolveCwd on the round trips this feeds (the "new session
+// here" prefill, the picker seed). Case-insensitive prefix on Windows.
 function homeRelativeCwd(cwd, home = os.homedir()) {
   if (!cwd || !home) return cwd;
   const rc = path.resolve(cwd);
@@ -45,52 +40,41 @@ function relTime(ms) {
   return `${Math.round(s / 3600)}h ago`;
 }
 
-// board "line" -> agent-relay session DTO (the shape the client already expects).
-// status is the attention state: 'running' (output within the shared idle
-// threshold) or 'idle' (quiet beyond it — deliberately NOT "done": an idle
-// agent may be thinking, blocked on a prompt, or finished, and PTY bytes can't
-// tell those apart). The threshold is wait.js's DEFAULT_IDLE_MS so the card
-// and `sb wait` can't disagree about what idle means. Tombstones map via
-// endedToDto, which overrides to 'exited'. A missing or non-finite idleMs
-// (older board, the `new` reply, or a malformed pipe value) counts as 0 — just
-// active. Number.isFinite, not ??: a NaN would compare false into 'idle' and
-// render "NaNs ago" on the card.
+// board line -> session DTO. status is 'running' (output within the shared idle
+// threshold, wait.js's DEFAULT_IDLE_MS) or 'idle' (quiet longer — NOT "done":
+// PTY bytes can't tell thinking/blocked/finished apart). Tombstones override to
+// 'exited' via endedToDto. Missing/non-finite idleMs counts as 0; uses
+// Number.isFinite not ?? because a NaN would compare false into 'idle' and
+// render "NaNs ago".
 function toDto(line) {
   const idleMs = Number.isFinite(line.idleMs) ? line.idleMs : 0;
   const dto = {
     id: line.id,
     name: line.name || `session-${line.id}`,
     shell: line.shell,
-    // Home-collapsed for display (`~/…`); see homeRelativeCwd. Round-trips
-    // (the "new session here" prefill, the picker seed) re-expand `~` via
-    // resolveCwd, and cwd matching reads the board's raw line.cwd, not this.
     cwd: homeRelativeCwd(line.cwd),
     pid: line.pid ?? null,
     status: idleMs < DEFAULT_IDLE_MS ? 'running' : 'idle',
     lastActive: relTime(idleMs),
   };
-  // Live PTY grid from the board's `list` row: a spectator attach adopts these
-  // dims and CSS-scales rather than resizing the shared line. Only
-  // present on live lines — the synthesized create/tombstone DTOs carry no pty,
-  // and the next poll fills the dims in once the line is listed.
+  // Live PTY grid from the board's list row — a spectator attach adopts these
+  // dims and CSS-scales rather than resizing the shared line. Only present on
+  // live lines; create/tombstone DTOs carry none until the next poll.
   if (Number.isFinite(line.cols) && Number.isFinite(line.rows)) {
     dto.cols = line.cols;
     dto.rows = line.rows;
   }
-  // Rendered-screen tail from a `preview:true` list row (board screenPreview):
-  // the last few plain-text grid rows, for the fleet views' glance preview. Only
-  // attached when non-empty, so a fresh/quiet line adds no field and tombstones
-  // (endedToDto, built with no preview) never carry one.
+  // Rendered-screen tail from a preview:true list row — a few plain-text grid
+  // rows for the fleet view's glance preview. Only attached when non-empty;
+  // tombstones never carry one.
   if (Array.isArray(line.preview) && line.preview.length) dto.preview = line.preview;
   return dto;
 }
 
-// board tombstone -> exited-session DTO. Built THROUGH toDto (not a parallel
-// field list) so a field added to the base session shape lands in both
-// producers; only the exit metadata (exitCode, reason) and the dead-process
-// overrides (pid, status, endedAt-based lastActive) differ. `reason: 'killed'`
-// means the board's `end` command (an operator kill) rather than the process
-// exiting on its own.
+// board tombstone -> exited-session DTO, built THROUGH toDto (not a parallel
+// field list) so a field added to the base shape reaches both. Only exit
+// metadata and dead-process overrides differ. reason:'killed' means an operator
+// `end`, not the process exiting on its own.
 function endedToDto(t) {
   return {
     ...toDto({ id: t.id, name: t.name, shell: t.shell, cwd: t.cwd }),
@@ -102,11 +86,10 @@ function endedToDto(t) {
   };
 }
 
-// A board RPC failed (board down, pipe error, malformed reply). Distinct from an
-// empty session list so callers can tell "board unreachable" from "zero sessions":
-// the API answers 503 (not 200 []), and the WS hub closes with a "board
-// unreachable" reason (not "session not found") — otherwise every live session
-// looks dead during any transient board hiccup.
+// A board RPC failed (down, pipe error, malformed reply) — distinct from an
+// empty list so callers can tell "unreachable" from "zero sessions": the API
+// answers 503 (not 200 []) and the WS hub closes "board unreachable", not
+// "session not found".
 class BoardUnreachableError extends Error {
   constructor(cause) {
     super('board unreachable');
@@ -123,67 +106,46 @@ class BoardSessions {
     this._rpc = rpcFn;
     this._attach = attachFn;
     this._now = now; // injectable clock so the needs-input reconciliation is testable
-    // needs-input attention flags: session id -> the wall-clock ms at which a
-    // Claude Code Notification hook (via POST /api/notify) reported the line as
-    // blocked on a prompt. A web-tier-only Map on purpose — the board owns no
-    // notion of "needs input", and putting it here avoids a board restart (which
-    // would end every line). Lost on a web-tier restart (a re-fired hook re-flags);
-    // that's acceptable per the issue doc's pragmatism.
+    // needs-input flags: session id -> wall-clock ms when a Claude Code
+    // Notification hook (via POST /api/notify) reported the line blocked on a
+    // prompt. Web-tier-only (the board has no such notion) — lost on restart,
+    // but a re-fired hook re-flags.
     this._attention = new Map();
-    // Beacon state for Claude lines: board line id -> { claudeSessionId,
-    // transcriptPath, turnDoneAt }. PRESENCE OF AN ENTRY IS THE DEFINITION OF A
-    // "CLAUDE LINE" — a line a Claude Code hook has beaconed via POST /api/beacon.
-    // `turnDoneAt` is the wall-clock ms of the last Stop (the agent ended its turn
-    // and is waiting) or null (working). Separate from `_attention` on purpose: a
-    // needs-input flag and a turn-done state are independent overlays. Like
-    // `_attention`, web-tier only (the board owns no such notion), lost on a
-    // web-tier restart (a re-fired hook carries the full binding and re-establishes
-    // it), and subject to the boot-nonce void + dead-id prune in list().
-    // `claudeSessionId`/`transcriptPath` are captured for a future transcript
-    // feature and never surfaced in the DTO.
-    // SECURITY — `transcriptPath` is ATTACKER-SUPPLIABLE: it arrives verbatim in
-    // the POST /api/beacon body (the endpoint authenticates the operator token,
-    // not the path's provenance) and is only length-capped, never canonicalized
-    // or allow-listed. It is stored INERTLY here — nothing reads it today. Any
-    // future consumer (the transcript-tailer this field exists for) MUST treat it
-    // as untrusted input and validate before use: canonicalize + confine to the
-    // Claude projects dir, reject `..`/UNC/symlink escapes — otherwise it is an
-    // arbitrary-file-read / path-traversal sink. "Purely additive" means the
-    // STORAGE is additive, NOT that the value is trusted when consumed.
+    // Claude-line beacon state: id -> {claudeSessionId, transcriptPath,
+    // turnDoneAt}. AN ENTRY'S PRESENCE DEFINES a "Claude line" (beaconed via
+    // POST /api/beacon). turnDoneAt is the last Stop's wall-clock ms (null =
+    // working) — an independent overlay from _attention. Web-tier only, lost on
+    // restart (a re-fired hook re-establishes it), pruned on boot-nonce change.
+    // SECURITY — transcriptPath is ATTACKER-SUPPLIABLE (verbatim from the POST
+    // body, only length-capped) and stored INERTLY — nothing reads it today. Any
+    // future consumer MUST canonicalize + confine to the Claude projects dir and
+    // reject `..`/UNC/symlink escapes before reading, or it's an arbitrary-file-read sink.
     this._beacons = new Map();
-    // The board boot nonce last seen in a list reply — a change means the board
-    // restarted and every line id may be reused, so the flags above are void.
+    // Board boot nonce last seen in list() — a change means the board restarted
+    // and every line id may be reused, so the flags above are void.
     this._boardBoot = null;
   }
 
-  // Mark a live line as needing input. Set unconditionally (no existence RPC —
-  // stay dumb); list() prunes flags for ids that aren't live and clears a flag
-  // once output/input has moved past it.
+  // Marks a line needing input, unconditionally (no existence check — stay
+  // dumb); list() prunes dead ids and clears the flag once output moves past it.
   flagAttention(id) {
     if (id) this._attention.set(id, this._now());
   }
 
-  // Flag the live line whose cwd matches `cwd` — the /api/notify fallback for a
-  // hook that knows its own directory but not the board line id (the precise
-  // bridge is the AGENT_RELAY_SESSION env var the board injects at spawn; this
-  // backstops sb-spawned or pre-existing lines the hook can't name). cwd isn't
-  // unique, so on a tie the most recently active match (smallest idleMs) wins —
-  // over-lighting every same-dir line would be worse than picking the one the
-  // operator is most likely staring at. Returns the flagged id, or null when no
-  // live line matches (a gone/typo'd cwd just flags nothing). Board-down throws
-  // BoardUnreachableError like the other RPC paths (-> 503, not a silent no-op).
+  // /api/notify's cwd fallback for a hook that knows its directory but not the
+  // board line id (the precise bridge is AGENT_RELAY_SESSION, injected at
+  // spawn). On a same-cwd tie, the most recently active line wins. Returns the
+  // flagged id, or null if nothing matches; board-down throws
+  // BoardUnreachableError (503), never a silent no-op.
   async flagAttentionByCwd(cwd) {
     const id = await this._resolveLiveIdByCwd(cwd);
     if (id) this.flagAttention(id);
     return id;
   }
 
-  // Resolve the live line id whose cwd matches `cwd` (the shared basis for the
-  // /api/notify and /api/beacon cwd fallbacks). Normalizes both sides, and on a
-  // same-dir tie the most recently active line (smallest idleMs) wins — over-
-  // matching every same-dir line would be worse than picking the one the operator
-  // is most likely staring at. Returns the id, or null for an empty/unmatched cwd.
-  // Board-down throws BoardUnreachableError (-> 503), never a silent no-op.
+  // Shared basis for the /api/notify and /api/beacon cwd fallbacks (see
+  // flagAttentionByCwd). Returns null for an empty/unmatched cwd; board-down
+  // throws BoardUnreachableError.
   async _resolveLiveIdByCwd(cwd) {
     const target = normalizeCwdForMatch(cwd);
     if (!target) return null;
@@ -201,28 +163,18 @@ class BoardSessions {
     return matches.length ? matches[0].id : null;
   }
 
-  // Apply a lifecycle beacon from a Claude Code hook (POST /api/beacon). Target
-  // resolution MIRRORS /api/notify exactly: a present `sessionId` is acted on
-  // directly (a dumb set — no existence AND no ownership/authenticity check; an id
-  // for an exited/unknown line is set and harmlessly pruned on the next list()).
-  // TRUST MODEL: any caller past the operator token can drive any live line's card
-  // state (force turn-done/running, or wipe a marker with SessionEnd). This is
-  // deliberate parity with /api/notify under the accepted single-operator
-  // ceiling, and the blast radius is cosmetic only — no spawn, no data exposure,
-  // no push (a beacon never pushes). Not a hole to close; a documented assumption.
-  // The `cwd` fallback fires ONLY when `sessionId` is absent. A present-but-
-  // unmatched *non-empty* `sessionId` must never fall through to `cwd` — that
-  // would beacon a DIFFERENT same-directory live line. An EMPTY-STRING sessionId
-  // is intentionally treated as ABSENT (the falsy `if (sessionId)` below): it is
-  // the "hook couldn't resolve a line id" sentinel (e.g. AGENT_RELAY_SESSION unset
-  // on a non-board-spawned line), so falling back to `cwd` is the desired backstop,
-  // not a bug — it can match no live line by id anyway, and the fallthrough guard
-  // above governs a real, non-empty id.
-  // Events: SessionStart upserts the entry and resets turnDoneAt to null (a
-  // (re)start is not a waiting state); Stop sets turnDoneAt to now, CREATING the
-  // entry if absent (self-healing — a Stop alone also marks the line a Claude
-  // line); SessionEnd deletes the entry (drop the marker -> the line reverts to
-  // the idleMs heuristic). Returns the resolved id, or null when nothing matched.
+  // Applies a Claude Code lifecycle beacon (POST /api/beacon). Target resolution
+  // mirrors /notify: sessionId if present, else cwd. TRUST MODEL: any caller past
+  // the operator token can drive any live line's card state — deliberate parity
+  // with /api/notify's accepted ceiling; blast radius is cosmetic only (no
+  // spawn, no data exposure, no push).
+  // An EMPTY-STRING sessionId is treated as ABSENT on purpose (the "hook
+  // couldn't resolve an id" sentinel) and falls back to cwd; a present
+  // non-empty-but-unmatched sessionId must NEVER fall through to cwd (would
+  // beacon a different same-dir line).
+  // SessionStart upserts + resets turnDoneAt to null; Stop sets turnDoneAt to now
+  // and self-heals a missing entry (a Stop alone marks a Claude line); SessionEnd
+  // deletes the entry. Returns the resolved id, or null.
   async beacon({ event, sessionId, claudeSessionId, transcriptPath, cwd } = {}) {
     let id = null;
     if (sessionId) id = sessionId;            // '' is intentionally falsy -> absent (see header: empty = cwd-fallback sentinel)
@@ -242,47 +194,33 @@ class BoardSessions {
     return id;
   }
 
-  // Clear a flag explicitly — the WS hub calls this the instant it sees an
-  // `input` frame (the operator answered from the web terminal), which is the
-  // precise "cleared on next input" signal. The output-based clear in list() is
-  // the fallback for input arriving via another attach (e.g. the `sb` pane).
-  // Also resets a Claude line's turn-done state (keeping the marker), so one
-  // input frame clears both waiting states at once — the line falls back to
-  // `running`, never `quiet`.
+  // Cleared the instant the WS hub sees an `input` frame (the operator answered
+  // from the web terminal); list()'s output-based clear is the fallback for
+  // input via another attach (e.g. `sb`). Also resets a Claude line's turn-done
+  // state, so one input frame clears both — the line falls to `running`, never `quiet`.
   clearAttention(id) {
     this._attention.delete(id);
     const entry = this._beacons.get(id);
     if (entry) entry.turnDoneAt = null;
   }
 
-  // The single "has this line emitted output since instant `ts`?" primitive,
-  // shared by both staleness overlays below (_applyAttention, _applyBeacon) so
-  // the check exists once, not hand-rolled twice with opposite polarity. This
-  // is deliberate: the _applyAttention comment anticipates a future grace window
-  // (ignore output within ~1s after the timestamp); extracting the primitive
-  // means that refinement lands HERE once and reaches both overlays, instead of
-  // silently drifting when a maintainer edits one copy and not the other.
-  // `lastOutputAt` reads the board's idleMs back to a wall-clock instant against
-  // the same injected clock the stored timestamps use.
+  // Shared "has this line emitted output since ts?" primitive for both
+  // staleness overlays below, so a future grace window (ignore output within
+  // ~1s after ts) can land once and cover both. Reads the board's idleMs back to
+  // a wall-clock instant against the injected clock.
   _outputLandedAfter(line, ts) {
     const lastOutputAt = this._now() - (line.idleMs ?? 0);
     return lastOutputAt > ts;
   }
 
-  // Overlay the needs-input state onto a live-line DTO. A flag survives only
-  // while the line has produced no output since it was set: once the board's
-  // idleMs implies output (or input echo) landed AFTER flaggedAt, the agent is
-  // moving again, so the flag is stale — drop it and report the normal state.
+  // Overlays needs-input onto a live DTO: the flag survives only while no
+  // output has landed since it was set (otherwise the agent moved again — drop it).
   //
-  // ORDERING ASSUMPTION this rides on: a Claude Code Notification hook fires
-  // after the prompt's final paint, so by the time its POST lands here the
-  // line's last output PRECEDES flaggedAt and the flag sticks. A laggy hook
-  // racing a late TUI repaint (or an attach-triggered resize repaint) would be
-  // read as "the agent moved again" and silently clear a flag that should
-  // stick — a soft failure (stale card, no corruption). If false-clears show
-  // up in practice, add a small grace window (ignore output within ~1s after
-  // flaggedAt) in _outputLandedAfter rather than loosening the clear entirely —
-  // it lands once there and covers turn-done too.
+  // ASSUMPTION: a Notification hook fires after the prompt's final paint, so the
+  // line's last output should precede flaggedAt. A laggy hook racing a late
+  // repaint can false-clear a flag early — a soft failure (stale card, not
+  // corruption). If this shows up in practice, add a grace window in
+  // _outputLandedAfter (covers turn-done too).
   _applyAttention(dto, line) {
     const flaggedAt = this._attention.get(dto.id);
     if (flaggedAt == null) return dto;
@@ -293,18 +231,12 @@ class BoardSessions {
     return { ...dto, status: 'needs-input' };
   }
 
-  // Overlay beacon state onto a live-line DTO, establishing the Claude-line base
-  // that supersedes the idleMs heuristic. A line with no `_beacons`
-  // entry is not a Claude line — pass through unchanged (the heuristic stays the
-  // floor). A Claude line reads `running` unless a LIVE `turnDoneAt` (no output
-  // landed after the Stop) makes it `turn-done`. Output arriving after turnDoneAt
-  // resets it to null but KEEPS the entry, so the line falls back to `running`,
-  // never `quiet`. This clear inherits the same accepted soft-failure as
-  // _applyAttention: a laggy hook racing a late TUI repaint can false-clear
-  // turn-done early — a stale card, never corruption. It shares that overlay's
-  // _outputLandedAfter primitive, so a future grace window covers both at once.
-  // _applyAttention runs AFTER this in list(), so a live needs-input flag always
-  // wins over turn-done.
+  // Overlays beacon state onto a live DTO: no _beacons entry -> not a Claude
+  // line, pass through. A Claude line reads 'running' unless a live turnDoneAt
+  // (no output since) makes it 'turn-done'; output afterward resets turnDoneAt
+  // but KEEPS the entry, so it falls to 'running', never 'quiet'. Shares
+  // _applyAttention's soft-failure risk and _outputLandedAfter primitive.
+  // _applyAttention runs AFTER this in list(), so needs-input always outranks turn-done.
   _applyBeacon(dto, line) {
     const entry = this._beacons.get(dto.id);
     if (!entry) return dto;
@@ -318,10 +250,9 @@ class BoardSessions {
   async list() {
     let r;
     try {
-      // `preview:true` asks the board for each live line's rendered tail (the
-      // fleet-view glance preview). Deliberately only here — the cwd resolver's
-      // list stays preview-less so /api/notify + /api/beacon don't warm every
-      // line's screen emulator.
+      // preview:true asks the board for each live line's rendered tail (the
+      // fleet-view glance preview). Only here — the cwd resolver's list stays
+      // preview-less so /api/notify + /api/beacon don't warm every screen emulator.
       r = await this._rpc({ cmd: 'list', preview: true });
     } catch (e) {
       console.error('[sessions] board list RPC failed:', e.message);
@@ -331,12 +262,11 @@ class BoardSessions {
       console.error('[sessions] board list RPC returned a non-ok reply:', JSON.stringify(r));
       throw new BoardUnreachableError();
     }
-    // A board restart resets its line-id counter, so a web tier that outlives
-    // the board can hold a flag a REUSED id would inherit (the output-after-
-    // flag clear usually self-heals it, but a fresh quiet line would read
-    // needs-input). The list reply carries the board's per-process boot nonce —
-    // the same signal mcp-server.js namespaces its read cursors by — so drop
-    // every flag when it changes.
+    // A board restart resets the line-id counter, so a web tier that outlives it
+    // could inherit stale flags on a reused id (the output-after-flag clear
+    // usually self-heals it, but a fresh quiet line would misread needs-input).
+    // The list reply's boot nonce (also namespacing mcp-server.js's read
+    // cursors) tells us when to drop everything.
     if (r.boot !== this._boardBoot) {
       if (this._boardBoot !== null) {
         this._attention.clear();
@@ -344,14 +274,13 @@ class BoardSessions {
       }
       this._boardBoot = r.boot;
     }
-    // Prune web-tier state whose line is no longer live (it exited) so neither Map
-    // can leak entries for dead ids or resurrect state onto a reused id.
+    // Prunes state for lines no longer live, so neither Map can leak dead ids or
+    // resurrect state onto a reused id.
     const liveIds = new Set(r.lines.map((l) => l.id));
     for (const id of this._attention.keys()) if (!liveIds.has(id)) this._attention.delete(id);
     for (const id of this._beacons.keys()) if (!liveIds.has(id)) this._beacons.delete(id);
-    // Live lines first (beacon base, then the needs-input overlay on top so
-    // needs-input outranks turn-done), then recently-ended tombstones (`ended` is
-    // absent from an older board's reply — treat that as none, not an error).
+    // Live lines (beacon base, then needs-input overlay so it outranks
+    // turn-done), then tombstones (`ended` absent on an older board = none, not an error).
     return [
       ...r.lines.map((line) => this._applyAttention(this._applyBeacon(toDto(line), line), line)),
       ...(r.ended || []).map(endedToDto),
@@ -375,18 +304,17 @@ class BoardSessions {
         cwd: wd,
       });
     } catch (e) {
-      // Same board-down contract as list()/get(): a spawn against a down board is
-      // a transient 503, not a 500. Without this, api.js's e.boardUnreachable
-      // check doesn't recognize the bare Error and POST /sessions 500s.
+      // Same board-down contract as list()/get(): without this, api.js's
+      // e.boardUnreachable check misses a bare Error and POST /sessions 500s
+      // instead of 503.
       console.error('[sessions] board new RPC failed:', e.message);
       throw new BoardUnreachableError(e);
     }
     if (!r || !r.ok) throw new Error('board refused spawn');
-    // Build the DTO through the same toDto() the list path uses, off the board's
-    // own `new` reply, so the shape can't drift between the two call sites and the
-    // reported cwd is the value the board actually recorded — not our local
-    // resolveCwd() guess. `wd` is the fallback for an older board that doesn't echo
-    // cwd; idleMs is 0 (just spawned).
+    // Built through the same toDto() list uses, off the board's own reply, so
+    // the shape can't drift and cwd reflects what the board recorded (not our
+    // resolveCwd() guess); `wd` is the fallback for an older board that doesn't
+    // echo cwd.
     return {
       ...toDto({ id: r.id, name: r.name, shell: r.shell, cwd: r.cwd ?? wd, pid: r.pid, idleMs: 0 }),
       lastActive: 'just now',
@@ -394,10 +322,9 @@ class BoardSessions {
   }
 
   async kill(id) {
-    // Distinguish "board unreachable" (throw -> 503) from "board says no such
-    // line" (return false -> 404). A bare `.catch(() => null)` here would
-    // collapse a board-down failure into `false`, which api.js maps to a
-    // permanent 404 — indistinguishable from gone.
+    // Distinguishes "board unreachable" (throw -> 503) from "no such line"
+    // (return false -> 404) — collapsing the two would read a board outage as a
+    // permanent 404.
     let r;
     try {
       r = await this._rpc({ cmd: 'end', id });
@@ -406,9 +333,9 @@ class BoardSessions {
       throw new BoardUnreachableError(e);
     }
     if (r && r.ok) return true;
-    // Not a live line — maybe a tombstone: DELETE on an exited session is the
-    // client dismissing it. `forget` says ok:false for an unknown id (and an
-    // older board answers unknown-cmd ok:false), so both still map to 404.
+    // Not live — maybe a tombstone: DELETE on an exited session dismisses it via
+    // `forget`, which says ok:false for an unknown id (an older board's
+    // unknown-cmd reply does too) — both map to 404.
     let f;
     try {
       f = await this._rpc({ cmd: 'forget', id });
@@ -419,9 +346,9 @@ class BoardSessions {
     return !!(f && f.ok);
   }
 
-  // Per-WS attach: returns { write, resize, setSpectator, detach }. Scrollback
+  // Per-WS attach: returns {write, resize, setSpectator, detach}. Scrollback
   // replays once on data-pipe connect; setSpectator toggles clamp participation
-  // live without reattaching. handlers may carry an initial `spectator` flag.
+  // live without reattaching.
   attach(id, handlers) {
     return this._attach(id, handlers);
   }

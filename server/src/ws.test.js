@@ -1,10 +1,8 @@
 'use strict';
-// WS upgrade-gate credential tests. The gate order is
-// origin → credential → session lookup; this file exercises the credential step
-// (token-or-cookie) end-to-end over a real http server + `ws` client, with the
-// board fully faked. No RPC, no AGENT_RELAY_PIPE. Credentials are injected into
-// createWSHub so the decision is hermetic (independent of the ambient env /
-// persisted credentials file).
+// Tests the credential step of the origin -> credential -> session gate,
+// over a real http server + `ws` client with a fully faked board. Credentials
+// are injected into createWSHub, so the decision is hermetic (no ambient
+// env/credentials file, no RPC).
 const test = require('node:test');
 const assert = require('node:assert');
 const http = require('http');
@@ -16,18 +14,16 @@ const SECRET = 'ws-signing-secret';
 const EXPECTED = 'ws-token';
 const ID = 's1';
 
-// A fake sessions store: the target line is live and attachable. `whenAttached`
-// resolves the moment the gate lets the request through to attach — the signal
-// that the credential check passed (an unauthorized request closes 1008 before
-// ever reaching attach).
+// whenAttached resolves once the gate lets attach() run — the signal the
+// credential check passed (else 1008 fires first).
 function makeSessions() {
   let resolveAttached;
   const whenAttached = new Promise(r => { resolveAttached = r; });
   return {
     whenAttached,
     get: async () => ({ id: ID, status: 'running' }),
-    // Part of the real BoardSessions surface ws.js calls on input — the fixture
-    // carries it so ws.js needn't optional-chain around an incomplete double.
+    // Part of the real surface ws.js calls on input; kept so ws.js needn't
+    // optional-chain around an incomplete double.
     clearAttention() {},
     attach: async () => {
       resolveAttached();
@@ -36,10 +32,9 @@ function makeSessions() {
   };
 }
 
-// Run one upgrade attempt against a fresh server. Resolves { attached: true } if
-// the credential gate passed (attach reached) or { closed: code } if the socket
-// was closed first (1008 unauthorized). Origin is loopback (default host), so
-// the origin gate passes and the credential step is what's under test.
+// One upgrade attempt: resolves { attached: true } if the gate passed, or
+// { closed: code } if refused (1008). Loopback origin, so only the
+// credential step is under test.
 function attempt(authConfig, { token, cookie } = {}) {
   return new Promise((resolve, reject) => {
     const sessions = makeSessions();
@@ -91,10 +86,8 @@ test('WS: AR_NO_AUTH (expectedToken null) → attach proceeds with no credential
   assert.deepStrictEqual(await attempt({ expectedToken: null, signingSecret: SECRET }, {}), { attached: true });
 });
 
-// Drive one connection (interactive or spectator) and record what the attach
-// handle received. Sends an input + a resize frame repeatedly for a settle
-// window after the socket opens (the real message listener registers only after
-// the async attach, so a single send would race it), then reports the sinks.
+// Repeats input/resize sends after open — the message listener registers
+// only after the async attach(), so a single send would race it.
 function driveFrames(query) {
   return new Promise((resolve, reject) => {
     const wrote = [], resized = [];
@@ -139,10 +132,6 @@ test('WS: ?mode=spectator drops inbound input and resize, dropped not errored (A
 });
 
 test('WS: a live `mode` frame toggles the input gate and control socket without reattaching (ADR-0005)', async () => {
-  // The grid flips focus by sending a `mode` frame on the OPEN socket, not by
-  // reconnecting. Assert: (1) the same attach handle is reused (attach called
-  // once), (2) setSpectator tracks the frame, (3) input is gated by the current
-  // mode — dropped while spectator, delivered once flipped back.
   const wrote = [];
   const spectatorCalls = [];
   let attachCount = 0;
@@ -183,9 +172,8 @@ test('WS: a live `mode` frame toggles the input gate and control socket without 
 });
 
 test('WS: a sessions store missing clearAttention still delivers input, and the failure is logged', async () => {
-  // The contract-drift case: clearAttention renamed/omitted. The keystroke must
-  // reach the line (write happens first) and the TypeError must surface as a
-  // greppable log line — NOT vanish into the malformed-message catch.
+  // Contract-drift case: the write must still land, and the TypeError must
+  // log — not vanish into the malformed-message catch.
   const written = [];
   let resolveWritten;
   const whenWritten = new Promise(r => { resolveWritten = r; });
@@ -203,8 +191,8 @@ test('WS: a sessions store missing clearAttention still delivers input, and the 
     await new Promise(res => server.listen(0, res));
     const { port } = server.address();
     const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}`);
-    // The message listener registers only after the async attach completes, so
-    // re-send until the write lands rather than racing a single send.
+    // Listener registers after the async attach — resend until the write
+    // lands instead of racing one send.
     const frame = JSON.stringify({ type: 'input', payload: 'y' });
     const timer = setInterval(() => { if (client.readyState === WebSocket.OPEN) client.send(frame); }, 50);
     await whenWritten;

@@ -1,6 +1,6 @@
 'use strict';
-// Auth-cookie tests. The module is pure — secret is injected, no disk, no env —
-// so every path is exercised with literal secrets and hand-built values.
+// Pure module (secret injected, no disk/env) — every path exercised with
+// literal secrets and hand-built values.
 const test = require('node:test');
 const assert = require('node:assert');
 const {
@@ -54,11 +54,8 @@ test('a value signed with a different secret fails verification', () => {
 });
 
 test('an issued-at older than the lifetime fails even with a valid HMAC', () => {
-  // Hand-mint with an ancient issued-at using the module's own signing scheme is
-  // not exposed, so verify against a value whose issued-at we push past the edge
-  // by re-signing with the real secret via issue then rewriting time is not
-  // possible without the signer. Instead: freeze Date.now so issue stamps an old
-  // time, then restore it so verify sees "now" far in the future.
+  // issue() bakes in Date.now(), so freeze it to mint a stale token, then
+  // restore it before verify() checks against real time.
   const realNow = Date.now;
   try {
     Date.now = () => realNow() - LIFETIME_MS - 60_000;

@@ -17,32 +17,25 @@ const { resolveNotifiers } = require('./src/notifiers');
 const PORT = process.env.PORT ?? 3017;   // 3001 collides with VS Code on some machines
 
 const app = express();
-// CORS: reflect the request's origin only when the shared origin policy allows
-// it (loopback, same-origin, or the AR_CORS_ORIGIN allowlist — see
-// src/origin.js). Any other page gets no ACAO headers, so its preflights fail
-// and its responses are unreadable. The WS upgrade enforces the same policy in
-// ws.js, since CORS never applied to WebSockets.
+// Reflects the origin only when src/origin.js's policy allows it (loopback,
+// same-origin, or AR_CORS_ORIGIN); ws.js enforces the same policy for WS upgrades.
 app.use(cors((req, cb) => cb(null, { origin: originAllowed(req.headers.origin, req.headers.host) })));
 app.use(express.json());
 
 const sessions = new BoardSessions();
-// Push-notification sinks (Pushover today). Absent config -> empty list ->
-// POST /api/notify still flags the card but fans out to nobody (feature off).
+// Push sinks (Pushover today); empty config = card still flags but notifies nobody.
 const notifiers = resolveNotifiers(process.env);
-// AR_NOTIFY_URL_ORIGIN: the one origin /api/notify's `url` deep link may point
-// at (unset -> the field is rejected; see validateNotifyUrl in api.js).
+// AR_NOTIFY_URL_ORIGIN: the one origin /api/notify's `url` may target (unset ->
+// the field is rejected; see validateNotifyUrl in api.js).
 app.use('/api', authMiddleware, createAPI(sessions, notifiers, { notifyUrlOrigin: process.env.AR_NOTIFY_URL_ORIGIN }));
 
-// Tunnel supervisor — created unconditionally so the pairing router always has a
-// stable status() getter. With AR_TUNNEL unset it sits in the 'disabled' state and
-// start() is a no-op; with AR_TUNNEL=tailscale it drives `tailscale serve` and
-// degrades to local-only on any precondition failure (never throws, never exits).
-// onEvent turns the supervisor's lifecycle into console output (below).
+// Created unconditionally so pairing always has a status() getter; AR_TUNNEL unset
+// -> 'disabled' state, start() no-ops. On any precondition failure it degrades to
+// local-only, never throws/exits. onEvent turns its lifecycle into console output.
 const tunnel = createTunnel({ port: PORT, onEvent: printTunnelEvent });
 
-// Pairing endpoints (POST /api/login, GET /api/pairing) mounted behind the same
-// dual-auth gate as the API router, matching its mount shape. The router applies
-// no auth of its own. Cookie collaborators + the tunnel status getter are injected.
+// Pairing endpoints mounted behind the same dual-auth gate as the API router (it
+// applies no auth of its own). Cookie collaborators + the tunnel status getter injected.
 app.use('/api', authMiddleware, createPairing({
   token: TOKEN,
   checkToken,
@@ -52,37 +45,29 @@ app.use('/api', authMiddleware, createPairing({
   tunnelStatus: tunnel.status,
 }));
 
-// Serve the built client (client/dist) from this port — the production story:
-// same origin for page, API, and WS, no Vite proxy. Unauthenticated on purpose
-// (the login page must load before there's a token). Mounted after /api so API
-// routes win; its SPA fallback swallows every other unknown GET, excluding only
-// static.js's RESERVED_PREFIXES — a new top-level route namespace added here
-// (e.g. /healthz) MUST also be added to that list or the fallback answers its
-// unknown paths with index.html. No build → dev mode, where Vite owns the page.
+// Serves the built client from this port (same origin as API/WS, no Vite proxy in
+// prod). Unauthenticated on purpose — the login page must load before there's a
+// token. Mounted after /api so API routes win; a new top-level route namespace
+// added here (e.g. /healthz) MUST also join static.js's RESERVED_PREFIXES, or the
+// SPA fallback answers its unknown paths with index.html. No build -> dev mode.
 const staticRouter = createStatic();
 if (staticRouter) app.use(staticRouter);
 
-// Final error handler. Without it, Express's default handler leaks the full stack
-// trace in the response body whenever NODE_ENV isn't 'production' (the default
-// here). Log server-side, return a generic body — a board-unreachable failure is
-// a transient 503, anything else a generic 500 with no internal detail. Shared
-// with api.test.js (./src/errorHandler.js) so the two can't drift.
+// Without this, Express's default handler leaks the stack trace whenever
+// NODE_ENV isn't 'production'. Shared with errorHandler.test.js so it can't drift.
 app.use(errorHandler);
 
 const server = createServer(app);
 createWSHub(server, sessions);
 
-// Turn the tunnel supervisor's lifecycle events into console output. On 'up' we
-// register the discovered tailnet origin with the origin policy (so the tunneled
-// page passes the CORS/WS gate regardless of Host-header passthrough) and print
-// the pairing block + a scannable QR encoding the pairing URL (token in the URL
-// FRAGMENT — never a query string). 'degraded' prints a single block naming the
-// precondition + fix; 'retry' logs a terse respawn line (visible, not spammy).
+// Turns tunnel lifecycle events into console output. On 'up', registers the
+// tailnet origin (so a tunneled page passes CORS/WS regardless of Host-header
+// passthrough) and prints the pairing QR (token in the URL fragment, never a
+// query string — src/pairing.js pairingUrl()). 'degraded' names the precondition
+// + fix; 'retry' logs a terse respawn line.
 function printTunnelEvent(event) {
   if (event.type === 'up') {
     allowRuntimeOrigin(event.url);
-    // Same single formatter the GET /api/pairing response uses — token in the
-    // URL FRAGMENT, never a query string (src/pairing.js pairingUrl()).
     const url = pairingUrl(event.url, TOKEN);
     console.log(`\n=== Tunnel up ===`);
     console.log(`  reachable from your tailnet at ${event.url}`);
@@ -128,15 +113,13 @@ server.listen(PORT, () => {
           `Paste it into the login screen.\n`
     );
   }
-  // Start the tunnel after the local listener is up so its console block follows
-  // the local URL. No-op when AR_TUNNEL is unset (supervisor 'disabled' state);
-  // any failure degrades to local-only via the 'degraded' event above.
+  // Start after the local listener is up, so its console block follows the local
+  // URL; no-op if AR_TUNNEL is unset, any failure degrades via the 'degraded' event.
   tunnel.start();
 });
 
-// Release the port on catchable stops (Ctrl+C, SIGTERM). A hard external
-// terminate (e.g. the harness killing the npm wrapper) can't be caught here —
-// the `predev` free-port guard reclaims the port on the next start instead.
+// Releases the port on catchable stops only (Ctrl+C, SIGTERM) — a hard external
+// terminate can't be caught here; the `predev` free-port guard reclaims it instead.
 let closing = false;
 const shutdown = (signal) => {
   if (closing) return;

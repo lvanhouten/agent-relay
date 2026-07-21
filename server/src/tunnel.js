@@ -1,37 +1,27 @@
 'use strict';
-// Tunnel supervisor — owns the lifecycle of `tailscale serve` for the value-based
-// env scheme AR_TUNNEL=tailscale. It NEVER throws and NEVER exits the process:
-// every failure is a degrade to local-only, surfaced through status() and the
-// onEvent seam the wiring layer (brief 07) turns into console warnings. The
-// relay must keep working local-only even when the tunnel can't come up — a
-// tunnel problem never takes down desk work (PRD story 10).
+// Tunnel supervisor for AR_TUNNEL=tailscale — owns `tailscale serve`'s lifecycle.
+// NEVER throws or exits the process: every failure degrades to local-only via
+// status() + the onEvent seam (index.js turns events into console output). The
+// relay must keep working local-only even when the tunnel can't come up.
 //
-// Everything the module touches beyond pure logic is an injected seam:
-//   - exec(command, args)   → a child-process-like object (spawn shape): has
-//                             `.stdout` (EventEmitter, 'data'), emits 'exit'
-//                             (code) and 'error' (err), and has `.kill()`.
-//   - existsClientBuild()   → bool; the same "is there a build" check the static
-//                             router does (client/dist/index.html present).
-//   - env                   → the environment object (AR_TUNNEL / AR_NO_AUTH).
-//   - scheduler             → { setTimeout, clearTimeout } for backoff (fake
-//                             timers in tests — never a real sleep).
-// So every decision path is unit-testable with no tailscale installed and no
-// live tunnel (see tunnel.test.js).
+// Injected seams, so every path is unit-testable with no tailscale and no live tunnel:
+//   - exec(command, args)  -> spawn-shaped child: .stdout ('data'), 'exit'(code), 'error'(err), .kill()
+//   - existsClientBuild()  -> bool, same check the static router uses (client/dist/index.html)
+//   - env                  -> AR_TUNNEL / AR_NO_AUTH
+//   - scheduler            -> {setTimeout, clearTimeout} for backoff (fake timers in tests)
 const path = require('path');
 const fs = require('fs');
 const child_process = require('child_process');
 
 const DIST_INDEX = path.join(__dirname, '..', '..', 'client', 'dist', 'index.html');
 
-// Provider is a VALUE, not a boolean — future providers (cloudflared, ...) add
-// values here rather than new flags. V1 ships tailscale only (PRD out-of-scope),
-// but an unknown value is a distinct, actionable precondition failure, not a
-// crash.
+// Provider is a VALUE, not a boolean, so future providers (cloudflared, ...) add
+// values here rather than new flags. An unknown value is a distinct, actionable
+// precondition failure, not a crash.
 const SUPPORTED_PROVIDERS = ['tailscale'];
 
-// Capped exponential backoff for respawn. Sub-second first attempt, doubling,
-// capped near 30s. Exported (with the constants) so the sequence and cap are
-// directly unit-testable without driving a live child. `attempt` is 1-based.
+// Capped exponential backoff for respawn: sub-second first attempt, doubling,
+// capped near 30s. Exported so the sequence/cap are directly testable. `attempt` is 1-based.
 const BACKOFF_BASE_MS = 500;
 const BACKOFF_CAP_MS = 30_000;
 function backoffDelay(attempt) {
@@ -56,9 +46,8 @@ function createTunnel({
 } = {}) {
   const provider = env.AR_TUNNEL;
 
-  // Invariant pinned by tests: url is a non-null string IFF state === 'up'.
-  // 'disabled' means AR_TUNNEL unset; 'down' means a precondition failure or a
-  // died-and-retrying state (reason always names the situation / the fix).
+  // Invariant pinned by tests: url is non-null IFF state==='up'. 'disabled' =
+  // AR_TUNNEL unset; 'down' = a precondition failure or died-and-retrying.
   let state = provider
     ? { state: 'down', url: null, reason: null }
     : { state: 'disabled', url: null, reason: null };
@@ -83,11 +72,9 @@ function createTunnel({
     emit({ type: 'degraded', reason });
   }
 
-  // Run `tailscale status --json` once. Serves double duty: the login
-  // precondition (BackendState === 'Running') AND stable-URL discovery
-  // (Self.DNSName) — the URL comes from the CLI's JSON status, never from
-  // scraping the serve child's stdout. Resolves a plain verdict object; never
-  // rejects.
+  // Runs `tailscale status --json` once, for both the login precondition
+  // (BackendState==='Running') and stable-URL discovery (Self.DNSName) — the URL
+  // comes from CLI status, never scraped from the serve child's stdout. Never rejects.
   function probeTailscale() {
     return new Promise((resolve) => {
       let out = '';
@@ -103,9 +90,8 @@ function createTunnel({
       }
 
       cp.on('error', () => {
-        // Any spawn error — ENOENT (binary not on PATH) or otherwise — means we
-        // can't run tailscale, so it's uniformly "missing". (No discrimination
-        // here: the caller only branches on `missing`.)
+        // Any spawn error means we can't run tailscale — uniformly "missing";
+        // the caller only branches on that flag.
         done({ missing: true });
       });
       if (cp.stdout && cp.stdout.on) cp.stdout.on('data', (d) => { out += d; });
@@ -122,9 +108,9 @@ function createTunnel({
     });
   }
 
-  // Ordered precondition gate. Sync, cheap checks first; the CLI probe last.
-  // Each failure yields a distinct reason naming the fix. Returns true only when
-  // it is safe to spawn `tailscale serve`.
+  // Ordered precondition gate — sync/cheap checks first, the CLI probe last.
+  // Each failure yields a distinct, actionable reason. Returns true only when
+  // safe to spawn `tailscale serve`.
   async function preconditionsOk() {
     if (!SUPPORTED_PROVIDERS.includes(provider)) {
       degrade(
@@ -133,8 +119,8 @@ function createTunnel({
       );
       return false;
     }
-    // Hard security requirement (the ADR/issue): an unauthenticated relay
-    // must never be network-exposed. AR_NO_AUTH=1 unconditionally refuses.
+    // Hard security requirement: an unauthenticated relay must never be
+    // network-exposed. AR_NO_AUTH=1 unconditionally refuses.
     if (env.AR_NO_AUTH === '1') {
       degrade(
         'Refusing to start a tunnel while auth is disabled (AR_NO_AUTH=1) — an ' +
@@ -176,10 +162,10 @@ function createTunnel({
     return true;
   }
 
-  // Spawn the foreground `tailscale serve <port>`. Foreground mode reverts the
-  // serve config when the child dies. We have no readiness signal we're allowed
-  // to read (URL discovery is via status, not serve stdout), so a live spawn is
-  // treated as "up". On exit/error while the relay runs, respawn with backoff.
+  // Spawns the foreground `tailscale serve <port>` (foreground mode reverts the
+  // serve config on child death). No readiness signal is available (URL
+  // discovery is via status, not serve stdout), so a live spawn counts as "up";
+  // on exit/error, respawn with backoff.
   function spawnServe() {
     if (stopped) return;
     let cp;
@@ -205,12 +191,11 @@ function createTunnel({
     emit({ type: 'up', url: tailnetUrl });
   }
 
-  // The serve child died and the relay is still running: escalate the backoff
-  // counter and schedule a respawn. Between attempts, status is 'down' with a
-  // retrying reason; the URL is stable so a successful respawn restores the same
-  // pairing. Backoff is monotonic within a start cycle (reset only by
-  // start()) — there is no readiness signal to safely reset it on, and a rare
-  // flap escalating toward the 30s cap is the correct conservative behavior.
+  // The serve child died and the relay is still running: escalate backoff and
+  // schedule a respawn. Between attempts, status is 'down' with the retrying
+  // reason; URL stays stable so a successful respawn restores the same pairing.
+  // Backoff resets only in start() — there's no readiness signal to safely reset
+  // on otherwise, so escalating toward the cap on a flap is the conservative choice.
   function scheduleRespawn(reason) {
     if (stopped) return;
     attempt += 1;
@@ -229,14 +214,11 @@ function createTunnel({
 
   async function start() {
     if (state.state === 'disabled') return; // AR_TUNNEL unset — no-op.
-    // Idempotent: a live serve child, or a pending respawn timer that will spawn
-    // one, means a `serve` process already exists. Re-entering would spawn a
-    // second child and orphan the first (its exit/error handlers early-return on
-    // the `child !== cp` guard, so it'd never be reaped). Guard on the live
-    // HANDLES — not `state.state === 'up'` — because stop() clears child/
-    // backoffTimer but leaves state as 'up', so keying on state would silently
-    // break a future stop()-then-start() restart. With handles null (after stop,
-    // or while degraded/down), start() proceeds and re-runs preconditions.
+    // Idempotent: a live child or pending backoff timer means a serve process
+    // already exists (or will) — re-entering would orphan a second child (its
+    // handlers early-return on the `child !== cp` guard). Guards on the live
+    // HANDLES, not `state.state === 'up'`, because stop() clears them but leaves
+    // state 'up' — keying on state would break a stop()-then-start() restart.
     if (child || backoffTimer) return;
     stopped = false;
     attempt = 0;
