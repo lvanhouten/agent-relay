@@ -243,6 +243,13 @@ function createLine(o = {}) {
     cols: o.cols || 120,
     rows: o.rows || 30,
     cwd,
+    // Route kill through node-pty's DLL branch, not the fork-based one. The
+    // fork branch runs a console-wide reaper (AttachConsole + force-kill every
+    // PID on the console) that flashes a conhost window and, in the production
+    // console topology, kills the board daemon and every sibling line — so
+    // ending one line takes down the whole board. The DLL branch skips the fork
+    // entirely; we reap the line's own tree ourselves in killLineTree.
+    useConptyDll: true,
     // Inject the line id so a process in the shell (a Claude Code Notification
     // hook) can name its own line to POST /api/notify without guessing — the
     // precise half of the line-id bridge (cwd-match is the fallback). Additive
@@ -356,6 +363,42 @@ function createLine(o = {}) {
 
   log('line', id, 'placed:', shell, 'in', cwd);
   return id;
+}
+
+// Kill a line and its whole descendant tree, flash-free and board-safe. Lines
+// spawn with useConptyDll:true so `s.pty.kill()` skips node-pty's fork-based
+// reaper (which force-kills every PID on the shared console — board + siblings
+// included — and pops a conhost window). That reaper also swept up detached
+// grandchildren (dev servers squatting :3017/:5173), so we replace it with our
+// own scoped reap: `taskkill /T` walks the PID tree DOWN from the line's shell,
+// so it can only ever reach descendants, never an ancestor (the board) or a
+// sibling line. windowsHide suppresses the flash. Await the tree walk BEFORE
+// pty.kill: taskkill snapshots the tree from the shell, and a shell killed first
+// would hide its now-orphaned grandchildren from that walk.
+function killLineTree(s) {
+  if (process.platform !== 'win32') {
+    try { s.pty.kill(); } catch { /* already gone */ }
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try { s.pty.kill(); } catch { /* already gone */ }
+      resolve();
+    };
+    try {
+      const tk = spawn('taskkill', ['/pid', String(s.pty.pid), '/T', '/F'], {
+        windowsHide: true,   // the flag node-pty's internal fork omits — no conhost pops
+        stdio: 'ignore',
+      });
+      tk.on('close', finish);
+      tk.on('error', finish);   // taskkill missing/failed — pty.kill still runs in finish()
+      // A wedged taskkill must never outlive the control-plane RPC timeout.
+      setTimeout(finish, 4000);
+    } catch { finish(); }
+  });
 }
 
 // Send the farewell to every patched-in client, guarding each write so one
@@ -574,7 +617,7 @@ async function handle(m, sock) {
       const s = sessions.get(m.id);
       // Mark BEFORE the signal: onExit fires async and reads endReason to write
       // the tombstone, so the mark must already be there.
-      if (s) { s.endReason = 'killed'; s.pty.kill(); }
+      if (s) { s.endReason = 'killed'; await killLineTree(s); }
       sock.write(JSON.stringify({ ok: !!s }) + '\n');
       break;
     }
@@ -625,7 +668,10 @@ async function handle(m, sock) {
     }
     case 'shutdown': {
       sock.write(JSON.stringify({ ok: true, dropped: sessions.size }) + '\n');
-      for (const s of sessions.values()) { try { s.pty.kill(); } catch { /* ignore */ } }
+      // Reap every line's tree (not just the shells) so a shutdown can't strand
+      // detached grandchildren; killLineTree awaits each taskkill before its
+      // pty.kill, same board-safe path as `end`.
+      await Promise.all([...sessions.values()].map(killLineTree));
       log('shutting down on request');
       setTimeout(() => process.exit(0), 50);
       break;

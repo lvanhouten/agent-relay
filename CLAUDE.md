@@ -131,7 +131,7 @@ In production the client is served statically by Express (`server/src/static.js`
 | Issue | Pri | Effort | File |
 |---|---|---|---|
 | Windows secret-file ACL is unverified — `mode` bits are inert on NTFS; the real boundary is the inherited profile ACL (deferred W1). Raised 2026-07-06: the persisted token + cookie-signing secret now live behind the same unverified assumption | P2 | S | `_docs/issues/2026-07-01-secret-file-acl-verification.md` |
-| **Ending one line can kill the whole board daemon on Windows** (confirmed 2026-07-21) — node-pty's fork-based ConPTY kill force-kills every PID on the killed line's console, and in the production console topology that list includes the board + every sibling line, so a single kill takes down the daemon and every live session (same reaper also flashes a `conhost` window). Fix: `useConptyDll:true` + a `windowsHide` `taskkill /T` in the `end` handler (Option B in the doc) | P1 | S | `_docs/issues/2026-07-15-conpty-kill-console-flash.md` |
+| **Ending one line can kill the whole board daemon on Windows** — 🟡 fixed 2026-07-21 (Option B: `useConptyDll:true` deletes node-pty's console-wide reaper; `killLineTree` reaps the line's own tree via a `windowsHide` `taskkill /T` at both kill sites). Orphan-reap guarded by `server/board/kill-tree.e2e.test.js` (mutation-tested). **Owed:** the live production re-run (no isolation repro for the suicide — needs a board restart) | P1 | S | `_docs/issues/2026-07-15-conpty-kill-console-flash.md` |
 
 ## Feature backlog (proposed, not started)
 

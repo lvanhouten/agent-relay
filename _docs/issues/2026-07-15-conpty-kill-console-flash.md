@@ -1,7 +1,7 @@
 # Killing a line runs a console-wide process reaper (flashes conhost; can kill the whole board)
 
 **Source:** User observation, 2026-07-15 - "when I kill a switchboard line, I get a quick commandline popup window that appears and disappears ~0.1s later." Escalated 2026-07-21 after the same reaper was found killing the entire board daemon (see the update below).
-**Status:** 🔴 Confirmed P1 - 2026-07-21. Root-caused twice over; fix is Option B below.
+**Status:** 🟡 Fixed (Option B) 2026-07-21, pending the live production re-run - see Resolution below.
 **Kind:** Bug. Windows-only. Two manifestations of ONE reaper: a cosmetic conhost flash (always) and a data-loss daemon-suicide (environment-specific) - see the update.
 **Modules:** `server/board/board.js` (`pty.spawn` at ~L241; the `end` handler `s.pty.kill()` at ~L577, and the shutdown-all loop at ~L628). No web-tier change.
 **Severity:** High (was mis-scoped Low). The flash is cosmetic, but the underlying reaper force-kills every PID on the killed line's console - and in the production console topology that list includes the board process and every sibling line, so ending ONE line takes down the whole daemon and every live session on it (confirmed - see update).
@@ -83,6 +83,19 @@ Net: no daemon-suicide, no flash, **and** no orphans - but more moving parts tha
 - The flash becoming an actual annoyance during heavy fleet use (lots of kills in a session).
 - Any move to auto-kill lines programmatically (e.g. a "kill all exited" sweep) — many kills in quick succession would strobe.
 - Touching the board's kill/shutdown path for another reason — fold this in while it's already open.
+
+## Resolution 2026-07-21 (Option B)
+
+Implemented in `server/board/board.js`:
+
+- **`pty.spawn` gets `useConptyDll: true`** (`createLine`) - every new line's kill now takes node-pty's no-fork DLL branch (`windowsPtyAgent.js:153-159`), which never calls `_getConsoleProcessList` and never runs the `forEach(process.kill)` console-wide reaper. The suicide's only source is deleted.
+- **`killLineTree(s)`** replaces the bare `s.pty.kill()` at both kill sites (the `end` handler and the `shutdown` loop). On Windows it `spawn`s `taskkill /pid <shell-pid> /T /F` with `windowsHide: true` (no conhost flash), **awaits its exit**, then closes the pty. Awaiting matters: `taskkill` snapshots the PID tree from the still-live shell, so a shell killed first would hide its now-orphaned grandchildren from the walk (the risk this doc raised). `/T` scopes the reap to descendants, so it structurally cannot reach the board (an ancestor) or a sibling line. A 4s guard keeps a wedged `taskkill` under the control-plane RPC timeout; a missing/failed `taskkill` (`error` event) still falls through to `pty.kill()`. Off Windows it is just `s.pty.kill()`.
+
+**Verified:**
+- **Mechanism (a):** the diff removes the reaper from the kill path (`useConptyDll:true`) and scopes the kill to descendants (`taskkill /T`) - confirmed by reading the installed `node-pty@1.1.0` kill branches.
+- **Orphan-reaping, in isolation (b):** `server/board/kill-tree.e2e.test.js` - an isolated board spawns a line whose shell launches a **detached** node grandchild (own process group, survives a console close); after `end`, the guard asserts the grandchild is gone. Mutation-tested: disabling the `taskkill` makes it fail (the detached grandchild orphans), so the guard tracks the reap, not a console-close side effect.
+
+**Still owed - the live production re-run (cannot be automated):** the daemon-suicide only reproduces against the real console topology (see the update above), and a board restart ends every live line, so this must be done by hand when convenient. After a board restart on the fixed code: capture the board pid, spawn two throwaway lines, `end` one, and confirm the board pid is unchanged and the other line survives. Also confirm the conhost flash is gone on a routine kill.
 
 ## Relationship to other issues
 
