@@ -1,0 +1,47 @@
+/* ===========================================================================
+   agent-relay · Effects · radii, borders, shadows, motion
+   Sharp, technical radii. Shadows are restrained; dark mode leans on borders
+   and an accent "glow" rather than soft drop shadows.
+   =========================================================================== */
+
+:root {
+  /* Radii — small & technical */
+  --radius-xs:   3px;
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   8px;
+  --radius-xl:   12px;
+  --radius-2xl:  16px;
+  --radius-full: 9999px;
+
+  /* Border widths */
+  --border-1: 1px;
+  --border-2: 2px;
+
+  /* Shadows (light) */
+  --shadow-xs: 0 1px 2px rgba(17, 22, 26, 0.06);
+  --shadow-sm: 0 1px 3px rgba(17, 22, 26, 0.08), 0 1px 2px rgba(17, 22, 26, 0.04);
+  --shadow-md: 0 4px 12px rgba(17, 22, 26, 0.08), 0 2px 4px rgba(17, 22, 26, 0.04);
+  --shadow-lg: 0 12px 32px rgba(17, 22, 26, 0.12), 0 4px 8px rgba(17, 22, 26, 0.06);
+  --shadow-pop: 0 16px 48px rgba(17, 22, 26, 0.18);
+
+  /* Accent glow — the relay "signal" */
+  --glow-accent: 0 0 0 1px var(--accent-ring), 0 0 18px rgba(18, 184, 122, 0.25);
+
+  /* Motion */
+  --ease-out:   cubic-bezier(0.22, 1, 0.36, 1);    /* @kind other */
+  --ease-in-out:cubic-bezier(0.65, 0, 0.35, 1);    /* @kind other */
+  --ease-snap:  cubic-bezier(0.5, 1.6, 0.5, 1);    /* @kind other */
+  --dur-fast:   120ms;                             /* @kind other */
+  --dur-base:   180ms;                             /* @kind other */
+  --dur-slow:   280ms;                             /* @kind other */
+}
+
+[data-theme="dark"] {
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 20px 56px rgba(0, 0, 0, 0.7);
+  --glow-accent: 0 0 0 1px var(--accent-ring), 0 0 22px rgba(31, 206, 138, 0.35);
+}

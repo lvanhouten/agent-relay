@@ -1,7 +1,7 @@
 import type { ITheme } from '@xterm/xterm';
 
 // xterm color themes keyed by the app theme ('dark' | 'light'). Values mirror
-// the design tokens in _docs/design-system/tokens/ — xterm can't read CSS
+// the design tokens in src/styles/tokens/ — xterm can't read CSS
 // custom properties, so they're duplicated here as literals.
 //
 // The scrollbar slider (xterm v6's scrollback thumb) is themed fully transparent

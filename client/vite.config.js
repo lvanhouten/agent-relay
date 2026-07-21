@@ -13,7 +13,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@ds': resolve(__dirname, '../_docs/design-system/components/core'),
+      '@ds': resolve(__dirname, 'src/ds'),
     },
   },
   server: {

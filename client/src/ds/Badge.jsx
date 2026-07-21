@@ -1,0 +1,36 @@
+import React from 'react';
+
+let _injected = false;
+function useStyles() {
+  if (_injected || typeof document === 'undefined') return;
+  _injected = true;
+  const css = `
+  .rl-badge{display:inline-flex;align-items:center;gap:var(--space-1);
+    font-family:var(--font-mono);font-size:var(--text-2xs);font-weight:var(--weight-medium);
+    letter-spacing:var(--tracking-wide);text-transform:uppercase;
+    padding:2px var(--space-2);border-radius:var(--radius-sm);
+    border:var(--border-1) solid transparent;line-height:1.4;white-space:nowrap;}
+  .rl-badge--neutral{background:var(--surface-sunken);color:var(--text-body);border-color:var(--border-subtle);}
+  .rl-badge--accent{background:var(--accent-soft);color:var(--text-accent);border-color:var(--border-accent);}
+  .rl-badge--success{background:var(--success-soft);color:var(--success);}
+  .rl-badge--warning{background:var(--warning-soft);color:var(--warning);}
+  .rl-badge--danger{background:var(--danger-soft);color:var(--danger);}
+  .rl-badge--info{background:var(--info-soft);color:var(--info);}
+  .rl-badge--solid{background:var(--accent);color:var(--text-on-accent);border-color:transparent;}
+  .rl-badge--outline{background:transparent;color:var(--text-muted);border-color:var(--border-default);}
+  `;
+  const el = document.createElement('style');
+  el.setAttribute('data-relay', 'badge');
+  el.textContent = css;
+  document.head.appendChild(el);
+}
+
+/** Badge — compact mono label for counts, statuses, shells, and tags. */
+export function Badge({ variant = 'neutral', className = '', children, ...rest }) {
+  useStyles();
+  return (
+    <span className={`rl-badge rl-badge--${variant} ${className}`.trim()} {...rest}>
+      {children}
+    </span>
+  );
+}
