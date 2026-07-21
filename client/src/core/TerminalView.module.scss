@@ -21,11 +21,11 @@
   touch-action: none;
 }
 
-// Spectator (thumbnail) pane: the grid gutter is noise at small scale, and the
-// mount is CSS-scaled from its top-left corner by TerminalView (transform set
-// inline per-frame). overflow:hidden on .wrapper already clips the scaled box.
+// Spectator (thumbnail) pane: the mount is CSS-scaled from its top-left corner
+// by TerminalView (transform set inline per-frame); overflow:hidden on .wrapper
+// clips the scaled box. Padding stays — same gutter as interactive — so a focus
+// change doesn't reflow the pane; applyScale scales to the content box.
 .spectator {
-  padding: 0;
   cursor: default;
 }
 
