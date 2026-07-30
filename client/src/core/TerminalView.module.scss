@@ -21,25 +21,27 @@
   touch-action: none;
 }
 
-// Spectator (thumbnail) pane: the mount is CSS-scaled from its top-left corner
-// by TerminalView (transform set inline per-frame); overflow:hidden on .wrapper
-// clips the scaled box. Padding stays — same gutter as interactive — so a focus
-// change doesn't reflow the pane; applyScale scales to the content box.
-.spectator {
-  cursor: default;
-}
-
-// A spectator never scrolls, and the mount is sized to the natural grid so the
-// viewport matches the screen exactly. Kill the reserved scrollbar gutter (an
-// overflow:scroll viewport reserves ~17px even when content fits) so the grid
-// doesn't overflow horizontally.
-.spectator :global(.xterm-viewport) {
+// A view that doesn't own sizing: the mount is CSS-scaled from its top-left
+// corner by TerminalView (transform set inline per-frame); overflow:hidden on
+// .wrapper clips the scaled box. Padding stays the same in every mode, so a
+// focus change never reflows the pane; applyScale scales to the content box.
+//
+// The mount is sized to the natural grid, so the viewport matches the screen
+// exactly. Kill the reserved scrollbar gutter (an overflow:scroll viewport
+// reserves ~17px even when content fits) so the grid doesn't overflow
+// horizontally, and so the scale isn't computed against phantom width.
+.scaled :global(.xterm-viewport) {
   overflow: hidden !important;
   scrollbar-width: none;
 }
 
-.spectator :global(.xterm-viewport)::-webkit-scrollbar {
+.scaled :global(.xterm-viewport)::-webkit-scrollbar {
   display: none;
+}
+
+// Watch-only: no input, so no text cursor to imply otherwise.
+.watch {
+  cursor: default;
 }
 
 .pill {

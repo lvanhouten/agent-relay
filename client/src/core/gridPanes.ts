@@ -1,5 +1,5 @@
-// Pure state transitions for the desktop spectator grid: an ordered set of
-// session ids rendered as panes, one "focused" (interactive), rest spectators.
+// Pure state transitions for the desktop pane grid: an ordered set of session
+// ids rendered as panes, one "focused" (takes input), the rest watch-only.
 // Kept pure so transitions are unit-tested directly, not only via DesktopWorkspace.
 
 // Add a pane, preserving order and idempotent on a re-inject.

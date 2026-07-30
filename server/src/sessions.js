@@ -57,9 +57,9 @@ function toDto(line) {
     status: idleMs < DEFAULT_IDLE_MS ? 'running' : 'idle',
     lastActive: relTime(idleMs),
   };
-  // Live PTY grid from the board's list row — a spectator attach adopts these
-  // dims and CSS-scales rather than resizing the shared line. Only present on
-  // live lines; create/tombstone DTOs carry none until the next poll.
+  // Live PTY grid from the board's list row — an attach that doesn't own sizing
+  // adopts these dims and CSS-scales rather than resizing the shared line. Only
+  // present on live lines; create/tombstone DTOs carry none until the next poll.
   if (Number.isFinite(line.cols) && Number.isFinite(line.rows)) {
     dto.cols = line.cols;
     dto.rows = line.rows;
@@ -346,8 +346,8 @@ class BoardSessions {
     return !!(f && f.ok);
   }
 
-  // Per-WS attach: returns {write, resize, setSpectator, detach}. Scrollback
-  // replays once on data-pipe connect; setSpectator toggles clamp participation
+  // Per-WS attach: returns {write, resize, setSizing, detach}. Scrollback
+  // replays once on data-pipe connect; setSizing toggles clamp participation
   // live without reattaching.
   attach(id, handlers) {
     return this._attach(id, handlers);

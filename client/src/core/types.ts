@@ -27,8 +27,9 @@ export interface Session {
   exitCode?: number | null;
   reason?: string;
   // Live PTY grid: present on live lines, absent on a just-created session
-  // until the first poll and on exited tombstones. A spectator TerminalView
-  // adopts these dims and CSS-scales rather than resizing the shared line.
+  // until the first poll and on exited tombstones. Any TerminalView that
+  // doesn't own sizing adopts these dims and CSS-scales rather than resizing
+  // the shared line.
   cols?: number;
   rows?: number;
   // Live rendered-screen tail: last few plain-text rows of the line's
@@ -57,11 +58,14 @@ export interface InputFrame { type: 'input'; payload: string }
 export interface ResizeFrame { type: 'resize'; cols: number; rows: number }
 export type ClientFrame = InputFrame | ResizeFrame;
 
-// TerminalView's mode axis. 'interactive' fits the container and sends resize;
-// 'spectator' adopts reported PTY dims and CSS-scales, sending no resize so it
-// never clamps the shared line — the desktop grid's watch-only panes. Fixed
-// per mount; a switch is a remount.
-export type TerminalViewMode = 'interactive' | 'spectator';
+// TerminalView's mode axis — shorthand for the two capabilities in
+// core/terminalMode.ts (input, sizing), which is where the semantics live:
+//   'interactive'  full-size view: fits its container and owns the line's size.
+//   'follow'       grid pane, focused: types into the line but adopts the line's
+//                  reported dims and CSS-scales, so a pane never reshapes it.
+//   'spectator'    grid pane, watching: neither types nor sizes.
+// Applied in place — a mode change must never remount (that re-runs the replay).
+export type TerminalViewMode = 'interactive' | 'follow' | 'spectator';
 
 // Mirrors GET /api/fs/browse's reply. `parent` is null at a filesystem root,
 // so the picker hides the "up" affordance there. `entries` is directories only

@@ -10,6 +10,7 @@ import { PILL_INIT, onScroll as pillOnScroll, onLine as pillOnLine } from './scr
 import type { PillState } from './scrollPill.ts';
 import { wheelScrollLines, touchScrollLines, takeWholeLines } from './terminalScroll.ts';
 import type { ScrollEnv } from './terminalScroll.ts';
+import { capsFor } from './terminalMode.ts';
 import type { ConnStatus, TerminalViewMode, SearchResults } from './types.ts';
 import { shouldXtermConsumeKey } from './keyPassthrough.ts';
 import styles from './TerminalView.module.scss';
@@ -28,12 +29,11 @@ const SEARCH_OPTS = {
 export interface TerminalViewProps {
   sessionId: string;
   theme: string;
-  // 'interactive' (default): fits xterm, pushes size to the board. 'spectator':
-  // adopts reported PTY dims (below), CSS-scales, never resizes — the desktop
-  // grid's watch-only panes. Fixed per mount; a switch is a remount.
+  // Which capabilities this view has over the line — see core/terminalMode.ts.
+  // Applied in place on change, never by remounting.
   mode?: TerminalViewMode;
-  // Reported PTY grid from the session DTO/poll. Spectator adopts + rescales on
-  // change; ignored in interactive mode (xterm's own fit owns size there).
+  // Reported PTY grid from the session DTO/poll. Adopted + rescaled on change by
+  // any mode that doesn't own sizing; ignored when it does (xterm's fit wins).
   cols?: number;
   rows?: number;
   // Ctrl+D inside the terminal — detach without ending the session.
@@ -97,11 +97,11 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     const onDataRef = React.useRef<((data: string) => void) | null>(null);
     const onExitRef = React.useRef<((code: number | null) => void) | null>(null);
     const refitRef = React.useRef<(() => void) | null>(null);
-    // Reconfigures the live terminal for interactive vs spectator (filled by the
-    // mount effect, called by the mode-change effect) — the pane never remounts
-    // on focus change, so mode is applied in place.
-    const applyModeRef = React.useRef<((spectator: boolean) => void) | null>(null);
-    // Latest reported PTY dims, read when entering spectator mode.
+    // Reconfigures the live terminal for a mode change (filled by the mount
+    // effect, called by the mode-change effect) — the pane never remounts on
+    // focus change, so mode is applied in place.
+    const applyModeRef = React.useRef<((next: TerminalViewMode) => void) | null>(null);
+    // Latest reported PTY dims, read whenever this view doesn't own sizing.
     const colsRef = React.useRef(cols);
     const rowsRef = React.useRef(rows);
     React.useEffect(() => { colsRef.current = cols; rowsRef.current = rows; }, [cols, rows]);
@@ -187,10 +187,10 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         resize(term.cols, term.rows);
         term.refresh(0, term.rows - 1);
       };
-      // Spectator: CSS-scale the whole grid to fit, never fit/resize (would clamp
-      // the shared line). `.xterm-screen`'s offset size is the true, transform-
-      // independent grid box — size the mount to that natural box FIRST, then
-      // scale; scaling a pane-sized mount first just shrinks a clipped sliver.
+      // Doesn't own sizing: CSS-scale the whole grid to fit, never fit/resize
+      // (would clamp the shared line). `.xterm-screen`'s offset size is the true,
+      // transform-independent grid box — size the mount to that natural box
+      // FIRST, then scale; scaling a pane-sized mount first shrinks a clipped sliver.
       const applyScale = () => {
         const wrap = wrapperRef.current, mount = containerRef.current;
         if (disposed || !wrap || !mount) return;
@@ -208,39 +208,42 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
         mount.style.transformOrigin = 'top left';
         mount.style.transform = `scale(${scale})`;
       };
-      // Reconfigures the live terminal in place, no reattach. Interactive: drop
-      // scale, accept input, fit+resize (re-enters the board clamp). Spectator:
-      // adopt PTY dims, CSS-scale, no input, no resize (stays clamped). Deferred a
-      // frame so xterm flushes the resize before applyScale measures `.xterm-screen`.
-      const applyMode = (spec: boolean) => {
+      // Reconfigures the live terminal in place, no reattach. The two capabilities
+      // are handled independently: `input` gates stdin and the cursor, `sizing`
+      // picks fit-and-push versus adopt-and-scale. Deferred a frame so xterm
+      // flushes any resize before applyScale measures `.xterm-screen`.
+      const applyMode = (next: TerminalViewMode) => {
         if (disposed) return;
         const mount = containerRef.current;
-        term.options.disableStdin = spec;
-        term.options.cursorBlink = !spec;
-        if (spec) {
+        const { input, sizing } = capsFor(next);
+        term.options.disableStdin = !input;
+        term.options.cursorBlink = input;
+        if (sizing) {
+          if (mount) { mount.style.transform = 'none'; mount.style.width = ''; mount.style.height = ''; }
+          refitRef.current = safeFit;
+        } else {
           const c = colsRef.current, r = rowsRef.current;
           if (c && r) term.resize(c, r);
           refitRef.current = applyScale;
-        } else {
-          if (mount) { mount.style.transform = 'none'; mount.style.width = ''; mount.style.height = ''; }
-          refitRef.current = safeFit;
-          term.focus();
         }
+        // Focus follows input, not sizing: a focused grid pane types into the
+        // line while still rendering it at the line's own dims.
+        if (input) term.focus();
         rafId = requestAnimationFrame(() => refitRef.current?.());
       };
       applyModeRef.current = applyMode;
 
       // Apply the initial mode, then relayout again once the monospace font has
-      // loaded (font swap changes cell size). For interactive, onReady also
-      // refits once the socket opens so the size reaches the board.
-      applyMode(mode === 'spectator');
+      // loaded (font swap changes cell size). When this view owns sizing, onReady
+      // also refits once the socket opens so the size reaches the board.
+      applyMode(mode);
       document.fonts?.ready.then(() => refitRef.current?.());
 
       onDataRef.current = (data) => term.write(data);
       onExitRef.current = (code) => term.writeln(`\r\n\x1b[2m— session exited · code ${code}\x1b[0m`);
 
       // Input, the detach/find chords, and the Alt+digit passthrough are
-      // registered once; while spectating, `disableStdin` blocks onData so none
+      // registered once; with input withheld, `disableStdin` blocks onData so none
       // fire, and they resume when the pane is refocused (applyMode toggles it).
       term.onData((data) => {
         if (data === '\x04') { onDetachRef.current?.(); return; } // Ctrl+D — detach
@@ -308,8 +311,8 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
       el.addEventListener('touchend', onTouchEnd, { passive: true });
       el.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
-      // Observe the wrapper (the pane) for both modes: interactive fits to it,
-      // spectator rescales to it. A mode change doesn't resize the wrapper, so
+      // Observe the wrapper (the pane) in every mode: a sizing view fits to it,
+      // the others rescale to it. A mode change doesn't resize the wrapper, so
       // applyMode drives that relayout itself.
       const ro = new ResizeObserver(() => refitRef.current?.());
       ro.observe(wrapperRef.current!);
@@ -333,12 +336,13 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     }, []);
 
     // Focus/mode change: reconfigure in place (no remount, no reattach).
-    React.useEffect(() => { applyModeRef.current?.(mode === 'spectator'); }, [mode]);
+    React.useEffect(() => { applyModeRef.current?.(mode); }, [mode]);
 
-    // Spectator dims propagate via the sessions poll (≤5s lag is acceptable).
-    // On change, re-adopt them and rescale; no-op while interactive.
+    // Reported dims propagate via the sessions poll (≤5s lag is acceptable). On
+    // change, re-adopt them and rescale; no-op for a view that owns sizing, where
+    // xterm's own fit is the source of truth.
     React.useEffect(() => {
-      if (mode !== 'spectator') return;
+      if (capsFor(mode).sizing) return;
       const term = termRef.current;
       if (!term || !cols || !rows) return;
       term.resize(cols, rows);
@@ -355,7 +359,14 @@ export const TerminalView = React.forwardRef<TerminalViewHandle, TerminalViewPro
     };
 
     return (
-      <div ref={wrapperRef} className={`${styles.wrapper}${mode === 'spectator' ? ' ' + styles.spectator : ''}`}>
+      <div
+        ref={wrapperRef}
+        className={[
+          styles.wrapper,
+          capsFor(mode).sizing ? '' : styles.scaled,
+          capsFor(mode).input ? '' : styles.watch,
+        ].filter(Boolean).join(' ')}
+      >
         <div ref={containerRef} className={styles.mount} />
         {!pill.atBottom && (
           <button
