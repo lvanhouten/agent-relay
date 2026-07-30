@@ -81,3 +81,39 @@ A **spectator** is a watch-only attach with these four properties:
   board frees a pane's clamped size on control-socket close (`board.js`), so a
   spectator that closes it stops constraining the shared PTY without disturbing
   the byte stream.
+
+## Amendment (2026-07-30) — sizing is its own capability; no grid pane owns it
+
+The Consequences above say "the focused pane in a grid is interactive (owns
+sizing)." That turned out to contradict this ADR's own premise. The clamp exists
+so that no pane renders garbled, and the rejected-alternatives section refuses
+"a grid of small panes would resize every agent's real terminal to mini
+dimensions" — but the focused pane did exactly that, because `mode` fused two
+separate things: permission to type, and ownership of the line's size.
+
+Measured on a 1600x1000 window: focusing a pane in a 1326x457 cell fitted 172x20
+and clamped the line to it; an earlier half-width cell left 84x43. Worse, it
+persisted — the board frees a pane's clamp *entry* on control-socket close but
+keeps the last applied size (`applyMin` returns early with no entries), so every
+line ever focused in a grid stayed stuck at that cell's geometry, including when
+later opened full-screen. Watch panes then faithfully adopted those stale dims
+and scaled them, which is why a grid showed panes at unrelated scales and
+aspect ratios.
+
+So the axis is now two independent capabilities (`client/src/core/terminalMode.ts`):
+
+| mode | input | sizing | used by |
+|---|---|---|---|
+| `interactive` | yes | yes | mobile terminal, desktop detail pane |
+| `follow` | yes | no | grid pane, focused |
+| `spectator` | no | no | grid pane, watching |
+
+Sizing belongs to a view rendering the line at full size. A grid pane types into
+its line but always adopts the reported dims and CSS-scales, so focusing one
+cannot reshape a shared line and focus changes no longer thrash geometry. The
+`mode` frame now carries `{input, sizing}` rather than `{spectator}`; the server
+gates each frame on its own capability and opens the control socket iff `sizing`
+(a frame from before the split is still honored, so a stale tab does not lose
+input). Everything else in this ADR stands — dims still propagate by poll, frames
+are still dropped rather than errored, and a focus change is still a live
+mode-switch that never reattaches.

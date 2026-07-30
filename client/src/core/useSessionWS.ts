@@ -1,5 +1,6 @@
 import React from 'react';
 import { parseFrame, isValidDataPayload, isValidExitCode } from './wsFrame.ts';
+import { capsFor } from './terminalMode.ts';
 import type { ConnStatus, TerminalViewMode } from './types.ts';
 
 export interface SessionWSHandlers {
@@ -25,10 +26,10 @@ export function useSessionWS(
   sessionId: string,
   token: string | undefined,
   { onData, onExit, onReady }: SessionWSHandlers,
-  // Interactive vs spectator, pushed as a live `mode` frame, NOT a URL param:
-  // a grid focus change must NOT reconnect (would re-run the history replay
-  // and corrupt a long session), so mode is excluded from the connect effect's
-  // deps. Server toggles input-gating in place; onopen re-sends current mode.
+  // Pushed as a live `mode` frame, NOT a URL param: a grid focus change must NOT
+  // reconnect (would re-run the history replay and corrupt a long session), so
+  // mode is excluded from the connect effect's deps. The server re-gates input
+  // and sizing in place; onopen re-sends the current mode.
   mode: TerminalViewMode = 'interactive',
 ): SessionWS {
   // Optional: the browser path is cookie-only post-boot (ar_auth rides the
@@ -39,10 +40,14 @@ export function useSessionWS(
 
   // Current desired mode, read at onopen and on every change. A ref (not a dep)
   // so flipping mode pushes a frame over the live socket instead of reconnecting.
+  // The frame carries the capabilities, not the mode name: the server gates
+  // input and resize separately, and the mode names are the client's vocabulary.
   const modeRef = React.useRef(mode);
   const sendMode = React.useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN)
-      wsRef.current.send(JSON.stringify({ type: 'mode', spectator: modeRef.current === 'spectator' }));
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const { input, sizing } = capsFor(modeRef.current);
+      wsRef.current.send(JSON.stringify({ type: 'mode', input, sizing }));
+    }
   }, []);
   React.useEffect(() => { modeRef.current = mode; sendMode(); }, [mode, sendMode]);
 

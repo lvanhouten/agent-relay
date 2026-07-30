@@ -86,14 +86,19 @@ test('WS: AR_NO_AUTH (expectedToken null) → attach proceeds with no credential
   assert.deepStrictEqual(await attempt({ expectedToken: null, signingSecret: SECRET }, {}), { attached: true });
 });
 
-function driveFrames(query) {
+// Drives input + resize repeatedly and reports what got through each gate.
+// `modeFrame`, when given, is sent once at open to set the capabilities.
+function driveFrames(query, modeFrame) {
   return new Promise((resolve, reject) => {
     const wrote = [], resized = [];
     let cleared = 0;
     const sessions = {
       get: async () => ({ id: ID, status: 'running' }),
       clearAttention() { cleared++; },
-      attach: async () => ({ detach() {}, write(d) { wrote.push(d); }, resize(c, r) { resized.push([c, r]); } }),
+      attach: async () => ({
+        detach() {}, write(d) { wrote.push(d); }, resize(c, r) { resized.push([c, r]); },
+        setSizing() {},
+      }),
     };
     const server = http.createServer();
     createWSHub(server, sessions, cfg);
@@ -102,6 +107,7 @@ function driveFrames(query) {
       const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}${query}`);
       client.on('error', reject);
       client.on('open', () => {
+        if (modeFrame) client.send(JSON.stringify({ type: 'mode', ...modeFrame }));
         const input = JSON.stringify({ type: 'input', payload: 'x' });
         const resize = JSON.stringify({ type: 'resize', cols: 80, rows: 24 });
         const timer = setInterval(() => { client.send(input); client.send(resize); }, 40);
@@ -129,16 +135,43 @@ test('WS: ?mode=spectator drops inbound input and resize, dropped not errored (A
   assert.strictEqual(cleared, 0, 'a spectator does not clear the attention flag');
 });
 
-test('WS: a live `mode` frame toggles the input gate and control socket without reattaching (ADR-0005)', async () => {
+test('WS: a `follow` connection types into the line but never sizes it', async () => {
+  // The focused grid pane. Input and sizing are independent gates precisely so
+  // this combination exists: fusing them let a pane clamp the shared PTY to a
+  // thumbnail's geometry, which the board then kept after the pane unfocused.
+  const { wrote, resized, cleared } = await driveFrames('', { input: true, sizing: false });
+  assert.ok(wrote.length > 0 && wrote.every(d => d === 'x'), 'input reaches the line');
+  assert.deepStrictEqual(resized, [], 'resize never reaches the line — the shared PTY is not clamped');
+  assert.ok(cleared > 0, 'typing still clears the attention flag');
+});
+
+test('WS: sizing without input is honored as stated — the gates are independent', async () => {
+  const { wrote, resized } = await driveFrames('', { input: false, sizing: true });
+  assert.deepStrictEqual(wrote, [], 'input is gated');
+  assert.ok(resized.length > 0 && resized.every(([c, r]) => c === 80 && r === 24), 'resize is not');
+});
+
+test('WS: a legacy `spectator` mode frame still gates both, rather than reading absent caps as false', async () => {
+  // A tab loaded before the input/sizing split sends {spectator}. Reading the
+  // missing fields as false would leave such a tab unable to type at all.
+  const denied = await driveFrames('', { spectator: true });
+  assert.deepStrictEqual(denied.wrote, [], 'legacy spectator:true withholds input');
+  assert.deepStrictEqual(denied.resized, [], 'legacy spectator:true withholds sizing');
+  const allowed = await driveFrames('', { spectator: false });
+  assert.ok(allowed.wrote.length > 0, 'legacy spectator:false grants input');
+  assert.ok(allowed.resized.length > 0, 'legacy spectator:false grants sizing');
+});
+
+test('WS: a live `mode` frame re-gates the connection and the control socket without reattaching (ADR-0005)', async () => {
   const wrote = [];
-  const spectatorCalls = [];
+  const sizingCalls = [];
   let attachCount = 0;
   const sessions = {
     get: async () => ({ id: ID, status: 'running' }),
     clearAttention() {},
     attach: async () => {
       attachCount++;
-      return { detach() {}, write(d) { wrote.push(d); }, resize() {}, setSpectator: (on) => spectatorCalls.push(on) };
+      return { detach() {}, write(d) { wrote.push(d); }, resize() {}, setSizing: (on) => sizingCalls.push(on) };
     },
   };
   const server = http.createServer();
@@ -149,24 +182,29 @@ test('WS: a live `mode` frame toggles the input gate and control socket without 
   await new Promise((res) => client.on('open', res));
   const send = (o) => client.send(JSON.stringify(o));
 
-  // Flip to spectator, then try to drive: input must be dropped.
-  send({ type: 'mode', spectator: true });
+  // Withhold both, then try to drive: input must be dropped.
+  send({ type: 'mode', input: false, sizing: false });
   await new Promise((r) => setTimeout(r, 100));
   send({ type: 'input', payload: 'a' });
   await new Promise((r) => setTimeout(r, 100));
 
-  // Flip back to interactive: input now reaches the line.
-  send({ type: 'mode', spectator: false });
+  // Grant input but not sizing (a focused pane): input reaches the line, and the
+  // control socket stays closed so the line is not clamped.
+  send({ type: 'mode', input: true, sizing: false });
   await new Promise((r) => setTimeout(r, 100));
   send({ type: 'input', payload: 'b' });
+  await new Promise((r) => setTimeout(r, 100));
+
+  // Grant sizing too (a full-size view): the control socket opens.
+  send({ type: 'mode', input: true, sizing: true });
   await new Promise((r) => setTimeout(r, 150));
 
   client.close();
   await new Promise((res) => server.close(res));
 
   assert.strictEqual(attachCount, 1, 'a mode flip reuses the connection — never a reattach');
-  assert.deepStrictEqual(spectatorCalls, [true, false], 'setSpectator follows each mode frame');
-  assert.deepStrictEqual(wrote, ['b'], 'input dropped while spectator, delivered once interactive');
+  assert.deepStrictEqual(sizingCalls, [false, false, true], 'setSizing follows each mode frame');
+  assert.deepStrictEqual(wrote, ['b'], 'input dropped while withheld, delivered once granted');
 });
 
 // Opens a connection whose get() AND attach() each take a real delay, sends
@@ -178,7 +216,7 @@ test('WS: a live `mode` frame toggles the input gate and control socket without 
 // block, and a fake `get` that resolves on a microtask hides a listener
 // registered just after it.
 async function sendAtOpen(frames, { stepDelayMs = 60, query = '' } = {}) {
-  const wrote = [], resized = [], spectatorCalls = [];
+  const wrote = [], resized = [], sizingCalls = [];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const sessions = {
     get: async () => {
@@ -192,7 +230,7 @@ async function sendAtOpen(frames, { stepDelayMs = 60, query = '' } = {}) {
         detach() {},
         write(d) { wrote.push(d); },
         resize(c, r) { resized.push([c, r]); },
-        setSpectator: (on) => spectatorCalls.push(on),
+        setSizing: (on) => sizingCalls.push(on),
       };
     },
   };
@@ -206,7 +244,7 @@ async function sendAtOpen(frames, { stepDelayMs = 60, query = '' } = {}) {
   await sleep(stepDelayMs * 2 + 200);
   client.close();
   await new Promise(res => server.close(res));
-  return { wrote, resized, spectatorCalls };
+  return { wrote, resized, sizingCalls };
 }
 
 test('WS: a resize sent at open survives the attach window — sized once, never resent', async () => {
@@ -229,16 +267,29 @@ test('WS: frames sent at open are delivered in arrival order', async () => {
 });
 
 test('WS: a `mode` frame sent at open gates the frames queued behind it', async () => {
-  // Ordering is load-bearing: the spectator flip must apply before the input
+  // Ordering is load-bearing: the capability frame must apply before the input
   // and resize buffered behind it, or a watch-only pane would drive the line.
-  const { wrote, resized, spectatorCalls } = await sendAtOpen([
-    { type: 'mode', spectator: true },
+  const { wrote, resized, sizingCalls } = await sendAtOpen([
+    { type: 'mode', input: false, sizing: false },
     { type: 'input', payload: 'x' },
     { type: 'resize', cols: 80, rows: 24 },
   ]);
-  assert.deepStrictEqual(spectatorCalls, [true], 'the open-time mode frame is honored');
+  assert.deepStrictEqual(sizingCalls, [false], 'the open-time mode frame is honored');
   assert.deepStrictEqual(wrote, [], 'input behind it is gated');
   assert.deepStrictEqual(resized, [], 'resize behind it is gated — the shared PTY is not clamped');
+});
+
+test('WS: a pane that opens as `follow` sizes nothing, even with its fitted resize queued at open', async () => {
+  // The regression path in full: a grid pane's first frames are `mode` + the
+  // resize its own fit produced. Both are buffered pre-attach, so the gate has
+  // to hold for the queued frame too, not just for later ones.
+  const { wrote, resized } = await sendAtOpen([
+    { type: 'mode', input: true, sizing: false },
+    { type: 'resize', cols: 84, rows: 43 },
+    { type: 'input', payload: 'k' },
+  ]);
+  assert.deepStrictEqual(resized, [], 'the pane never clamps the line');
+  assert.deepStrictEqual(wrote, ['k'], 'but it still types into it');
 });
 
 test('WS: a sessions store missing clearAttention still delivers input, and the failure is logged', async () => {
