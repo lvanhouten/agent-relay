@@ -10,7 +10,11 @@ import styles from './PaneGrid.module.scss';
 
 // `mode` is a live prop, NOT part of the key: remounting on focus change would tear
 // down the data pipe and re-run the replay, corrupting a long session's history.
-// TerminalView reconfigures interactive/spectator in place instead.
+// TerminalView reconfigures in place instead.
+//
+// Neither mode here owns sizing — a pane types into its line but never reshapes
+// it, so focusing a pane can't clamp a shared line to a thumbnail's geometry.
+// Both therefore render the line at its reported dims, CSS-scaled to the cell.
 function PaneCell({ session, focused, theme, onFocus, onRemove }) {
   const attention = attentionFor(session.status);
   return (
@@ -31,7 +35,7 @@ function PaneCell({ session, focused, theme, onFocus, onRemove }) {
         key={session.id}
         sessionId={session.id}
         theme={theme}
-        mode={focused ? 'interactive' : 'spectator'}
+        mode={focused ? 'follow' : 'spectator'}
         cols={session.cols}
         rows={session.rows}
       />

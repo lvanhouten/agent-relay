@@ -5,13 +5,31 @@ const { StringDecoder } = require('string_decoder');
 const { isAuthenticated, TOKEN, SIGNING_SECRET } = require('./auth');
 const { originAllowed } = require('./origin');
 
-// Initial spectator state from `?mode=spectator` (set by the desktop grid's watch
-// panes; scoped tokens will later derive it from token scope, reusing this gate).
-// The grid flips it live via a `mode` frame so a focus change never reattaches. A
-// spectator's input/resize frames are dropped, not errored, and its control
-// socket closes so it leaves the board's resize clamp.
-function initialSpectator(query) {
-  return query.mode === 'spectator';
+// What a connection may do to its line: `input` types into the PTY, `sizing`
+// owns its dimensions (and so joins the board's smallest-pane clamp). Two gates,
+// because a focused grid pane needs the first without the second — see the
+// client's core/terminalMode.ts. Withheld frames are dropped, not errored.
+//
+// Initial state comes from `?mode=spectator` (scoped tokens will later derive it
+// from token scope, reusing this gate); the client then flips it live via `mode`
+// frames, so a focus change never reattaches.
+function initialCaps(query) {
+  return query.mode === 'spectator'
+    ? { input: false, sizing: false }
+    : { input: true, sizing: true };
+}
+
+// A `mode` frame states the capabilities directly. A client from before the
+// input/sizing split sends `spectator` instead; honor it rather than reading the
+// absent fields as false, which would silently make such a tab unable to type.
+function capsFromFrame(msg, current) {
+  if (typeof msg.input === 'boolean' || typeof msg.sizing === 'boolean') {
+    return { input: !!msg.input, sizing: !!msg.sizing };
+  }
+  if (typeof msg.spectator === 'boolean') {
+    return { input: !msg.spectator, sizing: !msg.spectator };
+  }
+  return current;
 }
 
 // authConfig is injectable for tests (same reason as auth.makeAuthMiddleware —
@@ -45,7 +63,7 @@ function createWSHub(server, sessions, authConfig = {}) {
     // Origin gate first — CORS never applies to WebSockets, so without this any
     // page the browser visits could open a socket to a line. Same policy as REST
     // (src/origin.js); non-browser clients send no Origin and pass through.
-    let spectator = initialSpectator(parsed.query);
+    let caps = initialCaps(parsed.query);
     if (!originAllowed(req.headers.origin, req.headers.host)) { ws.close(1008, 'forbidden origin'); return; }
     // Either credential: the `?token=` query param (non-browser clients) or a
     // valid auth cookie on the upgrade headers (browsers) — same shared decision
@@ -77,7 +95,7 @@ function createWSHub(server, sessions, authConfig = {}) {
 
     try {
       handle = await sessions.attach(id, {
-        spectator,
+        sizing: caps.sizing,
         onData: buf => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'data', payload: decoder.write(buf) })); },
         onExit: code => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', code })); },
       });
@@ -96,19 +114,23 @@ function createWSHub(server, sessions, authConfig = {}) {
     const handleFrame = raw => {
       try {
         const msg = JSON.parse(raw.toString());
-        // A `mode` frame flips this live connection between interactive/
-        // spectator without reattaching: toggles the input/resize gate and
-        // opens/closes the control socket (leaving/entering the resize clamp).
-        // The data pipe is untouched, so the replay never re-runs on a focus change.
+        // A `mode` frame re-gates this live connection without reattaching, and
+        // opens/closes the control socket (joining/leaving the board's resize
+        // clamp). The data pipe is untouched, so a focus change never re-runs
+        // the replay.
         if (msg.type === 'mode') {
-          spectator = !!msg.spectator;
-          handle.setSpectator?.(spectator);
+          caps = capsFromFrame(msg, caps);
+          handle.setSizing?.(caps.sizing);
           return;
         }
-        // Spectator connections are watch-only: input/resize are dropped (not
-        // errored) so a grid pane can't drive or resize the shared line; data
-        // still flows outbound.
-        if (spectator) return;
+        // Each capability gates its own frame, so a focused grid pane can type
+        // into the line while still never reshaping it. Data flows outbound
+        // regardless.
+        if (msg.type === 'resize') {
+          if (caps.sizing) handle.resize(msg.cols, msg.rows);
+          return;
+        }
+        if (!caps.input) return;
         if (msg.type === 'input') {
           handle.write(msg.payload);
           // Clears any needs-input flag the instant the operator answers here —
@@ -119,7 +141,6 @@ function createWSHub(server, sessions, authConfig = {}) {
           try { sessions.clearAttention(id); }
           catch (e) { console.error('[ws] clearAttention failed:', e && e.message ? e.message : e); }
         }
-        if (msg.type === 'resize') handle.resize(msg.cols, msg.rows);
       } catch { /* malformed message — ignore */ }
     };
 
