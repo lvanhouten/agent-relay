@@ -86,8 +86,6 @@ test('WS: AR_NO_AUTH (expectedToken null) → attach proceeds with no credential
   assert.deepStrictEqual(await attempt({ expectedToken: null, signingSecret: SECRET }, {}), { attached: true });
 });
 
-// Repeats input/resize sends after open — the message listener registers
-// only after the async attach(), so a single send would race it.
 function driveFrames(query) {
   return new Promise((resolve, reject) => {
     const wrote = [], resized = [];
@@ -171,6 +169,78 @@ test('WS: a live `mode` frame toggles the input gate and control socket without 
   assert.deepStrictEqual(wrote, ['b'], 'input dropped while spectator, delivered once interactive');
 });
 
+// Opens a connection whose get() AND attach() each take a real delay, sends
+// `frames` once at open (never resent), and reports what reached the line. The
+// client's real first frames — `mode` + the fitted `resize` — arrive inside that
+// window, so this is the shape that regressed: with no 'message' listener yet
+// attached, `ws` emitted them into the void. BOTH awaits must be slow: the
+// listener has to be registered in the connection handler's first synchronous
+// block, and a fake `get` that resolves on a microtask hides a listener
+// registered just after it.
+async function sendAtOpen(frames, { stepDelayMs = 60, query = '' } = {}) {
+  const wrote = [], resized = [], spectatorCalls = [];
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const sessions = {
+    get: async () => {
+      await sleep(stepDelayMs);
+      return { id: ID, status: 'running' };
+    },
+    clearAttention() {},
+    attach: async () => {
+      await sleep(stepDelayMs);
+      return {
+        detach() {},
+        write(d) { wrote.push(d); },
+        resize(c, r) { resized.push([c, r]); },
+        setSpectator: (on) => spectatorCalls.push(on),
+      };
+    },
+  };
+  const server = http.createServer();
+  createWSHub(server, sessions, cfg);
+  await new Promise(res => server.listen(0, res));
+  const { port } = server.address();
+  const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}${query}`);
+  await new Promise(res => client.on('open', res));
+  for (const f of frames) client.send(JSON.stringify(f));
+  await sleep(stepDelayMs * 2 + 200);
+  client.close();
+  await new Promise(res => server.close(res));
+  return { wrote, resized, spectatorCalls };
+}
+
+test('WS: a resize sent at open survives the attach window — sized once, never resent', async () => {
+  // The client fits xterm and pushes its grid the instant the socket opens,
+  // milliseconds ahead of the board RPCs. Dropping it left the PTY at its
+  // pre-attach size, so every TUI drew for the wrong grid until the operator
+  // resized the window by hand.
+  const { resized } = await sendAtOpen([{ type: 'resize', cols: 137, rows: 41 }]);
+  assert.deepStrictEqual(resized, [[137, 41]], 'the open-time resize reached the line exactly once');
+});
+
+test('WS: frames sent at open are delivered in arrival order', async () => {
+  const { wrote, resized } = await sendAtOpen([
+    { type: 'input', payload: 'a' },
+    { type: 'resize', cols: 100, rows: 30 },
+    { type: 'input', payload: 'b' },
+  ]);
+  assert.deepStrictEqual(wrote, ['a', 'b'], 'buffered input drains in order');
+  assert.deepStrictEqual(resized, [[100, 30]], 'the interleaved resize lands too');
+});
+
+test('WS: a `mode` frame sent at open gates the frames queued behind it', async () => {
+  // Ordering is load-bearing: the spectator flip must apply before the input
+  // and resize buffered behind it, or a watch-only pane would drive the line.
+  const { wrote, resized, spectatorCalls } = await sendAtOpen([
+    { type: 'mode', spectator: true },
+    { type: 'input', payload: 'x' },
+    { type: 'resize', cols: 80, rows: 24 },
+  ]);
+  assert.deepStrictEqual(spectatorCalls, [true], 'the open-time mode frame is honored');
+  assert.deepStrictEqual(wrote, [], 'input behind it is gated');
+  assert.deepStrictEqual(resized, [], 'resize behind it is gated — the shared PTY is not clamped');
+});
+
 test('WS: a sessions store missing clearAttention still delivers input, and the failure is logged', async () => {
   // Contract-drift case: the write must still land, and the TypeError must
   // log — not vanish into the malformed-message catch.
@@ -191,12 +261,8 @@ test('WS: a sessions store missing clearAttention still delivers input, and the 
     await new Promise(res => server.listen(0, res));
     const { port } = server.address();
     const client = new WebSocket(`ws://localhost:${port}/sessions/${ID}?token=${encodeURIComponent(EXPECTED)}`);
-    // Listener registers after the async attach — resend until the write
-    // lands instead of racing one send.
-    const frame = JSON.stringify({ type: 'input', payload: 'y' });
-    const timer = setInterval(() => { if (client.readyState === WebSocket.OPEN) client.send(frame); }, 50);
+    client.on('open', () => client.send(JSON.stringify({ type: 'input', payload: 'y' })));
     await whenWritten;
-    clearInterval(timer);
     client.close();
     await new Promise(res => server.close(res));
   } finally {

@@ -14,7 +14,10 @@ async function attach(id, { onData, onExit, spectator = false } = {}) {
   let ctrl = null;
   const openCtrl = async () => {
     if (ctrl) return;
-    try { ctrl = await connectControl({ autostart: false }); } catch { ctrl = null; /* resize just no-ops */ }
+    // A failure here silently disables resize for the whole attach — the pane
+    // then renders at a size the PTY never learns — so it must not pass unlogged.
+    try { ctrl = await connectControl({ autostart: false }); }
+    catch (e) { ctrl = null; console.error('[board] control connect failed; resize disabled for line', id, '-', e && e.message ? e.message : e); }
   };
   const closeCtrl = () => { if (ctrl) { try { ctrl.end(); } catch { /* closed */ } ctrl = null; } };
   // A spectator owns no control socket, so it never enters the clamp and can't

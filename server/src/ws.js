@@ -26,6 +26,22 @@ function createWSHub(server, sessions, authConfig = {}) {
     const parsed = parse(req.url, true);
     const id = (parsed.pathname ?? '').split('/').filter(Boolean).pop();
 
+    // Both listeners are registered in this first synchronous block, before any
+    // await below. A client sends `mode` + its fitted `resize` the moment it sees
+    // the 101 — well inside the board RPCs that follow — and `ws` emits 'message'
+    // with no listener attached, dropping the frame outright: no queue, no
+    // redelivery. That left the PTY at its pre-attach size, so a TUI kept drawing
+    // for the wrong grid until the operator resized the window by hand. `close`
+    // has the same exposure: it sets the flag the post-attach guard reads.
+    // The queue is capped — the window is milliseconds, but it opens before the
+    // credential gate below, so an unauthenticated peer must not be able to grow it.
+    const PREATTACH_FRAME_CAP = 64;
+    const buffered = [];
+    let deliver = raw => { if (buffered.length < PREATTACH_FRAME_CAP) buffered.push(raw); };
+    let handle = null, closed = false;
+    ws.on('message', raw => deliver(raw));
+    ws.on('close', () => { closed = true; if (handle) handle.detach(); });
+
     // Origin gate first — CORS never applies to WebSockets, so without this any
     // page the browser visits could open a socket to a line. Same policy as REST
     // (src/origin.js); non-browser clients send no Origin and pass through.
@@ -58,8 +74,6 @@ function createWSHub(server, sessions, authConfig = {}) {
     // Scrollback replays down the data pipe on connect, so there's no separate
     // history step. Decode raw bytes -> string for the client.
     const decoder = new StringDecoder('utf8');
-    let handle = null, closed = false;
-    ws.on('close', () => { closed = true; if (handle) handle.detach(); });
 
     try {
       handle = await sessions.attach(id, {
@@ -79,7 +93,7 @@ function createWSHub(server, sessions, authConfig = {}) {
     }
     if (closed) { handle.detach(); return; }   // WS dropped while we were attaching
 
-    ws.on('message', raw => {
+    const handleFrame = raw => {
       try {
         const msg = JSON.parse(raw.toString());
         // A `mode` frame flips this live connection between interactive/
@@ -107,7 +121,13 @@ function createWSHub(server, sessions, authConfig = {}) {
         }
         if (msg.type === 'resize') handle.resize(msg.cols, msg.rows);
       } catch { /* malformed message — ignore */ }
-    });
+    };
+
+    // Drain in arrival order, then hand later frames straight through. The
+    // buffered `resize` is what sizes the PTY to this client on a fresh attach.
+    deliver = handleFrame;
+    for (const raw of buffered) handleFrame(raw);
+    buffered.length = 0;
   });
 }
 
